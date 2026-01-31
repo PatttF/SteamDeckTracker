@@ -82,7 +82,8 @@ void MixerView::updateCursor(int dx,int dy) {
 	int x = viewData_->mixerCol_;
 	x += dx;
 	if (x < 0) x = 0;
-	if (x > (SONG_CHANNEL_COUNT - 1)) x = (SONG_CHANNEL_COUNT - 1);
+	// Allow selecting an extra column for the master strip (index = SONG_CHANNEL_COUNT)
+	if (x > SONG_CHANNEL_COUNT) x = SONG_CHANNEL_COUNT;
 	viewData_->mixerCol_ = x;
 	isDirty_ = true;
 }
@@ -174,12 +175,23 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 		if (!(lastMask_ & EPBM_UP)) {
 			// rising edge — immediate change
 			int ch = viewData_->mixerCol_;
-			int vol = MixerService::GetInstance()->GetChannelVolume(ch);
-			MixerService::GetInstance()->SetChannelVolume(ch, vol + 1);
-			char nb[32];
-			int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
-			snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
-			SetNotification(nb, 0);
+			if (ch < SONG_CHANNEL_COUNT) {
+				int vol = MixerService::GetInstance()->GetChannelVolume(ch);
+				MixerService::GetInstance()->SetChannelVolume(ch, vol + 1);
+				char nb[32];
+				int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
+				snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
+				SetNotification(nb, 0);
+			} else {
+				// master
+				Audio *audio = Audio::GetInstance();
+				int mvol = audio ? audio->GetMixerVolume() : 100;
+				MixerService::GetInstance()->SetMasterVolume(mvol + 1);
+				int newVol = audio ? audio->GetMixerVolume() : 100;
+				char nb[32];
+				snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
+				SetNotification(nb, 0);
+			}
 			isDirty_ = true;
 
 			((AppWindow &)w_).SetDirty();
@@ -188,13 +200,24 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 			// held — check repeat timer
 			if (now >= lastUpRepeatTime_) {
 				int ch = viewData_->mixerCol_;
-				int vol = MixerService::GetInstance()->GetChannelVolume(ch);
+				if (ch < SONG_CHANNEL_COUNT) {
+					int vol = MixerService::GetInstance()->GetChannelVolume(ch);
 
-				MixerService::GetInstance()->SetChannelVolume(ch, vol + 1);
-				char nb[32];
-				int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
-				snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
-				SetNotification(nb, 0);
+					MixerService::GetInstance()->SetChannelVolume(ch, vol + 1);
+					char nb[32];
+					int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
+					snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
+					SetNotification(nb, 0);
+				} else {
+					Audio *audio = Audio::GetInstance();
+					int mvol = audio ? audio->GetMixerVolume() : 100;
+					MixerService::GetInstance()->SetMasterVolume(mvol + 1);
+					int newVol = audio ? audio->GetMixerVolume() : 100;
+					char nb[32];
+					snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
+					SetNotification(nb, 0);
+				}
+
 				isDirty_ = true;
 				((AppWindow &)w_).SetDirty();
 
@@ -211,12 +234,22 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 		if (!(lastMask_ & EPBM_DOWN)) {
 			// rising edge — immediate change
 			int ch = viewData_->mixerCol_;
-			int vol = MixerService::GetInstance()->GetChannelVolume(ch);
-			MixerService::GetInstance()->SetChannelVolume(ch, vol - 1);
-			char nb[32];
-			int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
-			snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
-			SetNotification(nb, 0);
+			if (ch < SONG_CHANNEL_COUNT) {
+				int vol = MixerService::GetInstance()->GetChannelVolume(ch);
+				MixerService::GetInstance()->SetChannelVolume(ch, vol - 1);
+				char nb[32];
+				int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
+				snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
+				SetNotification(nb, 0);
+			} else {
+				Audio *audio = Audio::GetInstance();
+				int mvol = audio ? audio->GetMixerVolume() : 100;
+				MixerService::GetInstance()->SetMasterVolume(mvol - 1);
+				int newVol = audio ? audio->GetMixerVolume() : 100;
+				char nb[32];
+				snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
+				SetNotification(nb, 0);
+			}
 			isDirty_ = true;
 			((AppWindow &)w_).SetDirty();
 			lastDownRepeatTime_ = now + REPEAT_INITIAL_MS;
@@ -224,13 +257,23 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 			// held — check repeat timer
 			if (now >= lastDownRepeatTime_) {
 				int ch = viewData_->mixerCol_;
-				int vol = MixerService::GetInstance()->GetChannelVolume(ch);
+				if (ch < SONG_CHANNEL_COUNT) {
+					int vol = MixerService::GetInstance()->GetChannelVolume(ch);
 
-				MixerService::GetInstance()->SetChannelVolume(ch, vol - 1);
-				char nb[32];
-				int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
-				snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
-				SetNotification(nb, 0);
+					MixerService::GetInstance()->SetChannelVolume(ch, vol - 1);
+					char nb[32];
+					int newVol = MixerService::GetInstance()->GetChannelVolume(ch);
+					snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
+					SetNotification(nb, 0);
+				} else {
+					Audio *audio = Audio::GetInstance();
+					int mvol = audio ? audio->GetMixerVolume() : 100;
+					MixerService::GetInstance()->SetMasterVolume(mvol - 1);
+					int newVol = audio ? audio->GetMixerVolume() : 100;
+					char nb[32];
+					snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
+					SetNotification(nb, 0);
+				}
 				isDirty_ = true;
 				((AppWindow &)w_).SetDirty();
 				lastDownRepeatTime_ = now + REPEAT_INTERVAL_MS;
@@ -294,6 +337,8 @@ void MixerView::DrawView() {
 
 	// Title shows the current view name on the mixer page
 	DrawString(pos._x, pos._y, "Mixer", props);
+
+	Player *player = Player::GetInstance();
 
 	// Support dynamic channel count (use SONG_CHANNEL_COUNT)
 	int channels = SONG_CHANNEL_COUNT;
@@ -414,10 +459,14 @@ void MixerView::DrawView() {
 	// Draw master as an additional mixer strip to the right of the channel columns
 	Audio *audio = Audio::GetInstance();
 	int colX = pos._x; // pos is already incremented after the last channel
-	// label for master (two chars)
+	// label for master (three chars 'MAS') and selection highlight
+	bool selectedMaster = (viewData_->mixerCol_ == channels);
+	GUITextProperties colProps = props;
+	colProps.invert_ = selectedMaster;
+	SetColor(selectedMaster ? CD_HILITE2 : CD_NORMAL);
 	char lblm[4];
-	sprintf(lblm, "M ");
-	DrawString(colX, pos._y - 1, lblm, props);
+	snprintf(lblm, sizeof(lblm), "MAS");
+	DrawString(colX, pos._y - 1, lblm, colProps);
 
 	// Master meter (same height as channel meters)
 	int masterVol = audio ? audio->GetMixerVolume() : 100;
@@ -447,7 +496,7 @@ void MixerView::DrawView() {
 		}
 	}
 
-	// draw volume percent for master
+	// draw volume percent for master (percent not inverted)
 	char vstrm[8];
 	snprintf(vstrm, sizeof(vstrm), "%3d", masterVol);
 	DrawString(colX, pos._y + meterHeight + 1, vstrm, props);
