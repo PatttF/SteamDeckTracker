@@ -9,7 +9,7 @@
 #include "Application/Player/PlayerMixer.h"
 #include "System/Console/Trace.h"
 
-MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100) {
+MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100), masterVolume_(100) {
     mode_ = MSRM_PLAYBACK;
 };
 
@@ -175,7 +175,13 @@ void MixerService::SetSoftclip(int clip, int gain) {
     out_->SetSoftclip(clip, gain);
 }
 
-void MixerService::SetMasterVolume(int attn) { out_->SetMasterVolume(attn); }
+void MixerService::SetMasterVolume(int attn) {
+    if (attn < 0) attn = 0;
+    if (attn > 100) attn = 100;
+    masterVolume_ = attn;
+    Trace::Log("MixerService","SetMasterVolume %d", attn);
+    if (out_) out_->SetMasterVolume(attn);
+}
 
 int MixerService::GetPlayedBufferPercentage() {
 	return out_->GetPlayedBufferPercentage() ;
@@ -307,6 +313,10 @@ float MixerService::GetMasterPeak() {
 
 AudioOut *MixerService::GetAudioOut() {
 	return out_ ;
+} ;
+
+int MixerService::GetMasterVolume() {
+    return masterVolume_;
 } ;
 
 

@@ -49,6 +49,7 @@ public:
     void SetPregain(int);
     void SetSoftclip(int, int);
     void SetMasterVolume(int);
+    int GetMasterVolume();
     void SetRenderMode(int);
     bool IsRendering();
     int GetPlayedBufferPercentage() ;
@@ -79,5 +80,6 @@ private:
   SDL_mutex *sync_;
   bool isRendering_;
   int pregain_;
+  int masterVolume_;
 } ;
 #endif

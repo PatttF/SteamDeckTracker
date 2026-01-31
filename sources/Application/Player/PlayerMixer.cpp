@@ -58,6 +58,10 @@ void PlayerMixer::Close()  {
 bool PlayerMixer::Start() {
 	MixerService *ms=MixerService::GetInstance() ;
 	ms->AddObserver(*this) ;
+	// Initialize master volume from project when starting so the service reflects project settings
+	if (project_) {
+		ms->SetMasterVolume(project_->GetMasterVolume());
+	}
 
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
         notes_[i]=0xFF ;
@@ -111,7 +115,7 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());
   ms->SetSoftclip(project_->GetSoftclip(), project_->GetSoftclipGain());
-  ms->SetMasterVolume(project_->GetMasterVolume());
+	// Do not overwrite master volume on every audio update; master is controlled by MixerView and persisted to Project
   clipped_=ms->Clipped();
 } ;
 

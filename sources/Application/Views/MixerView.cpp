@@ -184,10 +184,15 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 				SetNotification(nb, 0);
 			} else {
 				// master
-				Audio *audio = Audio::GetInstance();
-				int mvol = audio ? audio->GetMixerVolume() : 100;
+				int mvol = MixerService::GetInstance()->GetMasterVolume();
 				MixerService::GetInstance()->SetMasterVolume(mvol + 1);
-				int newVol = audio ? audio->GetMixerVolume() : 100;
+				Trace::Log("MixerView","Master adjusted to %d", MixerService::GetInstance()->GetMasterVolume());
+				// Persist to project so PlayerMixer won't overwrite on next update
+				if (viewData_ && viewData_->project_) {
+					Variable *v = viewData_->project_->FindVariable(VAR_MASTERVOL);
+					if (v) v->SetInt(MixerService::GetInstance()->GetMasterVolume(), true);
+				}
+				int newVol = MixerService::GetInstance()->GetMasterVolume();
 				char nb[32];
 				snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
 				SetNotification(nb, 0);
@@ -209,10 +214,13 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 					snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
 					SetNotification(nb, 0);
 				} else {
-					Audio *audio = Audio::GetInstance();
-					int mvol = audio ? audio->GetMixerVolume() : 100;
+					int mvol = MixerService::GetInstance()->GetMasterVolume();
 					MixerService::GetInstance()->SetMasterVolume(mvol + 1);
-					int newVol = audio ? audio->GetMixerVolume() : 100;
+					if (viewData_ && viewData_->project_) {
+						Variable *v = viewData_->project_->FindVariable(VAR_MASTERVOL);
+						if (v) v->SetInt(MixerService::GetInstance()->GetMasterVolume(), true);
+					}
+					int newVol = MixerService::GetInstance()->GetMasterVolume();
 					char nb[32];
 					snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
 					SetNotification(nb, 0);
@@ -242,10 +250,13 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 				snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
 				SetNotification(nb, 0);
 			} else {
-				Audio *audio = Audio::GetInstance();
-				int mvol = audio ? audio->GetMixerVolume() : 100;
+				int mvol = MixerService::GetInstance()->GetMasterVolume();
 				MixerService::GetInstance()->SetMasterVolume(mvol - 1);
-				int newVol = audio ? audio->GetMixerVolume() : 100;
+				if (viewData_ && viewData_->project_) {
+					Variable *v = viewData_->project_->FindVariable(VAR_MASTERVOL);
+					if (v) v->SetInt(MixerService::GetInstance()->GetMasterVolume(), true);
+				}
+				int newVol = MixerService::GetInstance()->GetMasterVolume();
 				char nb[32];
 				snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
 				SetNotification(nb, 0);
@@ -266,10 +277,9 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 					snprintf(nb, sizeof(nb), "Ch %02d: %3d%%", ch, newVol);
 					SetNotification(nb, 0);
 				} else {
-					Audio *audio = Audio::GetInstance();
-					int mvol = audio ? audio->GetMixerVolume() : 100;
+					int mvol = MixerService::GetInstance()->GetMasterVolume();
 					MixerService::GetInstance()->SetMasterVolume(mvol - 1);
-					int newVol = audio ? audio->GetMixerVolume() : 100;
+					int newVol = MixerService::GetInstance()->GetMasterVolume();
 					char nb[32];
 					snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
 					SetNotification(nb, 0);
@@ -469,7 +479,7 @@ void MixerView::DrawView() {
 	DrawString(colX, pos._y - 1, lblm, colProps);
 
 	// Master meter (same height as channel meters)
-	int masterVol = audio ? audio->GetMixerVolume() : 100;
+	int masterVol = MixerService::GetInstance()->GetMasterVolume();
 	float masterPeak = (float)masterVol / 100.0f;
 	int masterFilled = int(masterPeak * meterHeight + 0.5f);
 	if (masterFilled < 0) masterFilled = 0;
