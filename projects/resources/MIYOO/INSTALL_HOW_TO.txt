@@ -1,0 +1,4 @@
+File structure:
+/SdCard/App/LGPT/(lgpt-miyoo.elf, libSDL, xml, sh, json and png files here)
+/SdCard/Samples/(move samplelib here)
+/SdCard/Tracks/(move lgpt_ALPHA here)
