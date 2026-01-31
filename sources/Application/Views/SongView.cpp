@@ -1131,8 +1131,10 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
         SetColor(CD_NORMAL);
         if (player->Clipped()) {
+            SetColor(CD_CLIP);
             DrawString(infoPos._x, infoPos._y, "clip", props);
         } else {
+            SetColor(CD_NORMAL);
             DrawString(infoPos._x, infoPos._y, "----", props);
         }
         char strbuffer[32];

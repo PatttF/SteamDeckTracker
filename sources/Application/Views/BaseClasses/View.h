@@ -56,6 +56,7 @@ enum ColorDefinition {
     CD_BACKGROUND,
     CD_NORMAL,
     CD_BORDER,
+    CD_CLIP,
     CD_HILITE1,
     CD_HILITE2,
     CD_CONSOLE,
