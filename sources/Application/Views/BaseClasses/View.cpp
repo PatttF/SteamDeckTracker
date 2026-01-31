@@ -91,9 +91,11 @@ void View::drawMap() {
 		int winPixelWidth = w_.GetRect().Width();
 		int visibleCols = winPixelWidth / CHAR_PX;
 		int width = (visibleCols > 0) ? std::min(visibleCols, LOGICAL_COLS) : LOGICAL_COLS;
+		// Allow overlap: flush guide into the bottom-right corner and permit overlapping notes area
 		int posX = width - mapWidth - View::margin_;
-		int posY = anchor._y + View::songRowCount_ - (mapHeight + 1);
-		if (posY < 0) posY = 0;
+		if (posX < 0) posX = 0;
+		int posY = anchor._y + View::songRowCount_ - mapHeight + 3; // push two rows further down
+		if (posY < 0) posY = 0; // but never go off-screen at top
 		GUIPoint pos(posX, posY);
 		GUIPoint mapOrigin = pos;
     	GUITextProperties props ;

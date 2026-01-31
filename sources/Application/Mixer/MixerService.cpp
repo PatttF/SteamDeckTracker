@@ -9,8 +9,9 @@
 #include "Application/Player/PlayerMixer.h"
 #include "System/Console/Trace.h"
 
-MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100), masterVolume_(100) {
+MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100), masterVolume_(100), waveformPos_(0) {
     mode_ = MSRM_PLAYBACK;
+    for (int i=0;i<WAVE_SAMPLES_CONST;i++) waveform_[i]=0.0f;
 };
 
 MixerService::~MixerService(){};
@@ -139,6 +140,10 @@ void MixerService::Update(Observable &o,I_ObservableData *d)  {
   AudioDriver::Event *event=(AudioDriver::Event *)d;
   if (event->type_ == AudioDriver::Event::ADET_BUFFERNEEDED)
   {  
+    // Push latest master peak into waveform buffer for visualization
+    float peak = master_.GetLastPeak();
+    PushWaveSample(peak);
+
     Lock() ;
     SetChanged() ;
     NotifyObservers() ;
@@ -309,6 +314,24 @@ void MixerService::Execute(FourCC id,float value) {
 
 float MixerService::GetMasterPeak() {
     return master_.GetLastPeak();
+}
+
+void MixerService::PushWaveSample(float v) {
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    waveformPos_ = (waveformPos_ + 1) % WAVE_SAMPLES_CONST;
+    waveform_[waveformPos_] = v;
+}
+
+float MixerService::GetWaveSample(int index) const {
+    if (index < 0) return 0.0f;
+    if (index >= WAVE_SAMPLES_CONST) return 0.0f;
+    int pos = (waveformPos_ + 1 + index) % WAVE_SAMPLES_CONST; // oldest..newest
+    return waveform_[pos];
+}
+
+int MixerService::GetWaveSampleCount() const {
+    return WAVE_SAMPLES_CONST;
 }
 
 AudioOut *MixerService::GetAudioOut() {

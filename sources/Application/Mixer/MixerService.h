@@ -61,6 +61,11 @@ public:
 	void Lock() ;
 	void Unlock() ;
 
+	// Waveform buffer (recent master peaks)
+	void PushWaveSample(float v);
+	float GetWaveSample(int index) const; // 0..GetWaveSampleCount()-1 (oldest..newest)
+	int GetWaveSampleCount() const;
+
 	// Mixer control helpers
 	void SetChannelVolume(int channel, int percent); // 0..100
 	int GetChannelVolume(int channel);
@@ -81,5 +86,10 @@ private:
   bool isRendering_;
   int pregain_;
   int masterVolume_;
+
+  // Waveform buffer
+  static const int WAVE_SAMPLES_CONST = 512;
+  float waveform_[WAVE_SAMPLES_CONST];
+  int waveformPos_;
 } ;
 #endif

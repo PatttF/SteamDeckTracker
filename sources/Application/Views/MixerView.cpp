@@ -8,6 +8,8 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <stdlib.h>
+#include <vector>
 #include <SDL.h>
 #include "Services/Audio/Audio.h"
 #include "System/Console/Trace.h"
@@ -372,6 +374,8 @@ void MixerView::DrawView() {
 		pos._x = LOGICAL_COLS - totalWidth - 6;
 		if (pos._x < 0) pos._x = 0;
 	}
+	// store left-most X for the mixer block so we can draw aligned overlays later
+	int mixerLeftX = pos._x;
 	// Diagnostic logging removed to avoid per-frame trace spam
 	// (layout values remain available for debug builds if needed)
 
@@ -514,6 +518,65 @@ void MixerView::DrawView() {
 	snprintf(vstrm, sizeof(vstrm), "%3d", masterVol);
 	DrawString(colX, pos._y + meterHeight + 1, vstrm, props);
 
+	// Enhanced waveform visualizer: taller, smoothed, with gradient glyphs
+	{
+		const int vizHeight = 9; // odd so we have a center row
+		int vizRow = pos._y + meterHeight + 2; // top row of waveform
+		int totalCols = (channels + 1) * dx + channels * gap; // character columns available for waveform
+		int sampleCount = MixerService::GetInstance()->GetWaveSampleCount();
+
+		if (totalCols <= 0) totalCols = 1;
+
+		// prepare rows using std::string to avoid manual malloc/free
+		std::vector<std::string> rows;
+		rows.resize(vizHeight);
+		for (int r = 0; r < vizHeight; r++) rows[r].assign(totalCols, ' ');
+
+		int center = vizHeight / 2;
+
+		// Draw columns from oldest (left) to newest (right) with simple linear interpolation
+		for (int c = 0; c < totalCols; c++) {
+			float rel = (float)c / (float)(totalCols - 1);
+			float fidx = rel * (sampleCount - 1);
+			int idx = (int)floor(fidx);
+			float frac = fidx - idx;
+			float s1 = MixerService::GetInstance()->GetWaveSample(idx);
+			float s2 = MixerService::GetInstance()->GetWaveSample((idx + 1) % sampleCount);
+			float s = s1 * (1.0f - frac) + s2 * frac; // interpolated amplitude [0..1]
+			// small smoothing: average with neighboring samples to reduce flicker
+			if (idx > 0) s = (s + MixerService::GetInstance()->GetWaveSample(idx - 1) * 0.5f) / 1.5f;
+
+			if (s < 0.0f) s = 0.0f;
+			if (s > 1.0f) s = 1.0f;
+
+			int amp = int(s * (float)center + 0.5f);
+			int top = center - amp;
+			int bottom = center + amp;
+			if (top < 0) top = 0;
+			if (bottom >= vizHeight) bottom = vizHeight - 1;
+
+			for (int r = top; r <= bottom; r++) {
+				// choose glyph by proximity to center for a gradient look
+				float d = 1.0f - (fabs((float)center - (float)r) / (float)center);
+				char g;
+				if (d >= 0.85f) g = '#';
+				else if (d >= 0.6f) g = '=';
+				else if (d >= 0.35f) g = '-';
+				else g = '.';
+				rows[r][c] = g;
+			}
+
+			// if very low amplitude and center is empty, draw a subtle baseline
+			if (amp == 0 && rows[center][c] == ' ') rows[center][c] = '-';
+		}
+
+		// render rows; use highlight for activity
+		for (int r = 0; r < vizHeight; r++) {
+			SetColor(CD_HILITE1);
+			DrawString(mixerLeftX, vizRow + r, rows[r].c_str(), props);
+		}
+	}
+
 	drawMap();
 	drawNotes();
 
@@ -537,25 +600,18 @@ void MixerView::OnPlayerUpdate(PlayerEventType ,unsigned int tick) {
 	GUITextProperties props ;
 	SetColor(CD_NORMAL) ;
 
-// Place playing info at a fixed right margin so it aligns to the far right of the screen
-	int rightX = LOGICAL_COLS - 8;
-    if (rightX < 0) rightX = 0;
-
-    if (View::miniLayout_) {
-      pos._y = 0;
-      pos._x = rightX;
-    } else {
-      pos = anchor;
-      pos._x = rightX;
-    }
-
+// Place playing info at the bottom-left so it doesn't compete with the guide/map (flush with content left margin)
+	pos = anchor;
+	pos._x = 0; // far left corner (flush)
+	// reserve 4 lines for playing info and place the top of that block accordingly
+	int infoLines = 4;
+	pos._y = anchor._y + View::songRowCount_ - infoLines + 4; // push down to overlap similar to Song view
 	if (player->Clipped()) {
-           DrawString(pos._x,pos._y,"clip",props); 
-    } else {
-           DrawString(pos._x,pos._y,"----",props); 
-    }
+		DrawString(pos._x, pos._y, "clip", props);
+	} else {
+		DrawString(pos._x, pos._y, "----", props);
+	}
 	char strbuffer[32];
-
 	pos._y += 1;
 	snprintf(strbuffer, sizeof(strbuffer), "%3.3d%%", player->GetPlayedBufferPercentage());
 	DrawString(pos._x, pos._y, strbuffer, props);

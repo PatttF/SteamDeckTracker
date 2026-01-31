@@ -1099,13 +1099,11 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
         }
 
         // If in live mode, update queued position
-
         if (player->GetSequencerMode() == SM_LIVE) {
             if (player->GetQueueingMode(i) != QM_NONE) {
 
                 if (eventType != PET_STOP) {
-                    int y =
-                        player->GetQueuePosition(i) - viewData_->songOffset_;
+                    int y = player->GetQueuePosition(i) - viewData_->songOffset_;
                     if (y >= 0 && y < View::songRowCount_) {
                         pos._y = anchor._y + y;
                         char *indicator = player->GetLiveIndicator(i);
@@ -1120,57 +1118,52 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
     SetColor(CD_NORMAL);
 
-    // Draw clipping indicator & CPU usage
+    // Draw notes
+    drawNotes();
 
-    // place playing-related info at the far right of the visible logical view area
-    // Compute visible logical width from window pixel width and clamp placement
-    // so AppWindow::DrawString doesn't drop it when the physical window is narrow.
-    const int INFO_WIDTH = 8; // reserve columns for clip/CPU/batt/time
-    const int CHAR_PX = 8;
-    int winPixelWidth = w_.GetRect().Width();
-    int visibleCols = winPixelWidth / CHAR_PX;
-    int width = (visibleCols > 0) ? std::min(visibleCols, LOGICAL_COLS) : LOGICAL_COLS;
-    pos._x = width - INFO_WIDTH - View::margin_;
-    pos._y = anchor._y;
+    // Draw playing info block at far left (overlaps notes)
+    {
+        GUIPoint infoPos = anchor;
+        infoPos._x = 0; // far left corner
+        int infoLines = 4;
+        infoPos._y = anchor._y + View::songRowCount_ - infoLines + 4; // push one more row down to overlap
+        if (infoPos._y < 0) infoPos._y = 0;
 
-    if (player->Clipped()) {
-        DrawString(pos._x, pos._y, "clip", props);
-    } else {
-        DrawString(pos._x, pos._y, "----", props);
-    }
-
-    char strbuffer[10];
-    pos._y += 1;
-    sprintf(strbuffer, "%3.3d%%", player->GetPlayedBufferPercentage());
-    DrawString(pos._x, pos._y, strbuffer, props);
-
-    System *sys = System::GetInstance();
-    int batt = sys->GetBatteryLevel();
-    if (batt >= 0) {
-        if (batt < 90) {
-            SetColor(CD_HILITE2);
-            invertBatt_ = !invertBatt_;
+        SetColor(CD_NORMAL);
+        if (player->Clipped()) {
+            DrawString(infoPos._x, infoPos._y, "clip", props);
         } else {
-            invertBatt_ = false;
-        };
-        props.invert_ = invertBatt_;
+            DrawString(infoPos._x, infoPos._y, "----", props);
+        }
+        char strbuffer[32];
+        infoPos._y += 1;
+        snprintf(strbuffer, sizeof(strbuffer), "%3.3d%%", player->GetPlayedBufferPercentage());
+        DrawString(infoPos._x, infoPos._y, strbuffer, props);
 
-        pos._y += 1;
-        sprintf(strbuffer, "%3.3d", batt);
-        DrawString(pos._x, pos._y, strbuffer, props);
-    }
+        System *sys = System::GetInstance();
+        int batt = sys->GetBatteryLevel();
+        if (batt >= 0) {
+            if (batt < 90) {
+                SetColor(CD_HILITE2);
+                invertBatt_ = !invertBatt_;
+            } else {
+                invertBatt_ = false;
+            };
+            props.invert_ = invertBatt_;
 
-    if (eventType != PET_STOP) {
+            infoPos._y += 1;
+            snprintf(strbuffer, sizeof(strbuffer), "%3.3d", batt);
+            DrawString(infoPos._x, infoPos._y, strbuffer, props);
+        }
         SetColor(CD_NORMAL);
         props.invert_ = false;
         int time = int(player->GetPlayTime());
         int mi = time / 60;
         int se = time - mi * 60;
-        sprintf(strbuffer, "%2.2d:%2.2d", mi, se);
-        pos._y += 1;
-        DrawString(pos._x, pos._y, strbuffer, props);
+        snprintf(strbuffer, sizeof(strbuffer), "%2.2d:%2.2d", mi, se);
+        infoPos._y += 1;
+        DrawString(infoPos._x, infoPos._y, strbuffer, props);
     }
-    drawNotes();
 };
 
 void SongView::nudgeTempo(int direction) {
