@@ -45,7 +45,7 @@ collect_resources() { #1PLATFORM #2lgpt.*-exe
 
 collect_resources PSP EBOOT.PBP
 collect_resources DEB lgpt.deb-exe
-collect_resources X64 lgpt.x64
+collect_resources X64 sdtracker.x64
 collect_resources X86 lgpt.x86
 collect_resources MIYOO lgpt-miyoo.elf
 collect_resources W32 lgpt-W32.exe

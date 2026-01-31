@@ -246,12 +246,9 @@ void ProjectView::DrawView() {
 
 // Draw title
 
-	char projectString[80] ;
-    sprintf(projectString, "Project (Build %s.%s.%s)", PROJECT_NUMBER,
-            PROJECT_RELEASE, BUILD_COUNT);
-
-    SetColor(CD_NORMAL);
-    DrawString(pos._x,pos._y,projectString,props) ;
+	// Title: show generic project label (build info removed)
+	SetColor(CD_NORMAL);
+	DrawString(pos._x, pos._y, "Project", props);
 
     FieldView::Redraw();
     drawMap();

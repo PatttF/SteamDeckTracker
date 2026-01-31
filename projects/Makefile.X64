@@ -28,7 +28,7 @@ INCLUDES := $(ALSA_CFLAGS) $(JACK_CFLAGS) $(SDL_CFLAGS) -I$(PWD)/../sources
 CFLAGS := $(OPT_FLAGS) $(DEFINES) $(INCLUDES) -Wall
 CXXFLAGS := $(CFLAGS) -std=gnu++11
 LIBS := $(ALSA_LIBS) $(JACK_LIBS) $(SDL_LIBS)
-OUTPUT := ../lgpt
+OUTPUT := ../sdtracker
 EXTENSION := x64
 
 # build rule
