@@ -19,6 +19,7 @@
 #include "UIFramework/SimpleBaseClasses/GUIWindow.h"
 
 #define PROP_INVERT 0x80
+#include "Application/LogicalSize.h"
 
 class AppWindow : public GUIWindow, I_Observer, Status {
   protected:
@@ -85,10 +86,10 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     unsigned long _lastB;
     char _statusLine[80];
     std::string _newProjectToLoad;
-    unsigned char _charScreen[1200];
-    unsigned char _charScreenProp[1200];
-    unsigned char _preScreen[1200];
-    unsigned char _preScreenProp[1200];
+    unsigned char _charScreen[LOGICAL_SIZE];
+    unsigned char _charScreenProp[LOGICAL_SIZE];
+    unsigned char _preScreen[LOGICAL_SIZE];
+    unsigned char _preScreenProp[LOGICAL_SIZE];
 
     static GUIColor backgroundColor_;
     static GUIColor normalColor_;

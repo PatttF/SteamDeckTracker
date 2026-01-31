@@ -12,7 +12,7 @@
 
 SDLGUIWindowImp *instance_ ;
 
-unsigned short appWidth=320 ;
+unsigned short appWidth=640 ;
 unsigned short appHeight=240 ;
 
 SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p) 

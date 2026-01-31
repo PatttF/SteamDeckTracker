@@ -1,4 +1,5 @@
 #include "NullView.h"
+#include "Application/LogicalSize.h"
 
 NullView::NullView(GUIWindow &w,ViewData *viewData):View(w,viewData) {
 }
@@ -22,7 +23,7 @@ void NullView::DrawView() {
 	sprintf(buildString,"Piggy build %s.%s.%s",PROJECT_NUMBER,PROJECT_RELEASE,BUILD_COUNT) ;
 	GUIPoint pos ;
 	pos._y=28;
-	pos._x=(40-strlen(buildString))/2 ;
+	pos._x=(LOGICAL_COLS-strlen(buildString))/2 ;
 	DrawString(pos._x,pos._y,buildString,props) ;
 
 } ;

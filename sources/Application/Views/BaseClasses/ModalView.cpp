@@ -1,4 +1,5 @@
 #include "ModalView.h"
+#include "Application/LogicalSize.h"
 
 ModalView::ModalView(View &v)
     : View(v.w_, v.viewData_), finished_(false), returnCode_(0){};
@@ -31,8 +32,8 @@ void ModalView::SetWindow(int width, int height) {
         height = 26;
     };
 
-    left_ = 20 - width / 2;
-    top_ = 10 - height / 2;
+    left_ = (LOGICAL_COLS / 2) - width / 2;
+    top_ = (LOGICAL_ROWS / 2) - height / 2;
     if (top_ < 2) {
         top_ = 2;
     }
@@ -42,7 +43,7 @@ void ModalView::SetWindow(int width, int height) {
     GUITextProperties props;
     props.invert_ = true;
     char line[41];
-    memset(line, ' ', 40);
+    memset(line, ' ', width + 4);
     line[width + 4] = 0;
     DrawString(-2, -2, line, props);
     DrawString(-2, height + 1, line, props);

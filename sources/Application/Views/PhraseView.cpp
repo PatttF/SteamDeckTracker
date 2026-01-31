@@ -1466,7 +1466,10 @@ void PhraseView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 void PhraseView::printHelpLegend(FourCC command, GUITextProperties props) {
     SetColor(CD_NORMAL);
     std::string *cmdStr = getHelpLegend(command);
-    DrawString(10, 0, cmdStr[0].c_str(), props);
-    DrawString(10, 1, cmdStr[1].c_str(), props);
-    DrawString(10, 2, cmdStr[2].c_str(), props);
+    GUIPoint anchor = GetAnchor();
+    int x = anchor._x + 30; // right side within logical view
+    int y = anchor._y + View::songRowCount_ - 3; // bottom 3 lines of view
+    DrawString(x, y, cmdStr[0].c_str(), props);
+    DrawString(x, y + 1, cmdStr[1].c_str(), props);
+    DrawString(x, y + 2, cmdStr[2].c_str(), props);
 }

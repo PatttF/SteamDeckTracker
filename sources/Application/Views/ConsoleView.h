@@ -5,7 +5,8 @@
 #include "BaseClasses/View.h"
 #include "System/Console/Trace.h"
 
-#define CONSOLE_WIDTH 40
+#include "Application/LogicalSize.h"
+#define CONSOLE_WIDTH LOGICAL_COLS
 #define CONSOLE_HEIGHT 25
 
 class ConsoleView: public View,public Trace {

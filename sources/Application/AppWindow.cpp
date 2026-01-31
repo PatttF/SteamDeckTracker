@@ -138,10 +138,10 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
         _currentView->DoModal(spd, ProjectSelectCallback);
     }
 
-    memset(_charScreen, ' ', 1200);
-    memset(_preScreen, ' ', 1200);
-    memset(_charScreenProp, 0, 1200);
-    memset(_preScreenProp, 0, 1200);
+    memset(_charScreen, ' ', LOGICAL_SIZE);
+    memset(_preScreen, ' ', LOGICAL_SIZE);
+    memset(_charScreenProp, 0, LOGICAL_SIZE);
+    memset(_preScreenProp, 0, LOGICAL_SIZE);
 
     Redraw();
 };
@@ -151,30 +151,39 @@ AppWindow::~AppWindow() { MidiService::GetInstance()->Close(); }
 void AppWindow::DrawString(const char *string, GUIPoint &pos,
                            GUITextProperties &props, bool force) {
 
-    // we know we don't have mode than 40 chars
+    // we know we don't have more than LOGICAL_COLS chars
 
-    char buffer[41];
+    char buffer[LOGICAL_COLS + 1];
     int len = strlen(string);
-    int offset = (pos._x < 0) ? -pos._x / 8 : 0;
-    len -= offset;
-    int available = 40 - ((pos._x < 0) ? 0 : pos._x);
+    // Reject positions that are completely out of the text buffer
+    if (pos._x >= LOGICAL_COLS || pos._y >= LOGICAL_ROWS || pos._y < 0) {
+        return;
+    }
+
+    int offset = 0;
+    if (pos._x < 0) {
+        // negative x is not supported for screen buffer; treat as fully out
+        return;
+    }
+
+    // clamp length to available columns
+    int available = LOGICAL_COLS - pos._x;
     len = MIN(len, available);
     memcpy(buffer, string + offset, len);
     buffer[len] = 0;
-
-    NAssert((pos._x < 40) && (pos._y < 30));
-    int index = pos._x + 40 * pos._y;
+    int index = pos._x + LOGICAL_COLS * pos._y;
+    if (index < 0 || index >= LOGICAL_SIZE) return;
     memcpy(_charScreen + index, buffer, len);
     unsigned char prop = colorIndex_ + (props.invert_ ? PROP_INVERT : 0);
     memset(_charScreenProp + index, prop, len);
 };
 
 void AppWindow::Clear(bool all) {
-    memset(_charScreen, ' ', 1200);
-    memset(_charScreenProp, 0, 1200);
+    memset(_charScreen, ' ', LOGICAL_SIZE);
+    memset(_charScreenProp, 0, LOGICAL_SIZE);
     if (all) {
-        memset(_preScreen, ' ', 1200);
-        memset(_preScreenProp, 0, 1200);
+        memset(_preScreen, ' ', LOGICAL_SIZE);
+        memset(_preScreenProp, 0, LOGICAL_SIZE);
     };
 };
 
@@ -185,15 +194,15 @@ void AppWindow::ClearRect(GUIRect &r) {
     int w = r.Width();
     int h = r.Height();
 
-    unsigned char *st = _charScreen + x + (40 * y);
-    unsigned char *pr = _charScreenProp + x + (40 * y);
+    unsigned char *st = _charScreen + x + (LOGICAL_COLS * y);
+    unsigned char *pr = _charScreenProp + x + (LOGICAL_COLS * y);
     for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++) {
             *st++ = ' ';
             *pr++ = 0;
         }
-        st += (40 - w);
-        pr += (40 - w);
+        st += (LOGICAL_COLS - w);
+        pr += (LOGICAL_COLS - w);
     }
 };
 
@@ -235,8 +244,8 @@ void AppWindow::Flush() {
     unsigned char *previous = _preScreen;
     unsigned char *currentProp = _charScreenProp;
     unsigned char *previousProp = _preScreenProp;
-    for (int y = 0; y < 30; y++) {
-        for (int x = 0; x < 40; x++) {
+    for (int y = 0; y < LOGICAL_ROWS; y++) {
+        for (int x = 0; x < LOGICAL_COLS; x++) {
 #ifndef _LGPT_NO_SCREEN_CACHE_
             if ((*current != *previous) || (*currentProp != *previousProp)) {
 #endif
@@ -309,8 +318,8 @@ void AppWindow::Flush() {
     long flushEnd = System::GetInstance()->GetClock();
     GUIWindow::Flush();
     Unlock();
-    memcpy(_preScreen, _charScreen, 1200);
-    memcpy(_preScreenProp, _charScreenProp, 1200);
+    memcpy(_preScreen, _charScreen, LOGICAL_SIZE);
+    memcpy(_preScreenProp, _charScreenProp, LOGICAL_SIZE);
 };
 
 void AppWindow::LoadProject(const Path &p) {
@@ -628,7 +637,7 @@ void AppWindow::Print(char *line) {
     Clear();
     strcpy(_statusLine, line);
     // unwrapped for gcc
-    int position = 40;
+    int position = LOGICAL_COLS;
     position -= strlen(_statusLine);
     position /= 2;
     GUIPoint pos(position, 12);
@@ -640,7 +649,7 @@ void AppWindow::Print(char *line) {
     sprintf(buildString, "Piggy build %s.%s.%s", PROJECT_NUMBER,
             PROJECT_RELEASE, BUILD_COUNT);
     pos._y = 28;
-    pos._x = (40 - strlen(buildString)) / 2;
+    pos._x = (LOGICAL_COLS - strlen(buildString)) / 2;
     DrawString(buildString, pos, props);
     Flush();
 };

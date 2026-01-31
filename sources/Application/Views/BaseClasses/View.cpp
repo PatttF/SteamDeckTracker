@@ -42,9 +42,10 @@ View::View(GUIWindow &w,ViewData *viewData):
 } ;
 
 GUIPoint View::GetAnchor() {
-	int width=40 ;
-	int height=30 ;
-	return GUIPoint((width-SONG_CHANNEL_COUNT*3)/2+2,(height-View::songRowCount_)/2) ;
+	int width = LOGICAL_COLS;
+	int height = LOGICAL_ROWS;
+	return GUIPoint((width - SONG_CHANNEL_COUNT * 3) / 2 + 2,
+					(height - View::songRowCount_) / 2);
 }
 
 GUIPoint View::GetTitlePosition() {
@@ -72,7 +73,15 @@ void View::Unlock() {
 void View::drawMap() {
     if (!miniLayout_) {
         GUIPoint anchor=GetAnchor() ;
-		GUIPoint pos(View::margin_,anchor._y);
+		// Place the small guide/map to the bottom-right of the logical view
+		// rather than at the left margin so it doesn't overlap main content.
+		int mapWidth = 4;
+		int mapHeight = 3;
+		int posX = LOGICAL_COLS - mapWidth - View::margin_;
+		int posY = anchor._y + View::songRowCount_ - (mapHeight + 1);
+		if (posY < 0) posY = 0;
+		GUIPoint pos(posX, posY);
+		GUIPoint mapOrigin = pos;
     	GUITextProperties props ;
 
 		//draw entire map
@@ -91,9 +100,9 @@ void View::drawMap() {
 		sprintf(buffer,"  TT");
         DrawString(pos._x,pos._y,buffer,props) ;
 
-		//draw current screen on map
+		//draw current screen on map (position relative to mapOrigin)
 		SetColor(CD_HILITE2) ;
-		pos._y = anchor._y;
+		pos = mapOrigin;
 		switch(viewType_)
 		{
 		case VT_CHAIN:
@@ -141,10 +150,12 @@ void View::drawNotes() {
 
     if (!miniLayout_) {
 
-		GUIPoint anchor=GetAnchor() ;
-		int initialX = View::margin_+10 ;
-		int initialY = anchor._y+23 ;
-		GUIPoint pos(initialX,initialY) ;
+		GUIPoint anchor = GetAnchor();
+		// Align playing notes with song columns: start at anchor X
+		// and directly below the song rows.
+		int initialX = anchor._x;
+		int initialY = anchor._y + View::songRowCount_;
+		GUIPoint pos(initialX, initialY);
 		GUITextProperties props ;
 
         Player *player=Player::GetInstance() ;

@@ -1,4 +1,5 @@
 #include "SongView.h"
+#include "Application/LogicalSize.h"
 #include "Application/Commands/ApplicationCommandDispatcher.h"
 #include "Application/Mixer/MixerService.h"
 #include "Application/Model/ProjectDatas.h"
@@ -1111,13 +1112,12 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
     // Draw clipping indicator & CPU usage
 
-    if (View::miniLayout_) {
-        pos._y = 0;
-        pos._x = 25;
-    } else {
-        pos = anchor;
-        pos._x += 25;
-    }
+    // place playing-related info at the far right of the logical view area
+    // Clamp to the logical view width so AppWindow::DrawString doesn't drop it.
+    const int VIEW_COLS = LOGICAL_COLS;
+    const int INFO_WIDTH = 8; // reserve columns for clip/CPU/batt/time
+    pos._x = LOGICAL_COLS - INFO_WIDTH - View::margin_;
+    pos._y = anchor._y;
 
     if (player->Clipped()) {
         DrawString(pos._x, pos._y, "clip", props);

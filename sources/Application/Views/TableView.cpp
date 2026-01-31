@@ -967,7 +967,10 @@ void TableView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
 void TableView::printHelpLegend(FourCC command, GUITextProperties props) {
     std::string *cmdStr = getHelpLegend(command);
-    DrawString(10, 0, cmdStr[0].c_str(), props);
-    DrawString(10, 1, cmdStr[1].c_str(), props);
-    DrawString(10, 2, cmdStr[2].c_str(), props);
+    GUIPoint anchor = GetAnchor();
+    int x = anchor._x + 30;
+    int y = anchor._y + View::songRowCount_ - 3;
+    DrawString(x, y, cmdStr[0].c_str(), props);
+    DrawString(x, y + 1, cmdStr[1].c_str(), props);
+    DrawString(x, y + 2, cmdStr[2].c_str(), props);
 }
