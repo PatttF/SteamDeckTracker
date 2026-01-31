@@ -35,10 +35,16 @@ AudioOutDriver::AudioOutDriver(AudioDriver &driver) {
 	driver.AddObserver(*this) ;
 	primarySoundBuffer_=0 ;
     mixBuffer_ = 0;
+    finalLastPeak_ = 0.0f;
+    shuttingDown_ = false;
     SetOwnership(false);
 }
 
 AudioOutDriver::~AudioOutDriver() {
+    shuttingDown_ = true;
+    // ensure audio thread/driver stopped before we remove the observer
+    driver_->Stop();
+    driver_->Close();
     driver_->RemoveObserver(*this);
     delete driver_ ;
 };
@@ -69,23 +75,26 @@ bool AudioOutDriver::Clipped() { return clipped_; };
 
 void AudioOutDriver::Trigger() {
 
+	if (shuttingDown_) return;
 	TimeService *ts=TimeService::GetInstance() ;
 
     prepareMixBuffers();
     hasSound_=AudioMixer::Render(primarySoundBuffer_,sampleCount_) ;
     clipToMix();
-    driver_->AddBuffer(mixBuffer_,sampleCount_) ;
+    if (!shuttingDown_) driver_->AddBuffer(mixBuffer_,sampleCount_) ;
 }
 
 void AudioOutDriver::Update(Observable &o,I_ObservableData *d) 
 {
+    if (shuttingDown_) return;
     SetChanged();
     NotifyObservers(d) ;
 }
 
 void AudioOutDriver::prepareMixBuffers() {
 	sampleCount_=getPlaySampleCount() ; 
-	clipped_=false ;   
+	clipped_=false ;  
+	finalLastPeak_ = 0.0f;  
 } ;
 
 void AudioOutDriver::SetSoftclip(int clip, int gain) {
@@ -150,22 +159,43 @@ void AudioOutDriver::clipToMix() {
         fixed leftSample;
         fixed rightSample;
 
+        float finalPeak = 0.0f;
         for (int i = 0; i < sampleCount_; i++) {
 
-            leftSample = damp * hardClip(softClip(*p++));
-            rightSample = damp * hardClip(softClip(*p++));
+            // Apply softclip first, then master damp, then hard clip to reflect final output clipping.
+            fixed l = softClip(*p++);
+            fixed r = softClip(*p++);
+
+            // Apply master damp in floating point to preserve accuracy, then convert back to fixed.
+            fixed l_damped = fl2fp(fp2fl(l) * damp);
+            fixed r_damped = fl2fp(fp2fl(r) * damp);
+
+            leftSample = hardClip(l_damped);
+            rightSample = hardClip(r_damped);
+
+            // Track final peak after damping/clipping
+            float lf = fabsf(fp2fl(leftSample));
+            float rf = fabsf(fp2fl(rightSample));
+            if (lf > finalPeak) finalPeak = lf;
+            if (rf > finalPeak) finalPeak = rf;
 
             *s1 = short(fp2i(leftSample));
             s1 += offset;
 			*s2 = short(fp2i(rightSample));
 			s2 += offset;
         };
+
+        // Store final post-damp peak for UI and meters
+        if (finalPeak > 1.0f) finalPeak = 1.0f;
+        finalLastPeak_ = finalPeak;
     }
 } ;
 
 int AudioOutDriver::GetPlayedBufferPercentage() {
 	return driver_->GetPlayedBufferPercentage() ;
 } ;
+
+float AudioOutDriver::GetFinalPeak() { return finalLastPeak_; } ;
 
 AudioDriver *AudioOutDriver::GetDriver() { return driver_; };
 

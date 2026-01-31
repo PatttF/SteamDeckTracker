@@ -34,7 +34,9 @@ public:
 	virtual int GetAudioPreBufferCount()=0 ;
 
 	virtual double GetStreamTime() =0 ;
-protected:
+
+   // Returns the last peak value after master damping (0.0 .. 1.0)
+   virtual float GetFinalPeak() = 0;
 
 	// write here the part that gets the float sample size
 	// and computes accumulated integer count

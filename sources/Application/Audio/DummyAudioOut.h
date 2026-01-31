@@ -43,6 +43,8 @@ public:
     virtual void SetSoftclip(int, int);
     virtual void SetMasterVolume(int);
 
+    virtual float GetFinalPeak() { return 0.0f; }
+
   private:
     DummyOutThread *thread_ ;
     fixed *primarySoundBuffer_ ;

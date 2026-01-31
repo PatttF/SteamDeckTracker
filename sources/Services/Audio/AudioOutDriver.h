@@ -38,6 +38,13 @@ class AudioOutDriver: public AudioOut,protected I_Observer {
 
     AudioDriver *GetDriver() ;
 
+    // Last final peak after master damp (0.0 .. 1.0)
+    virtual float GetFinalPeak();
+
+  private:
+    float finalLastPeak_ ;
+    bool shuttingDown_ ;
+
     virtual std::string GetAudioAPI() ;
     virtual std::string GetAudioDevice() ;
     virtual int GetAudioBufferSize() ;

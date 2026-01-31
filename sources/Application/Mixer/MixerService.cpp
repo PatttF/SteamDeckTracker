@@ -140,9 +140,14 @@ void MixerService::Update(Observable &o,I_ObservableData *d)  {
   AudioDriver::Event *event=(AudioDriver::Event *)d;
   if (event->type_ == AudioDriver::Event::ADET_BUFFERNEEDED)
   {  
-    // Push latest master peak into waveform buffer for visualization
-    float peak = master_.GetLastPeak();
-    PushWaveSample(peak);
+    // Push latest final peak (post master damp) into waveform buffer for visualization
+    float finalPeak = 0.0f;
+    if (out_) {
+        finalPeak = out_->GetFinalPeak();
+    }
+    // Fallback: if driver doesn't implement final peak, use pre-master master peak
+    if (finalPeak == 0.0f) finalPeak = master_.GetLastPeak();
+    PushWaveSample(finalPeak);
 
     Lock() ;
     SetChanged() ;
@@ -313,6 +318,8 @@ void MixerService::Execute(FourCC id,float value) {
 }
 
 float MixerService::GetMasterPeak() {
+    // Prefer final post-damp peak from the output driver so meters reflect audible level
+    if (out_) return out_->GetFinalPeak();
     return master_.GetLastPeak();
 }
 
