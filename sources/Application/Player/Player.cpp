@@ -4,6 +4,7 @@
 #include "System/System/System.h"
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/I_Instrument.h"
+#include "Application/Instruments/SampleInstrument.h"
 #include "Application/Utils/char.h"
 #include "System/Console/n_assert.h"
 #include "Application/Player/TablePlayback.h"
@@ -103,6 +104,7 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
   {
 		mixer_->StopChannel(i) ;
 		timeToLive_[i]=0 ;
+		timeToLiveClock_[i]=0 ;
 		timeToStart_[i]=0 ;
 		TablePlayback &tpb=TablePlayback::GetTablePlayback(i) ;
 		tpb.Stop();
@@ -170,6 +172,17 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
 	    int currentPhrasePos = viewData_->phraseCurPos_;
 	    // uses hop for PhrasePos
 	    updateSongPos(playPos, currentChannel, currentChainPos, currentPhrasePos);
+
+	    // If this is an oscillator-mode sample audition, ensure engine/timer TTL is set
+	    I_Instrument *instr = mixer_->GetInstrument(currentChannel);
+	    if (instr && instr->GetType() == IT_SAMPLE) {
+	        SampleInstrument *sinst = (SampleInstrument *)instr;
+	        Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+	        if (lm && lm->GetInt() == SILM_OSC) {
+	            SetChannelTimeToLiveMs(currentChannel, 500);
+	        }
+	    }
+
 	} break;
 		default:
 			NInvalid ;
@@ -191,6 +204,7 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
  }
 
 void Player::Stop() {
+
 
 	mixer_->Lock() ;
 
@@ -534,9 +548,8 @@ void Player::Update(Observable &o,I_ObservableData *d) {
 		// Process commands in current phrase
 	   if (viewData_->playMode_ != PM_AUDITION)
 			ProcessCommands() ;
-		
-	   // Initialise retrigger table
-	   int instrRetrigger[SONG_CHANNEL_COUNT] ;
+
+	   int instrRetrigger[SONG_CHANNEL_COUNT];
 	   memset(instrRetrigger,-1,SONG_CHANNEL_COUNT*sizeof(int)) ;
 
 		// Process any table commands now
@@ -553,14 +566,14 @@ void Player::Update(Observable &o,I_ObservableData *d) {
 			}
 		}
 
-	  // Do we need to kill a voice ?
-	  
+		// Do we need to kill a voice ?
+		
 		if (sync->TableSlice()) {
 			for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 				bool stopped=false ;
 				if (timeToLive_[i]>0) {
 					if (--timeToLive_[i]==0) {
-                		mixer_->StopInstrument(i) ;
+						mixer_->StopInstrument(i) ;
 						stopped=true ;
 					} 
 				}
@@ -577,13 +590,24 @@ void Player::Update(Observable &o,I_ObservableData *d) {
 							mixer_->StartInstrument(i,instr,note,false) ;
 						} ;
 					} ;
-				} ;		
+				} ;
 			}
 		}
 
 		firstPlayCycle_=false ;
 		System *system=System::GetInstance() ;
 		now_=system->GetClock() ;
+
+		// If any channel had a realtime TTL set, stop it now if expired
+		for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+			if (timeToLiveClock_[i] > 0) {
+				if (now_ >= timeToLiveClock_[i]) {
+					mixer_->StopInstrument(i) ;
+					timeToLiveClock_[i] = 0 ;
+					timeToLive_[i] = 0 ;
+				}
+			}
+		}
 
 		// Notify refresh
 
@@ -592,66 +616,50 @@ void Player::Update(Observable &o,I_ObservableData *d) {
 		NotifyObservers(&pe) ;
 
 	}
-} ;
+}
 
-/************************************************************
- ProcessCommands:
-	Check if there's any command to trigger at current playing
-	position for all channels
- ************************************************************/
- 
+
+
+
 void Player::ProcessCommands() {
 
     // loop on all channels
 
-	Groove *gs=Groove::GetInstance() ;
+    Groove *gs = Groove::GetInstance();
 
-	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+    for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 
         if (mixer_->IsChannelPlaying(i)) {
+            int phrase = viewData_->currentPlayPhrase_[i];
+            int pos = viewData_->phrasePlayPos_[i];
+            I_Instrument *instrument = mixer_->GetInstrument(i);
+            if (instrument) {
+                FourCC cc = viewData_->song_->phrase_->cmd1_[phrase*16+pos];
+                ushort param = viewData_->song_->phrase_->param1_[phrase*16+pos];
 
-            // check if there's any phrase playing
+                // if there's any command to trigger, first pass it on the player
+                // then pass it on to the instrument
 
-			uchar phrase=viewData_->currentPlayPhrase_[i] ;
-			if (phrase!=0xFF) {
-				if (gs->TriggerChannel(i)) { // If groove says it is time to play
-					int pos=viewData_->phrasePlayPos_[i] ;
-					FourCC cc=viewData_->song_->phrase_->cmd1_[phrase*16+pos] ;
-					ushort param=viewData_->song_->phrase_->param1_[phrase*16+pos] ;
-					
-					// if there's any command to trigger, first pass it on the player
-					// then pass it on to the instrument
-					
-					if (cc!=I_CMD_NONE) {
-						if (!ProcessChannelCommand(i,cc,param)) {
-							I_Instrument *instrument=mixer_->GetInstrument(i) ;
-							if (instrument) {
-								instrument->ProcessCommand(i,cc,param) ;
-							}
-						} ;
-					} ;
+                if (cc!=I_CMD_NONE) {
+                    if (!ProcessChannelCommand(i,cc,param)) {
+                        instrument->ProcessCommand(i,cc,param);
+                    }
+                }
 
-					// Now process second command row
+                // Now process second command row
 
-					cc=viewData_->song_->phrase_->cmd2_[phrase*16+pos] ;
-					param=viewData_->song_->phrase_->param2_[phrase*16+pos] ;
+                cc = viewData_->song_->phrase_->cmd2_[phrase*16+pos];
+                param = viewData_->song_->phrase_->param2_[phrase*16+pos];
 
-					// if there's any command to trigger, first pass it on the player
-					// then pass it on to the instrument
-
-					if (cc!=I_CMD_NONE) {
-						if (!ProcessChannelCommand(i,cc,param)) {
-							I_Instrument *instrument=mixer_->GetInstrument(i) ;
-							if (instrument) {
-								instrument->ProcessCommand(i,cc,param) ;
-							}
-						} ;
-					} ;
-				}
-			}
-		}
-	} ;
-} ;
+                if (cc!=I_CMD_NONE) {
+                    if (!ProcessChannelCommand(i,cc,param)) {
+                        instrument->ProcessCommand(i,cc,param);
+                    }
+                }
+            }
+        }
+    }
+}
 
 bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 
@@ -718,6 +726,38 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 			break ;
 	} ;
 	return false ;
+} ;
+
+// One-shot timer callback to stop audition (used when we need a realtime guaranteed stop)
+static void Player_StopAuditionCallback() {
+    Player *p = Player::GetInstance();
+    if (p && p->GetPlayMode() == PM_AUDITION) {
+        p->Stop();
+    }
+}
+
+void Player::SetChannelTimeToLiveMs(int channel, unsigned int ms) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
+    SyncMaster *sync = SyncMaster::GetInstance();
+    float tickMs = sync->GetTickTime();
+    int tableRatio = sync->GetTableRatio();
+    float tableSliceMs = tickMs * float(tableRatio);
+    if (tableSliceMs <= 0.0f) tableSliceMs = 1.0f; // guard
+    int ticks = int((ms + tableSliceMs - 1.0f) / tableSliceMs);
+    if (ticks < 1) ticks = 1;
+    timeToLive_[channel] = ticks;
+
+    // Also set a realtime expiry clock so short TTLs (like 500ms) stop reliably
+    System *system = System::GetInstance();
+    unsigned long now = system->GetClock();
+    timeToLiveClock_[channel] = now + ms;
+
+
+
+    // Also register a one-shot timer to force-stop audition if engine/UI updates are delayed
+    // The callback will only stop the player if we're still in audition mode.
+    extern void Player_StopAuditionCallback();
+    TimerService::GetInstance()->TriggerCallback(ms, Player_StopAuditionCallback);
 } ;
 
 /********************************************************

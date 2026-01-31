@@ -6,6 +6,10 @@
 #include "Application/Utils/char.h"
 #include "System/Console/Trace.h"
 #include "UIController.h"
+#include "Application/Player/PlayerMixer.h"
+#include "Application/Instruments/SampleInstrument.h"
+#include "System/System/System.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -34,6 +38,11 @@ PhraseView::PhraseView(GUIWindow &w, ViewData *viewData)
         clipboard_.note_[i] = 0xFF;
         clipboard_.instr_[i] = 0;
     };
+
+    // audition timeout state
+    auditionStartMs_ = 0;
+    auditionTimeoutMs_ = 0;
+
     View::EnableNotification();
 }
 
@@ -111,6 +120,9 @@ void PhraseView::stopAudition() {
     Player *player = Player::GetInstance();
     if (viewData_->playMode_ == PM_AUDITION)
         player->Stop();
+    // clear any audition timeout state when user moves
+    auditionStartMs_ = 0;
+    auditionTimeoutMs_ = 0;
 }
 
 void PhraseView::updateCursorValue(ViewUpdateDirection direction, int xOffset,
@@ -228,20 +240,9 @@ void PhraseView::updateCursorValue(ViewUpdateDirection direction, int xOffset,
             break;
         }
     }
-    Player *player = Player::GetInstance();
-    // Phrase FX params are currently not applied to preview
-    if (col_ == 0 || col_ == 1) { // || col_ == 3 || col_ == 5) {
-        if (player->IsRunning()) {
-            if ((viewData_->playMode_ == PM_AUDITION)) {
-                player->Stop();
-                player->OnStartButton(PM_AUDITION, viewData_->songX_, false,
-                                      viewData_->chainRow_);
-            }
-        } else {
-            player->OnStartButton(PM_AUDITION, viewData_->songX_, false,
-                                  viewData_->chainRow_);
-        }
-    }
+    // Trigger audition for the modified cell (handles note/instr changes including left/right)
+    TriggerAudition(row_ + yOffset, col_ + xOffset);
+
     isDirty_ = true;
 }
 
@@ -261,6 +262,8 @@ void PhraseView::pasteLast() {
             c = phrase_->instr_ + (16 * viewData_->currentPhrase_ + row_);
             *c = lastInstr_;
             isDirty_ = true;
+            // After inserting, audition the pasted note
+            TriggerAudition(row_, col_);
         } else {
             lastNote_ = *c;
             c = phrase_->instr_ + (16 * viewData_->currentPhrase_ + row_);
@@ -317,20 +320,8 @@ void PhraseView::pasteLast() {
         break;
     }
 
-    // If we inserted a note or instrument, audition it so the user hears it immediately
-    Player *player = Player::GetInstance();
-    if ((col_ == 0) || (col_ == 1)) {
-        if (player->IsRunning()) {
-            if ((viewData_->playMode_ == PM_AUDITION)) {
-                player->Stop();
-                player->OnStartButton(PM_AUDITION, viewData_->songX_, false,
-                                      viewData_->chainRow_);
-            }
-        } else {
-            player->OnStartButton(PM_AUDITION, viewData_->songX_, false,
-                                  viewData_->chainRow_);
-        }
-    }
+    // Trigger audition for the newly pasted/inserted cell
+    TriggerAudition(row_, col_);
 }
 
 void PhraseView::cutPosition() {
@@ -480,6 +471,64 @@ void PhraseView::fillClipboardData() {
     };
     updateCursor(0, 0);
 };
+
+// Trigger an audition for a given cell (row, col). Handles starting/restarting
+// the player and setting UI timeout / engine TTL when the instrument loopmode
+// is SILM_OSC (oscillator preview).
+void PhraseView::TriggerAudition(int targetRow, int targetCol) {
+    if ((targetCol != 0) && (targetCol != 1)) return;
+
+    Player *player = Player::GetInstance();
+    // Ensure player is started in audition mode (restart if needed)
+    if (player->IsRunning()) {
+        if (viewData_->playMode_ == PM_AUDITION) {
+            player->Stop();
+            player->OnStartButton(PM_AUDITION, viewData_->songX_, false, viewData_->chainRow_);
+        }
+    } else {
+        player->OnStartButton(PM_AUDITION, viewData_->songX_, false, viewData_->chainRow_);
+    }
+
+    // Lookup instrument assigned to this phrase row
+    InstrumentBank *ib = viewData_->project_->GetInstrumentBank();
+    if (!ib) {
+        auditionStartMs_ = 0;
+        auditionTimeoutMs_ = 0;
+        return;
+    }
+
+    int currentPhrase = viewData_->currentPhrase_;
+    int instIndex = phrase_->instr_[16 * currentPhrase + targetRow];
+    if (instIndex == 0xFF) {
+        auditionStartMs_ = 0;
+        auditionTimeoutMs_ = 0;
+        return;
+    }
+
+    I_Instrument *instr = ib->GetInstrument(instIndex);
+    if (!instr) {
+        auditionStartMs_ = 0;
+        auditionTimeoutMs_ = 0;
+        return;
+    }
+
+    if (instr->GetType() == IT_SAMPLE) {
+        SampleInstrument *sinst = (SampleInstrument *)instr;
+        Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+        int lmval = (lm) ? lm->GetInt() : -1;
+        if (lm && lm->GetInt() == SILM_OSC) {
+            auditionTimeoutMs_ = 500;
+            auditionStartMs_ = System::GetInstance()->GetClock();
+            Player::GetInstance()->SetChannelTimeToLiveMs(viewData_->songX_, 500);
+        } else {
+            auditionStartMs_ = 0;
+            auditionTimeoutMs_ = 0;
+        }
+    } else {
+        auditionStartMs_ = 0;
+        auditionTimeoutMs_ = 0;
+    }
+}
 
 void PhraseView::updateSelectionValue(ViewUpdateDirection direction) { // HERE
 
@@ -1401,6 +1450,20 @@ void PhraseView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
     DrawString(pos._x, pos._y, " ", props);
 
     Player *player = Player::GetInstance();
+
+    // If we started a short audition (oscillator preview), stop it after timeout.
+    // Only check timeout on update events (PET_UPDATE) to avoid recursion when handling PET_STOP.
+    if (eventType == PET_UPDATE && auditionStartMs_ != 0 && auditionTimeoutMs_ > 0) {
+        unsigned int now = System::GetInstance()->GetClock();
+        if (now - auditionStartMs_ >= auditionTimeoutMs_) {
+            // Only stop audition playback mode
+            if (viewData_->playMode_ == PM_AUDITION) {
+                player->Stop();
+            }
+            auditionStartMs_ = 0;
+            auditionTimeoutMs_ = 0;
+        }
+    }
 
     if (eventType != PET_STOP) {
 

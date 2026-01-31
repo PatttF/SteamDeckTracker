@@ -105,22 +105,21 @@ public:
 	int GetAudioRequestedBufferSize() ;
 	int GetAudioPreBufferCount() ;
 
-protected:
-	void updateSongPos(int position,int channel,int chainPos=0,int hop=-1) ;
-	void updateChainPos(int position,int channel,int hop=0) ;
+	// set a time-to-live for a channel in milliseconds; will stop instrument after that time
+	void SetChannelTimeToLiveMs(int channel, unsigned int ms) ;
+
+	// Internal helpers (declared here so definitions in Player.cpp compile cleanly)
+	bool isPlayable(int row,int col,int chainPos) ;
+	bool findPlayable(uchar *row,int col,uchar  chainPos) ;
+	void triggerLiveChains() ;
+	void updateSongPos(int pos,int channel,int chainPos,int hop=-1) ;
+	void updateChainPos(int pos,int channel,int hop=-1) ;
 	void updatePhrasePos(int pos,int channel) ;
 	void playCursorPosition(int channel) ;
-    int  getChannelHop(int channel,int pos) ;
+	int getChannelHop(int channel,int pos) ;
 	void moveToNextStep() ;
 	void moveToNextPhrase(int channel,int hop=-1) ;
-	void moveToNextChain(int channel,int hop) ;
-
-    void triggerLiveChains() ;
-    
-    bool isPlayable(int row,int col,int chainPos=0) ;
-    bool findPlayable(uchar *row,int col,uchar chainPos=0) ;
-
-private:
+	void moveToNextChain(int channel,int hop=-1) ;
 
 	PlayerMixer *mixer_ ;
 	ViewData *viewData_ ;
@@ -128,6 +127,7 @@ private:
 
 	SequencerMode sequencerMode_ ;
 	PlayMode mode_ ;
+	PlayMode GetPlayMode() { return mode_; }
 	bool isRunning_ ;
 
 	unsigned long startClock_ ;    // .Used to time display live queued chains
@@ -150,6 +150,8 @@ private:
 	unsigned char liveQueueChainPosition_[SONG_CHANNEL_COUNT] ;
 	unsigned int timeToLive_[SONG_CHANNEL_COUNT] ;
 	unsigned int timeToStart_[SONG_CHANNEL_COUNT] ;
+	// realtime expiry clock for time-to-live in milliseconds (0 = none)
+	unsigned long timeToLiveClock_[SONG_CHANNEL_COUNT] ;
 
 	bool retrigAllImmediate_ ;
 	unsigned char retrigPos_ ;

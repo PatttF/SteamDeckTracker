@@ -77,6 +77,11 @@ class PhraseView : public View {
     int saveCol_;
     int saveRow_;
 
+    unsigned int auditionStartMs_;
+    unsigned int auditionTimeoutMs_; // milliseconds
+
+    void TriggerAudition(int targetRow, int targetCol);
+
     static short offsets_[2][4];
 };
 

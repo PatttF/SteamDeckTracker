@@ -431,8 +431,9 @@ void SampleInstrument::Stop(int channel) {
 
 	 renderParams *rp=renderParams_+channel ;
 	 running_=false ;
+	 // Mark this voice as finished so Render() exits immediately (important for looped modes like SILM_OSC)
+	 rp->finished_ = true ;
 }
-
 void SampleInstrument::doTickUpdate(int channel) {
 
   // Process updaters
