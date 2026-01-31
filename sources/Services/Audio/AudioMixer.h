@@ -14,11 +14,14 @@ public:
 	void SetFileRenderer(const char *path) ;
 	void EnableRendering(bool enable) ;
 	void SetVolume(fixed volume) ;
+	// Live peak meter (0.0 .. 1.0)
+	float GetLastPeak() const { return lastPeak_; }
 private:
 	bool enableRendering_ ;
 	std::string renderPath_ ;
 	WavFileWriter *writer_ ;
 	fixed volume_ ;
 	std::string name_ ; 
+	float lastPeak_ ;
 } ;
 #endif

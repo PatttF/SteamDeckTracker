@@ -38,9 +38,9 @@ public:
 	bool Start() ;
 	void Stop() ;
 
-	MixBus *GetMixBus(int i) ;	
+	MixBus *GetMixBus(int i) ;
 
-	virtual void Update(Observable &o,I_ObservableData *d) ;	
+	virtual void Update(Observable &o,I_ObservableData *d) ;
 
 	void OnPlayerStart() ;
 	void OnPlayerStop() ;
@@ -52,13 +52,21 @@ public:
     void SetRenderMode(int);
     bool IsRendering();
     int GetPlayedBufferPercentage() ;
-	
+	float GetMasterPeak();
 	virtual void Execute(FourCC id,float value) ;
 
 	AudioOut *GetAudioOut() ;
 
 	void Lock() ;
 	void Unlock() ;
+
+	// Mixer control helpers
+	void SetChannelVolume(int channel, int percent); // 0..100
+	int GetChannelVolume(int channel);
+	void SetChannelPan(int channel, int pan); // -50..50
+	int GetChannelPan(int channel);
+	void ToggleChannelMute(int channel);
+	void ToggleChannelSolo(int channel);
 
 protected:
 	void toggleRendering(bool enable) ;
@@ -70,5 +78,6 @@ private:
   MixerServiceRenderMode mode_;
   SDL_mutex *sync_;
   bool isRendering_;
+  int pregain_;
 } ;
 #endif

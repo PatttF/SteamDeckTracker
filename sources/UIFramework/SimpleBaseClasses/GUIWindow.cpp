@@ -2,6 +2,7 @@
 #include "GUIWindow.h"
 #include "UIFramework/Interfaces/I_GUIWindowImp.h"
 #include "UIFramework/Interfaces/I_GUIWindowFactory.h"
+#include "System/Console/Trace.h"
 
 // Constructor: We wrap the window around an implementation that
 // will be used to provide system functionalities
@@ -31,6 +32,7 @@ void GUIWindow::ClearRect(GUIRect &r) {
 
 void GUIWindow::DrawString(const char *string,GUIPoint &pos,GUITextProperties &props,bool overlay)
 {
+	Trace::Log("GUIWindow","DrawString -> x=%d y=%d str='%s'", pos._x, pos._y, string);
 	_imp->DrawString(string,pos,props,overlay) ;
 }
 

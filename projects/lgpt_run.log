@@ -1,0 +1,126 @@
+[CONFIG] Trying config path=/home/pat/Documents/SDTracker/config.xml
+[System] Installing SDL audio
+[AUDIO] Audio object initialised with
+[AUDIO] Api:
+[AUDIO] Device:
+[AUDIO] Buffer size:1024
+[AUDIO] Pre Buffer Count:8
+[System] Installing RT MIDI
+[CONFIG] Got value for DUMPEVENT=YES
+[EVENT] joystick[0]=9864e860
+[EVENT] Number of axis:1
+[EVENT] Number of buttons:19
+[EVENT] Number of hats:1
+[DISPLAY] Using driver x11. Screen (1920,1080) Bpp:24
+[CONFIG] Got value for SCREENMULT=1
+[DISPLAY] Creating SDL Window (550,240)
+[CONFIG] Got value for FONTTYPE=0
+[DISPLAY] Preparing fonts
+[DISPLAY] Preparing font cache
+[CONFIG] Got value for BACKGROUND=000000
+[CONFIG] Got value for FOREGROUND=F5EBFF
+[DISPLAY] Preparing full font cache
+[RTMidiService] 1 input port(s)
+[CONFIG] Got value for DUMPEVENT=YES
+[RTMidiService]  Midi Through:0
+[RTMidiService] 1 output port(s)
+[RTMidiService]  Midi Through:0
+[CONFIG] Got value for BACKGROUND=000000
+[CONFIG] Got value for FOREGROUND=F5EBFF
+[CONFIG] Got value for BORDER=FF00DD
+[CONFIG] Got value for SONGVIEW_FE=A55B8F
+[CONFIG] Got value for SONGVIEW_00=853B6F
+[CONFIG] Got value for HICOLOR1=B750D1
+[CONFIG] Got value for HICOLOR2=DB33DB
+[CONFIG] Got value for CURSORCOLOR=FF00DD
+[CONFIG] Got value for PLAYCOLOR=FF00DD
+[CONFIG] Got value for MUTECOLOR=F5EBFF
+[CONFIG] Got value for ROWCOLOR1=BA28F9
+[CONFIG] Got value for ROWCOLOR2=FF00FF
+[CONFIG] Got value for ALTROWNUMBER=4
+[AppWindow] Auto-loading last project: /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump
+[MAPPING] Attached /event/lshoulder to key:0:q
+[MAPPING] Attached /event/rshoulder to key:0:w
+[MAPPING] Attached /event/up to key:0:up
+[MAPPING] Attached /event/down to key:0:down
+[MAPPING] Attached /event/left to key:0:left
+[MAPPING] Attached /event/right to key:0:right
+[MAPPING] Attached /event/b to key:0:a
+[MAPPING] Attached /event/a to key:0:s
+[MAPPING] Attached /event/start to key:0:space
+[MAPPING] Attached /event/rshoulder to but:0:8
+[MAPPING] Attached /event/lshoulder to but:0:6
+[MAPPING] Attached /event/up to but:0:0
+[MAPPING] Attached /event/down to but:0:2
+[MAPPING] Attached /event/left to but:0:3
+[MAPPING] Attached /event/right to but:0:1
+[MAPPING] Attached /event/a to but:0:0
+[MAPPING] Attached /event/b to but:0:1
+[MAPPING] Attached /event/start to but:0:4
+[-D-] Mapping config
+[LoadProject] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump
+
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/AGOGOHI.WAV
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/AGOGOHI.WAV
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Casio-VZ-10M-Soft-Glass-C4.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Casio-VZ-10M-Soft-Glass-C4.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Rhodes_48-converted.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Rhodes_48-converted.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202SUS1.WAV
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202SUS1.WAV
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/KROCK-AMG160DBDABI.10-049s.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/KROCK-AMG160DBDABI.10-049s.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202HIT2.WAV
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202HIT2.WAV
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/oldskool_sliced_clipped.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/oldskool_sliced_clipped.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/wa_808tape_clap_02_clean.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/wa_808tape_clap_02_clean.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202BM2.WAV
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202BM2.WAV
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/accordion.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/accordion.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/MONOWAVE.WAV
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/MONOWAVE.WAV
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Alesis-S4-Plus-Piccolo-C5.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Alesis-S4-Plus-Piccolo-C5.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/LESLIE1.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/LESLIE1.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/BOWDBASS.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/BOWDBASS.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202HIT5.WAV
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/202HIT5.WAV
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/CZ-1_STRINGS1-MIN-converted.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/CZ-1_STRINGS1-MIN-converted.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Alesis-Fusion-Clean-Guitar-C3.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Alesis-Fusion-Clean-Guitar-C3.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/wa_808tape_closedhat_08_clean.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/wa_808tape_closedhat_08_clean.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/jazzy_steppin_loop_170.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/jazzy_steppin_loop_170.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Chorus Piano 60-converted.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/Chorus Piano 60-converted.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/nineh-tri2saw.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/nineh-tri2saw.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/TOY PIANO-converted.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/TOY PIANO-converted.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/pico1trkStab2.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/pico1trkStab2.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/pluckchord.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/pluckchord.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/CZ-1_STRINGS1-MAJ-converted.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/CZ-1_STRINGS1-MAJ-converted.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/radio_queue.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/radio_queue.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/PIANOC4-converted.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/PIANOC4-converted.wav
+[Load] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/wa_808tape_crash_03_sat.wav
+[loadSample] /home/pat/Documents/SDTracker/projects/lgpt_Bootloop-FastJump/samples/wa_808tape_crash_03_sat.wav
+[AUDIO] pulseaudio successfully opened with 1024 samples
+[MixerService] output initialized
+[EVENT] key(W:26):1
+[EVENT] key(Down:81):1
+[SongView] Requesting switch to MIXER (songY=0, offset=0)
+[EVENT] key(Down:81):0
+[EVENT] key(W:26):0
+[EVENT] SDEM:PostQuitMessage()

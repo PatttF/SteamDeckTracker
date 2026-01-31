@@ -17,7 +17,11 @@ View::View(GUIWindow &w,ViewData *viewData):
 	w_(w),
 	modalView_(0),
 	modalViewCallback_(0),
-	hasFocus_(false)
+	hasFocus_(false),
+	notificationTime_(0),
+	notiDistY_(2),
+	isDirty_(false),
+	viewType_(VT_SONG)
 {
   if (!initPrivate_) 
   {
@@ -94,21 +98,44 @@ void View::drawMap() {
 		GUIPoint mapOrigin = pos;
     	GUITextProperties props ;
 
-		//draw entire map
+		//draw entire map (draw background without inversion so blank spaces are clear)
 		SetColor(CD_HILITE1) ;
-    	char buffer[5] ;
-		props.invert_=true ;
+		char buffer[5] ;
+		props.invert_=false ;
 		//row1
 		sprintf(buffer,"P G ");
-        DrawString(pos._x,pos._y,buffer,props) ;
+		DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row2
 		sprintf(buffer,"SCPI");
-        DrawString(pos._x,pos._y,buffer,props) ;
+		DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row3
 		sprintf(buffer,"  TT");
-        DrawString(pos._x,pos._y,buffer,props) ;
+		DrawString(pos._x,pos._y,buffer,props) ;
+
+		// Draw static view markers (non-highlighted) so guide shows available pages
+		props.invert_ = false;
+		SetColor(CD_NORMAL);
+		GUIPoint staticOrigin = mapOrigin;
+		// Project at origin
+		DrawString(staticOrigin._x, staticOrigin._y, "P", props);
+		// Chain at +1,+1
+		DrawString(staticOrigin._x + 1, staticOrigin._y + 1, "C", props);
+		// Phrase at +2,+1
+		DrawString(staticOrigin._x + 2, staticOrigin._y + 1, "P", props);
+		// Instrument at +3,+1
+		DrawString(staticOrigin._x + 3, staticOrigin._y + 1, "I", props);
+		// Table under phrase at +2,+2
+		DrawString(staticOrigin._x + 2, staticOrigin._y + 2, "T", props);
+		// Table2 under instrument at +3,+2
+		DrawString(staticOrigin._x + 3, staticOrigin._y + 2, "T", props);
+		// Groove at +2,0
+		DrawString(staticOrigin._x + 2, staticOrigin._y, "G", props);
+		// Song at +0,+1 (center-left)
+		DrawString(staticOrigin._x, staticOrigin._y + 1, "S", props);
+		// Mixer under song (same X, Y+2)
+		DrawString(staticOrigin._x, staticOrigin._y + 2, "M", props);
 
 		//draw current screen on map (position relative to mapOrigin)
 		SetColor(CD_HILITE2) ;
@@ -147,6 +174,11 @@ void View::drawMap() {
 			pos._x+=2;
 	        DrawString(pos._x,pos._y,"G",props) ;
 			break;
+		case VT_MIXER:
+			// Place mixer marker under the Song marker (same X, lower Y)
+			pos._y+=2;
+			DrawString(pos._x,pos._y,"M",props) ;
+			break;
 		default: //VT_SONG
 			pos._y+=1;
 	        DrawString(pos._x,pos._y,"S",props) ;
@@ -168,11 +200,11 @@ void View::drawNotes() {
 		GUIPoint pos(initialX, initialY);
 		GUITextProperties props ;
 
-        Player *player=Player::GetInstance() ;
-		
+		Player *player=Player::GetInstance() ;
+
 		//column banger refactor
 		props.invert_= true;
-        for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+		for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 			if (i==viewData_->songX_) {
 				SetColor(CD_HILITE2) ;
 			} else {

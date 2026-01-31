@@ -1,11 +1,13 @@
 #include "AudioMixer.h"
 #include "System/System/System.h"
+#include <math.h>
 
 AudioMixer::AudioMixer(const char *name):
 	T_SimpleList<AudioModule>(false),
 	enableRendering_(0),
 	writer_(0),
-	name_(name)
+	name_(name),
+	lastPeak_(0.0f)
 {
 	volume_=(i2fp(1)) ;
 } ;
@@ -70,7 +72,20 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
                  *c++ = v;
              }
          }
+
+         // Update lastPeak_ (0.0 .. 1.0) based on absolute sample values
+         float peak = 0.0f;
+         c = buffer;
+         for (int i = 0; i < samplecount * 2; i++) {
+             float f = fabsf(fp2fl(*c++));
+             if (f > peak) peak = f;
+         }
+         if (peak > 1.0f) peak = 1.0f;
+         lastPeak_ = peak;
+     } else {
+         lastPeak_ = 0.0f;
      }
+
     if (enableRendering_&&writer_) {
 		if (!gotData) {
 			memset(buffer,0,samplecount*2*sizeof(fixed)) ;

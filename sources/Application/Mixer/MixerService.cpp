@@ -6,9 +6,10 @@
 #include "Services/Audio/Audio.h"
 #include "Services/Audio/AudioDriver.h"
 #include "Services/Midi/MidiService.h"
+#include "Application/Player/PlayerMixer.h"
 #include "System/Console/Trace.h"
 
-MixerService::MixerService() : out_(0), sync_(0), isRendering_(false) {
+MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100) {
     mode_ = MSRM_PLAYBACK;
 };
 
@@ -33,6 +34,15 @@ bool MixerService::Init() {
 
 	for (int i=0;i<MAX_BUS_COUNT;i++) {
 		master_.Insert(bus_[i]);
+	}
+	// Initialize bus volumes from Mixer model
+	Mixer *mixer = Mixer::GetInstance();
+	if (mixer) {
+		for (int i = 0; i < SONG_CHANNEL_COUNT && i < MAX_BUS_COUNT; i++) {
+			int vol = mixer->GetChannelVolume(i);
+			fixed fvol = fp_mul(i2fp(vol), fl2fp(0.01f));
+			bus_[i].SetVolume(fvol);
+		}
 	}
 
 	bool result = false;
@@ -145,11 +155,20 @@ bool MixerService::Clipped() {
 void MixerService::SetPregain(int vol) {
     Mixer *mixer = Mixer::GetInstance();
 
-    fixed masterVolume = fp_mul(i2fp(vol), fl2fp(0.01f));
+    if (vol < 0) vol = 0;
+    if (vol > 100) vol = 100;
+    if (pregain_ == vol) return; // avoid noisy repeated logs/updates
+    pregain_ = vol;
+
+    fixed pregainFactor = fp_mul(i2fp(vol), fl2fp(0.01f));
 
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
-        bus_[i].SetVolume(masterVolume);
-  }
+        int chPercent = 100;
+        if (mixer) chPercent = mixer->GetChannelVolume(i);
+        fixed chFactor = fp_mul(i2fp(chPercent), fl2fp(0.01f));
+        fixed combined = fp_mul(chFactor, pregainFactor);
+        bus_[i].SetVolume(combined);
+    }
 };
 
 void MixerService::SetSoftclip(int clip, int gain) {
@@ -160,6 +179,83 @@ void MixerService::SetMasterVolume(int attn) { out_->SetMasterVolume(attn); }
 
 int MixerService::GetPlayedBufferPercentage() {
 	return out_->GetPlayedBufferPercentage() ;
+}
+
+// Set per-channel volume (0..100). This maps channel -> bus then sets bus volume.
+void MixerService::SetChannelVolume(int channel, int percent) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    Mixer *m = Mixer::GetInstance();
+    int prev = m->GetChannelVolume(channel);
+    m->SetChannelVolumeField(channel, percent);
+
+    int bus = m->GetBus(channel);
+    if (bus >= 0 && bus < MAX_BUS_COUNT) {
+        // Apply pregain_ so volume changes take effect immediately and are combined with pregain.
+        fixed chFactor = fp_mul(i2fp(percent), fl2fp(0.01f));
+        fixed pregainFactor = fp_mul(i2fp(pregain_), fl2fp(0.01f));
+        fixed combined = fp_mul(chFactor, pregainFactor);
+        bus_[bus].SetVolume(combined);
+    } else {
+    }
+}
+
+int MixerService::GetChannelVolume(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return 0;
+    Mixer *m = Mixer::GetInstance();
+    return m->GetChannelVolume(channel);
+}
+
+void MixerService::SetChannelPan(int channel, int pan) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
+    if (pan < -50) pan = -50;
+    if (pan > 50) pan = 50;
+    Mixer *m = Mixer::GetInstance();
+    m->SetChannelPanField(channel, pan);
+    // TODO: pan is stored in model but not yet applied to audio path. Need to update PlayerChannel/MixBus or AudioMixer render path to apply per-channel panning.
+    Trace::Log("MixerService", "NOTE: channel panning storage updated; audio panning not yet applied");
+}
+
+int MixerService::GetChannelPan(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return 0;
+    Mixer *m = Mixer::GetInstance();
+    return m->GetChannelPan(channel);
+}
+
+void MixerService::ToggleChannelMute(int channel) {
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    if (!pm) return;
+    bool cur = pm->IsChannelMuted(channel);
+    pm->SetChannelMute(channel, !cur);
+}
+
+void MixerService::ToggleChannelSolo(int channel) {
+    Mixer *m = Mixer::GetInstance();
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    if (!m || !pm) return;
+
+    bool newSolo = !m->IsChannelSolo(channel);
+    if (newSolo) {
+        // store previous mutes and mute others
+        for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+            bool isMuted = pm->IsChannelMuted(i);
+            m->SetChannelPrevMute(i, isMuted);
+            if (i == channel) {
+                pm->SetChannelMute(i, false);
+            } else {
+                pm->SetChannelMute(i, true);
+            }
+        }
+        m->SetChannelSoloField(channel, true);
+    } else {
+        // restore prior mutes
+        for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+            bool prev = m->GetChannelPrevMute(i);
+            pm->SetChannelMute(i, prev);
+            m->SetChannelSoloField(i, false);
+        }
+    }
 }
 
 void MixerService::toggleRendering(bool enable) {
@@ -203,6 +299,10 @@ void MixerService::Execute(FourCC id,float value) {
         } ;
         audio->SetMixerVolume(volume) ;
      } ;
+}
+
+float MixerService::GetMasterPeak() {
+    return master_.GetLastPeak();
 }
 
 AudioOut *MixerService::GetAudioOut() {

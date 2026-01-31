@@ -10,8 +10,12 @@ Mixer::~Mixer() {
 
 void Mixer::Clear() {
 
-	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
-		channelBus_[i]=i ;
+	for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+		channelBus_[i] = i;
+		channelVolume_[i] = 100;
+		channelPan_[i] = 0;
+		channelSolo_[i] = false;
+		channelPrevMute_[i] = false;
 	}
 } ;
 

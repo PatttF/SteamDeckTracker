@@ -499,6 +499,10 @@ bool AppWindow::onEvent(GUIEvent &event) {
                 };
             } ;*/
 
+    case ET_PLAYERUPDATE:
+        // Pushed from audio thread to force a redraw from the main loop
+        _isDirty = true;
+        break;
     default:
         break;
     }
@@ -545,7 +549,9 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
 
     case VET_SWITCH_VIEW: {
         ViewType *vt = (ViewType *)ve->GetData();
+        Trace::Log("AppWindow", "VET_SWITCH_VIEW request -> %d", (int)*vt);
         if (_currentView) {
+            Trace::Log("AppWindow", "Current view loose focus");
             _currentView->LooseFocus();
         }
         switch (*vt) {
@@ -573,12 +579,16 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
         case VT_GROOVE:
             _currentView = _grooveView;
             break;
-            /*			case VT_MIXER:
-                        _currentView=_mixerView ;
-            */
+        case VT_MIXER:
+            _currentView = _mixerView;
             break;
         }
-        _currentView->SetFocus(*vt);
+        if (_currentView) {
+            Trace::Log("AppWindow", "Setting focus to view -> %d", (int)*vt);
+            _currentView->SetFocus(*vt);
+        } else {
+            Trace::Log("AppWindow", "No target view available for -> %d", (int)*vt);
+        }
         _isDirty = true;
         GUIWindow::Clear(backgroundColor_, true);
         Clear(true);

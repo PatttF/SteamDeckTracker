@@ -455,9 +455,11 @@ GUIRect SDLGUIWindowImp::GetRect()
 
 void SDLGUIWindowImp::Invalidate() 
 {
-    // Todo: SL: Haven't found a good replacement here yet
+    // Zero-initialize the event structure to avoid passing uninitialized data into SDL
+    // (Valgrind reported conditional jumps depending on uninitialized values here)
     SDL_Event event ;
-    event.type=SDL_WINDOWEVENT ;
+    SDL_memset(&event, 0, sizeof(event));
+    event.type = SDL_WINDOWEVENT ;
     event.window.event = SDL_WINDOWEVENT_EXPOSED;
     SDL_PushEvent(&event) ;
 }
@@ -531,9 +533,11 @@ void SDLGUIWindowImp::ProcessQuit()
 
 void SDLGUIWindowImp::PushEvent(GUIEvent &event)
 {
+	// Create a heap copy so the queued SDL event owns a pointer we can delete later
+	GUIEvent *heapEvent = new GUIEvent(event);
 	SDL_Event sdlevent ;
-	sdlevent.type=SDL_USEREVENT ;
-	sdlevent.user.data1=&event ;
+	sdlevent.type = SDL_USEREVENT ;
+	sdlevent.user.data1 = heapEvent ;
 	SDL_PushEvent(&sdlevent) ;
 } ;
 

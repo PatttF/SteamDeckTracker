@@ -43,13 +43,21 @@ bool PersistencyService::Load() {
 	file->Seek(0,SEEK_END) ;
 	int length=file->Tell() ;
 
-	unsigned char *compBuffer=(unsigned char *)SYS_MALLOC(length) ;
+	// Allocate one extra byte to ensure the buffer is NUL-terminated for TinyXML
+	unsigned char *compBuffer=(unsigned char *)SYS_MALLOC(length + 1) ;
 
   file->Seek(0,SEEK_SET) ;
-	file->Read(compBuffer,1,length) ;
+	int read = file->Read(compBuffer,1,length) ;
 	file->Close();
 	delete file ;
-	
+
+	// Ensure NUL-termination even if file was shorter than expected
+	if (read < length) {
+		compBuffer[read] = '\0';
+	} else {
+		compBuffer[length] = '\0';
+	}
+
 	if (!doc.Parse((char *)compBuffer)) {
         
 		// Get uncompressed buffer size from first byte
@@ -58,15 +66,19 @@ bool PersistencyService::Load() {
 		int fullLength ;
 		memcpy(&fullLength,compBuffer,offset) ;
 		
-		// Allocate a buffer to decompress data
+		// Allocate a buffer to decompress data (extra byte for NUL)
 		
-		unsigned char *xmlSource=(unsigned char *)SYS_MALLOC(fullLength) ;
+		unsigned char *xmlSource=(unsigned char *)SYS_MALLOC(fullLength + 1) ;
 		if (!xmlSource) {
-			Trace::Error("could not allocate space for %d bytes") ;
+			Trace::Error("could not allocate space for %d bytes", fullLength) ;
+			SYS_FREE(compBuffer);
 			return false ;
 		}
 
     LZ_Uncompress(compBuffer+offset,xmlSource,length-offset);
+
+		// Ensure decompressed buffer is NUL-terminated
+		xmlSource[fullLength] = '\0';
 
 		// Initialize XML document on decompressed buffer
 		doc.Parse((char *)xmlSource) ;

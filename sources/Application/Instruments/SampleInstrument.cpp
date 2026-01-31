@@ -30,6 +30,10 @@ int SampleInstrument::lastMidiNote_[SONG_CHANNEL_COUNT]= {
 
 #define KRATE_SAMPLE_COUNT 100
 
+SampleInstrument::~SampleInstrument() {
+    // Destructor: nothing to free here (InstrumentBank owns instruments and handles deletion)
+}
+
 SampleInstrument::SampleInstrument() {
 
 // Initialize instruments settings
@@ -141,14 +145,51 @@ SampleInstrument::SampleInstrument() {
          rp->updaters_.push_back(&rp->speedRamp_);
          rp->updaters_.push_back(&rp->legato_);
          rp->updaters_.push_back(&rp->pfin_);
-	} ;
 
- // Reset table state
+         // Initialize numeric and boolean fields to safe defaults to avoid
+         // conditional jumps on uninitialized values during rendering (Valgrind).
+         rp->sampleBuffer_ = nullptr;
+         rp->channelCount_ = 0;
+         rp->krateCount_ = 0;
+         rp->position_ = 0.0f;
+         rp->rendFirst_ = 0;
+         rp->rendLoopStart_ = 0;
+         rp->rendLoopEnd_ = 0;
+         rp->baseSpeed_ = 0;
+         rp->speed_ = 0;
+         rp->baseVolume_ = 0;
+         rp->volume_ = 0;
+         rp->reverse_ = false;
+         rp->retrig_ = false;
+         rp->retrigLoop_ = 0;
+         rp->retrigCount_ = 0;
+         rp->retrigOffset_ = 0;
+         rp->printFx_ = 0;
+         rp->finished_ = true;
+         rp->baseFCut_ = 0;
+         rp->baseFRes_ = 0;
+         rp->cutoff_ = 0;
+         rp->reso_ = 0;
+         rp->baseFbTun_ = 0;
+         rp->baseFbMix_ = 0;
+         rp->fbTun_ = 0;
+         rp->fbMix_ = 0;
+         rp->feedbackIn_ = 0;
+         rp->feedbackOut_ = 0;
+         rp->feedbackMode_ = FB_NONE;
+         rp->crush_ = 0;
+         rp->drive_ = 0;
+         rp->attenuate_ = 0;
+         rp->downsample_ = 0;
+         rp->basePan_ = 0;
+         rp->pan_ = 0;
+         rp->activeUpdaters_.clear();
+         rp->couldClick_ = false;
+         rp->midiNote_ = -1;
+    }
 
-	tableState_.Reset() ;
-}
-
-SampleInstrument::~SampleInstrument() {
+    // Reset table state
+    tableState_.Reset() ;
 }
 
 bool SampleInstrument::Init() {

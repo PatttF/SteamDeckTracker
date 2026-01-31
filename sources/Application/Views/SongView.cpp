@@ -743,6 +743,7 @@ void SongView::processNormalButtonMask(unsigned int mask) {
 
                 if (mask & EPBM_DOWN) {
                     ViewType vt = VT_MIXER;
+                    Trace::Log("SongView", "Requesting switch to MIXER (songY=%d, offset=%d)", viewData_->songY_, viewData_->songOffset_);
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
                     SetChanged();
                     NotifyObservers(&ve);
@@ -874,8 +875,17 @@ void SongView::processSelectionButtonMask(unsigned int mask) {
 
                 // No modifier
 
-                if (mask & EPBM_DOWN)
-                    updateCursor(0, 1);
+                if (mask & EPBM_DOWN) {
+                    // If cursor is at the bottom of the visible song rows, go to Mixer
+                    if (viewData_->songY_ >= View::songRowCount_ - 1) {
+                        ViewType vt = VT_MIXER;
+                        ViewEvent ve(VET_SWITCH_VIEW, &vt);
+                        SetChanged();
+                        NotifyObservers(&ve);
+                    } else {
+                        updateCursor(0, 1);
+                    }
+                }
                 if (mask & EPBM_UP)
                     updateCursor(0, -1);
                 if (mask & EPBM_LEFT)

@@ -673,9 +673,11 @@ void SDLGUIWindowImp::ProcessQuit()
 
 void SDLGUIWindowImp::PushEvent(GUIEvent &event)
 {
+	// Create a heap copy so the queued SDL event owns a pointer we can delete later
+	GUIEvent *heapEvent = new GUIEvent(event);
 	SDL_Event sdlevent ;
-	sdlevent.type=SDL_USEREVENT ;
-	sdlevent.user.data1=&event ;
+	sdlevent.type = SDL_USEREVENT ;
+	sdlevent.user.data1 = heapEvent ;
 	SDL_PushEvent(&sdlevent) ;
 } ;
 
