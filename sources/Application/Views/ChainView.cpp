@@ -792,7 +792,7 @@ void ChainView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
                     // find the chain queued in channel
                     unsigned char songPos = player->GetQueuePosition(i);
                     unsigned char *chain =
-                        viewData_->song_->data_ + i + 8 * songPos;
+                        viewData_->song_->data_ + i + SONG_CHANNEL_COUNT * songPos;
                     if (*chain == viewData_->currentChain_) {
                         unsigned char chainPos =
                             player->GetQueueChainPosition(i);

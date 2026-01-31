@@ -5,7 +5,7 @@
 #include "Phrase.h"
 #include "Application/Persistency/Persistent.h"
 
-#define SONG_CHANNEL_COUNT 8
+#define SONG_CHANNEL_COUNT 16
 #define SONG_ROW_COUNT 256
 
 #define MAX_SAMPLEINSTRUMENT_COUNT 0x80

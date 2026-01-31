@@ -129,29 +129,29 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
   switch(viewData_->playMode_)
   {
 		case PM_SONG:
-    {
-      for (int i=0;i<8;i++)
-      {
-        mixer_->StartChannel(i) ;
-        updateSongPos(playPos, i, viewData_->chainRow_);
-      }
-    }
+		{
+			for (int i=0;i<SONG_CHANNEL_COUNT;i++)
+			{
+				mixer_->StartChannel(i) ;
+				updateSongPos(playPos, i, viewData_->chainRow_);
+			}
+		}
     break ;
       
 		case PM_LIVE:
-    {
-      for (int i=0;i<8;i++)
-      {
-        if ((liveQueueingMode_[i]==QM_CHAINSTART)||
-            (liveQueueingMode_[i]==QM_PHRASESTART)||
-            (liveQueueingMode_[i]==QM_TICKSTART))
-        {
-           mixer_->StartChannel(i) ;
-           updateSongPos(liveQueuePosition_[i],i,liveQueueChainPosition_[i]) ;
-                   liveQueueingMode_[i]=QM_NONE ;
-        }
-      }
-    }
+		{
+			for (int i=0;i<SONG_CHANNEL_COUNT;i++)
+			{
+				if ((liveQueueingMode_[i]==QM_CHAINSTART)||
+						(liveQueueingMode_[i]==QM_PHRASESTART)||
+						(liveQueueingMode_[i]==QM_TICKSTART))
+				{
+					 mixer_->StartChannel(i) ;
+					 updateSongPos(liveQueuePosition_[i],i,liveQueueChainPosition_[i]) ;
+									 liveQueueingMode_[i]=QM_NONE ;
+				}
+			}
+		}
     break ;
       
 		case PM_CHAIN:
@@ -415,7 +415,7 @@ bool Player::Clipped() {
 
 bool Player::isPlayable(int row,int col,int chainPos) {
 
-	uchar *chain=viewData_->song_->data_+8*row+col ;
+	uchar *chain=viewData_->song_->data_+SONG_CHANNEL_COUNT*row+col ;
 	if (*chain!=0xFF) {
        uchar data=viewData_->song_->chain_->data_[16*(*chain)+chainPos] ;
     	return (data!=0xFF);
@@ -428,7 +428,7 @@ bool Player::findPlayable(uchar *row,int col,uchar  chainPos) {
 
 	// first look if current is fine
 
-	uchar *chain=viewData_->song_->data_+8*(*row)+col ;
+	uchar *chain=viewData_->song_->data_+SONG_CHANNEL_COUNT*(*row)+col ;
 	if (*chain!=0xFF) {
 		uchar data=viewData_->song_->chain_->data_[16*(*chain)+chainPos] ;
 		return (data!=0xFF);
@@ -437,7 +437,7 @@ bool Player::findPlayable(uchar *row,int col,uchar  chainPos) {
 	// Find upwards the first non blank
 
 	while (*row!=255) {
-		chain=viewData_->song_->data_+8*(*row)+col ;
+		chain=viewData_->song_->data_+SONG_CHANNEL_COUNT*(*row)+col ;
 		if (*chain!=0xFF) {
 			break ;
 		}
@@ -449,7 +449,7 @@ bool Player::findPlayable(uchar *row,int col,uchar  chainPos) {
 	// Find upwards the first blank
 
 	while (*row!=255) {
-		chain=viewData_->song_->data_+8*(*row)+col ;
+		chain=viewData_->song_->data_+SONG_CHANNEL_COUNT*(*row)+col ;
 		if (*chain==0xFF) {
 			break ;
 		}
@@ -461,7 +461,7 @@ bool Player::findPlayable(uchar *row,int col,uchar  chainPos) {
 	} else {
 		*row+=1 ;
 	}
-	chain=viewData_->song_->data_+8*(*row)+col ;
+	chain=viewData_->song_->data_+SONG_CHANNEL_COUNT*(*row)+col ;
 	uchar data=0xFF ;
 	if (*chain!=0xFF) {
 		data=viewData_->song_->chain_->data_[16*(*chain)+chainPos] ;
@@ -753,7 +753,7 @@ void Player::triggerLiveChains() {
  ********************************************************/
 
 void Player::updateSongPos(int pos,int channel,int chainPos,int hop) {
-	unsigned char *data=viewData_->song_->data_+channel+8*pos ;
+ 	unsigned char *data=viewData_->song_->data_+channel+SONG_CHANNEL_COUNT*pos ;
 	viewData_->songPlayPos_[channel]=pos ;
 	viewData_->currentPlayChain_[channel]=*data ;
 	updateChainPos(chainPos,channel,hop) ;
@@ -1121,13 +1121,13 @@ void Player::moveToNextChain(int channel,int hop) {
     	int pos=(viewData_->songPlayPos_[channel])+1 ;
      	unsigned char *data=viewData_->song_->data_+channel+8*pos ;
       	bool loopBack=(*data==0xFF) ;
-       	// Check if first step of chain contains somethin, if not we loop back
+        	// Check if first step of chain contains somethin, if not we loop back
        	if (!loopBack) {
 		   unsigned char step=viewData_->song_->chain_->data_[*data*16] ;
 		   loopBack=(step==0xFF) ;
 	    } ;
 	    if (loopBack) {
-		   data-=8 ;
+		   data-=SONG_CHANNEL_COUNT ;
 		   pos-- ;
 		   while (pos>=0) {
                 if (*data==0xFF) { // we stop searching if there's a blank
@@ -1137,7 +1137,7 @@ void Player::moveToNextChain(int channel,int hop) {
                         break ;
                     }
                 } 
-			    if (pos!=0) data-=8 ;
+		    if (pos!=0) data-=SONG_CHANNEL_COUNT ;
 			    pos-- ;
            } ;
 		   pos++ ;

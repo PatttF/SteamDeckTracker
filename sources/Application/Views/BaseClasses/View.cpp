@@ -42,7 +42,11 @@ View::View(GUIWindow &w,ViewData *viewData):
 } ;
 
 GUIPoint View::GetAnchor() {
-	int width = LOGICAL_COLS;
+	// Compute visible logical width based on actual window pixel width
+	const int CHAR_PX = 8; // character pixel width
+	int winPixelWidth = w_.GetRect().Width();
+	int visibleCols = winPixelWidth / CHAR_PX;
+	int width = (visibleCols > 0) ? std::min(visibleCols, LOGICAL_COLS) : LOGICAL_COLS;
 	int height = LOGICAL_ROWS;
 	return GUIPoint((width - SONG_CHANNEL_COUNT * 3) / 2 + 2,
 					(height - View::songRowCount_) / 2);
@@ -73,11 +77,17 @@ void View::Unlock() {
 void View::drawMap() {
     if (!miniLayout_) {
         GUIPoint anchor=GetAnchor() ;
-		// Place the small guide/map to the bottom-right of the logical view
+		// Place the small guide/map to the bottom-right of the visible logical view
 		// rather than at the left margin so it doesn't overlap main content.
+		// Compute visible logical width from actual window pixel width and
+		// clamp placement so the map stays inside the visible area.
 		int mapWidth = 4;
 		int mapHeight = 3;
-		int posX = LOGICAL_COLS - mapWidth - View::margin_;
+		const int CHAR_PX = 8;
+		int winPixelWidth = w_.GetRect().Width();
+		int visibleCols = winPixelWidth / CHAR_PX;
+		int width = (visibleCols > 0) ? std::min(visibleCols, LOGICAL_COLS) : LOGICAL_COLS;
+		int posX = width - mapWidth - View::margin_;
 		int posY = anchor._y + View::songRowCount_ - (mapHeight + 1);
 		if (posY < 0) posY = 0;
 		GUIPoint pos(posX, posY);

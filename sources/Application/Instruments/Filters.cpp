@@ -8,7 +8,9 @@ hope it will work :D
 #include <math.h>
 #include "System/Console/Trace.h"
 
-static filter_t filter[8];
+#include "Application/Model/Song.h"
+
+static filter_t filter[SONG_CHANNEL_COUNT];
 
 bool filters_inited=false;
 
@@ -17,13 +19,12 @@ fixed fp_inv_255 ;
 void init_filters(void)
 {
 
-	for(int i=0;i<8;i++)
-	{	//set sensible default values
-		//lowpass filter where everything passes with no resonance
-		set_filter(i,FLT_LOWPASS,i2fp(1),i2fp(0),i2fp(0),false);
-	}
-	fp_inv_255=fl2fp(1.0f/255) ;
-	filters_inited=true;
+    for (int i = 0; i < SONG_CHANNEL_COUNT; i++) { // set sensible default values
+        // lowpass filter where everything passes with no resonance
+        set_filter(i, FLT_LOWPASS, i2fp(1), i2fp(0), i2fp(0), false);
+    }
+    fp_inv_255 = fl2fp(1.0f / 255);
+    filters_inited = true;
 }
 
 void set_filter(int channel, filterType_t type, fixed param1,fixed param2,int mix,bool bassyMapping)

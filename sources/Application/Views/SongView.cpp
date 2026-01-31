@@ -24,7 +24,7 @@ SongView::SongView(GUIWindow &w, ViewData *viewData, const char *song)
     lastChain_ = 0;
     songname_ = song;
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
         this->lastPlayedPosition_[i] = 0;
         this->lastQueuedPosition_[i] = 0;
     }
@@ -793,7 +793,7 @@ void SongView::processNormalButtonMask(unsigned int mask) {
 
     if ((!(mask & EPBM_A)) && updatingChain_) {
         unsigned char *c = viewData_->song_->data_ + updateX_ +
-                           8 * (viewData_->songOffset_ + updateY_);
+                               SONG_CHANNEL_COUNT * (viewData_->songOffset_ + updateY_);
         viewData_->song_->chain_->SetUsed(*c);
         updatingChain_ = false;
     }
@@ -961,7 +961,7 @@ void SongView::DrawView() {
 
         pos._x = anchor._x;
 
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
 
             bool invert = false;
 
@@ -1112,11 +1112,15 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
     // Draw clipping indicator & CPU usage
 
-    // place playing-related info at the far right of the logical view area
-    // Clamp to the logical view width so AppWindow::DrawString doesn't drop it.
-    const int VIEW_COLS = LOGICAL_COLS;
+    // place playing-related info at the far right of the visible logical view area
+    // Compute visible logical width from window pixel width and clamp placement
+    // so AppWindow::DrawString doesn't drop it when the physical window is narrow.
     const int INFO_WIDTH = 8; // reserve columns for clip/CPU/batt/time
-    pos._x = LOGICAL_COLS - INFO_WIDTH - View::margin_;
+    const int CHAR_PX = 8;
+    int winPixelWidth = w_.GetRect().Width();
+    int visibleCols = winPixelWidth / CHAR_PX;
+    int width = (visibleCols > 0) ? std::min(visibleCols, LOGICAL_COLS) : LOGICAL_COLS;
+    pos._x = width - INFO_WIDTH - View::margin_;
     pos._y = anchor._y;
 
     if (player->Clipped()) {
