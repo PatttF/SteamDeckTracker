@@ -1,6 +1,8 @@
 #include "LINUXSystem.h"
 #include <libgen.h>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <time.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -44,6 +46,23 @@
 EventManager *LINUXSystem::eventManager_ = NULL;
 static int secbase = 0;
 
+// Create directories recursively (best-effort)
+static int mkdir_recursive(const std::string &path) {
+	if (path.empty()) return 0;
+	struct stat st;
+	if (stat(path.c_str(), &st) == 0) return 0; // already exists
+	size_t pos = path.find_last_of('/');
+	if (pos != std::string::npos) {
+		std::string parent = path.substr(0, pos);
+		if (!parent.empty()) mkdir_recursive(parent);
+	}
+	if (mkdir(path.c_str(), 0755) != 0) {
+		if (errno == EEXIST) return 0;
+		return -1;
+	}
+	return 0;
+}
+
 /*
  * starts the main loop
  */
@@ -83,6 +102,11 @@ void LINUXSystem::Boot(int argc,char **argv) {
 	if (home) {
 			std::string sdPath = std::string(home) + "/Documents/SDTracker";
 			Path::SetAlias("root", sdPath.c_str());
+
+			// Ensure the SDTracker folder and key subfolders exist: projects, samplelib
+			mkdir_recursive(sdPath);
+			mkdir_recursive(sdPath + "/projects");
+			mkdir_recursive(sdPath + "/samplelib");
 	} else {
 			Path::SetAlias("root",".");
 	}

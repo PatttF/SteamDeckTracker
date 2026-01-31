@@ -19,6 +19,10 @@ public:
 
 	bool LoadMapping(const char *path) ;
 
+	// Install a sensible default mapping for common controllers
+	// Called when no mapping file is present
+	void InstallDefaultMapping();
+
 	void Dump() ;
 } ;
 #endif

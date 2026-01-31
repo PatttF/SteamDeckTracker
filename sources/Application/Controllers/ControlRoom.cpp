@@ -115,3 +115,42 @@ bool ControlRoom::LoadMapping(const char *mappingFile) {
 
 	return true ;
 } ;
+
+void ControlRoom::InstallDefaultMapping() {
+	Trace::Log("MAPPING","Installing default controller mapping") ;
+
+	// Keyboard arrows
+	Attach("/event/up","key:0:up") ;
+	Attach("/event/down","key:0:down") ;
+	Attach("/event/left","key:0:left") ;
+	Attach("/event/right","key:0:right") ;
+
+	// Also add common keyboard key fallbacks (matches existing X64 mapping)
+	Attach("/event/lshoulder","key:0:q") ;
+	Attach("/event:rshoulder","key:0:w") ;
+	Attach("/event/b","key:0:a") ;
+	Attach("/event:a","key:0:s") ;
+	Attach("/event:start","key:0:space") ;
+
+	// Hat (common d-pad) - try hat 0 bits
+	Attach("/event/up","hat:0:0") ;
+	Attach("/event/right","hat:0:1") ;
+	Attach("/event/down","hat:0:2") ;
+	Attach("/event/left","hat:0:3") ;
+
+	// Common button layouts — try several likely indices
+	// Map B/X/Y to function buttons
+	Attach("/event/b","but:0:1") ;
+	Attach("/event:x","but:0:2") ;
+	Attach("/event:y","but:0:3") ;
+
+	// Fallback alternate ordering (some pads use 0=A,1=B)
+	Attach("/event/b","but:0:0") ;
+	Attach("/event:x","but:0:2") ;
+	Attach("/event:y","but:0:3") ;
+
+	// Start/shoulders useful defaults
+	Attach("/event/start","but:0:4") ;
+	Attach("/event/lshoulder","but:0:6") ;
+	Attach("/event/rshoulder","but:0:8") ;
+}
