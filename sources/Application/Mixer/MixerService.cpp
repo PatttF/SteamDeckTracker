@@ -179,7 +179,7 @@ void MixerService::SetMasterVolume(int attn) {
     if (attn < 0) attn = 0;
     if (attn > 100) attn = 100;
     masterVolume_ = attn;
-    Trace::Log("MixerService","SetMasterVolume %d", attn);
+
     if (out_) out_->SetMasterVolume(attn);
 }
 

@@ -186,7 +186,6 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 				// master
 				int mvol = MixerService::GetInstance()->GetMasterVolume();
 				MixerService::GetInstance()->SetMasterVolume(mvol + 1);
-				Trace::Log("MixerView","Master adjusted to %d", MixerService::GetInstance()->GetMasterVolume());
 				// Persist to project so PlayerMixer won't overwrite on next update
 				if (viewData_ && viewData_->project_) {
 					Variable *v = viewData_->project_->FindVariable(VAR_MASTERVOL);
@@ -279,6 +278,7 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 				} else {
 					int mvol = MixerService::GetInstance()->GetMasterVolume();
 					MixerService::GetInstance()->SetMasterVolume(mvol - 1);
+
 					int newVol = MixerService::GetInstance()->GetMasterVolume();
 					char nb[32];
 					snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
@@ -388,10 +388,10 @@ void MixerView::DrawView() {
 		colProps.invert_ = selected;
 		SetColor(selected ? CD_HILITE2 : CD_NORMAL);
 
-		// label above meter (two-digit decimal), left-align it in the column
-		char lbl[4];
-		sprintf(lbl, "%02d", i);
-		DrawString(colX, pos._y - 1, lbl, colProps);
+		// label above meter: show bus id (hex) to match the bottom label
+		int bus = Mixer::GetInstance()->GetBus(i);
+		hex2char(bus, hex);
+		DrawString(colX, pos._y - 1, hex, colProps);
 
 		// draw meter as stacked blocks (bottom = lowest)
 		// meter should be 2 chars wide for the visual style
@@ -446,11 +446,14 @@ void MixerView::DrawView() {
 			}
 		}
 
-		// draw bus id/hex below the meter (left-aligned within column)
-		int bus = Mixer::GetInstance()->GetBus(i);
-		hex2char(bus, hex);
-		// hex and percent should not be inverted — only the label is highlighted
-		DrawString(colX, pos._y + meterHeight, hex, props);
+		// draw empty row below the meter to create a gap between meter and volume percent
+		{
+			char empty[8];
+			int ew = (dx < (int)sizeof(empty)-1) ? dx : (int)sizeof(empty)-1;
+			for (int e = 0; e < ew; e++) empty[e] = ' ';
+			empty[ew] = '\0';
+			DrawString(colX, pos._y + meterHeight, empty, props);
+		}
 
 		// draw volume percent (left-align within column so three digits are visible)
 		int vol = MixerService::GetInstance()->GetChannelVolume(i);
