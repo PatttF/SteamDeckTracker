@@ -13,6 +13,7 @@
 #include "BaseClasses/UITempoField.h"
 #include "Services/Midi/MidiService.h"
 #include "System/System/System.h"
+#include "Application/Instruments/SamplePool.h"
 
 #define ACTION_PURGE            MAKE_FOURCC('P','U','R','G')
 #define ACTION_SAVE             MAKE_FOURCC('S','A','V','E')
@@ -21,6 +22,7 @@
 #define ACTION_QUIT             MAKE_FOURCC('Q','U','I','T')
 #define ACTION_PURGE_INSTRUMENT MAKE_FOURCC('P','R','G','I')
 #define ACTION_TEMPO_CHANGED    MAKE_FOURCC('T','E','M','P')
+#define ACTION_INSTALL_SAMPLES  MAKE_FOURCC('I','N','S','T')
 
 static void SaveAsProjectCallback(View &v,ModalView &dialog) {
 
@@ -101,6 +103,67 @@ static void PurgeCallback(View &v,ModalView &dialog) {
 	((ProjectView &)v).OnPurgeInstruments(dialog.GetReturnCode()==MBL_YES) ;
 } ;
 
+// Callback for installing default samples
+static void InstallSamplesCallback(View &v,ModalView &dialog) {
+    if (dialog.GetReturnCode()!=MBL_YES) return;
+
+    ProjectView &pv = (ProjectView &)v;
+
+    // Download samplelib.zip from the release URL into a temp file
+    const char *url = "https://github.com/PatttF/SteamDeckTracker/releases/download/Release/samplelib.zip";
+    std::string tmp = "/tmp/samplelib.zip";
+    {
+        // Try curl first, fallback to wget
+        std::string cmd = std::string("curl -fL -o \"") + tmp + "\" \"" + std::string(url) + "\"";
+        int rc = system(cmd.c_str());
+        if (rc != 0) {
+            cmd = std::string("wget -O \"") + tmp + "\" \"" + std::string(url) + "\"";
+            rc = system(cmd.c_str());
+            if (rc != 0) {
+                MessageBox *mb = new MessageBox(pv, "Failed to download samplelib.zip from release URL", MBBF_OK);
+                pv.DoModal(mb);
+                return;
+            }
+        }
+    }
+
+    Path zipPath(tmp.c_str());
+    if (!zipPath.Exists()) {
+        MessageBox *mb = new MessageBox(pv, "Downloaded zip not found", MBBF_OK);
+        pv.DoModal(mb);
+        return;
+    }
+
+    // Ensure destination exists
+    const char *destStr = SamplePool::GetInstance()->GetSampleLib();
+    Path dest(destStr);
+    if (FileSystem::GetInstance()->GetFileType(dest.GetPath().c_str()) != FT_DIR) {
+        if (FileSystem::GetInstance()->MakeDir(dest.GetPath().c_str()).Failed()) {
+            MessageBox *mb = new MessageBox(pv, "Failed to create samplelib folder", MBBF_OK);
+            pv.DoModal(mb);
+            return;
+        }
+    }
+
+    // Use system unzip if available. Use canonical paths so they are real FS paths.
+    std::string zipCanon = zipPath.GetCanonicalPath();
+    std::string destCanon = dest.GetCanonicalPath();
+
+    std::string cmd = "unzip -o \"" + zipCanon + "\" -d \"" + destCanon + "\"";
+    int rc = system(cmd.c_str());
+    if (rc != 0) {
+        MessageBox *mb = new MessageBox(pv, "Failed to unpack samplelib.zip (unzip returned error)", MBBF_OK);
+        pv.DoModal(mb);
+        return;
+    }
+
+    // Reload sample pool
+    SamplePool::GetInstance()->Reset();
+    SamplePool::GetInstance()->Load();
+
+    pv.SetNotification("Default samples installed");
+} ;
+
 ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
     lastClock_ = 0;
@@ -178,6 +241,11 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
     position._y += 1;
     a1 = new UIActionField("Save Song As", ACTION_SAVE_AS, position);
+    a1->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(a1);
+
+    position._y += 1;
+    a1 = new UIActionField("Install default samples", ACTION_INSTALL_SAMPLES, position);
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 
@@ -318,6 +386,11 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
             MessageBox *mb = new MessageBox(
                 *this, "Load song and lose changes ?", MBBF_YES | MBBF_NO);
             DoModal(mb, LoadCallback);
+            break;
+        }
+        case ACTION_INSTALL_SAMPLES: {
+            MessageBox *mb = new MessageBox(*this, "Install default samples into samplelib?", MBBF_YES | MBBF_NO);
+            DoModal(mb, InstallSamplesCallback);
             break;
         }
         case ACTION_QUIT: {
