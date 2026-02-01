@@ -166,25 +166,45 @@ static void InstallSamplesCallback(View &v,ModalView &dialog) {
     pv.SetNotification("Default samples installed");
 } ;
 
-// Callback for installing LV2 packages (will attempt pkexec then sudo)
+// Callback for installing Mutated Instruments LV2 plugin from GitHub
 static void InstallLV2Callback(View &v,ModalView &dialog) {
     if (dialog.GetReturnCode()!=MBL_YES) return;
 
     ProjectView &pv = (ProjectView &)v;
 
-    // Resolve script path relative to the executable (bin:../scripts/...)
-    Path scriptPath("bin:../scripts/install_lv2_steamos.sh");
-    std::string scriptCanon = scriptPath.GetCanonicalPath();
-
-    std::string cmd = std::string("pkexec \"") + scriptCanon + "\" || sudo \"" + scriptCanon + "\"";
-    int rc = system(cmd.c_str());
-    if (rc != 0) {
-        MessageBox *mb = new MessageBox(pv, "Failed to install LV2 packages (user cancelled or error).", MBBF_OK);
+    // Create ~/.lv2 directory if it doesn't exist
+    const char* homeDir = getenv("HOME");
+    if (!homeDir) {
+        MessageBox *mb = new MessageBox(pv, "Could not determine home directory", MBBF_OK);
         pv.DoModal(mb);
         return;
     }
-
-    pv.SetNotification("LV2 packages install finished (check terminal for details)");
+    
+    char lv2Dir[512];
+    snprintf(lv2Dir, sizeof(lv2Dir), "%s/.lv2", homeDir);
+    
+    char createDirCmd[1024];
+    snprintf(createDirCmd, sizeof(createDirCmd), "mkdir -p '%s'", lv2Dir);
+    system(createDirCmd);
+    
+    // Download and install the Mutated Instruments plugin
+    char downloadCmd[2048];
+    snprintf(downloadCmd, sizeof(downloadCmd), 
+        "cd /tmp && "
+        "wget -O mi_mutated.lv2.zip 'https://github.com/PatttF/zynMI/releases/download/BraidsPlaitsMarbles/mi_mutated.lv2.zip' && "
+        "unzip -o mi_mutated.lv2.zip -d '%s' && "
+        "chmod -R 755 '%s'/mi_mutated.lv2 && "
+        "rm -f mi_mutated.lv2.zip", 
+        lv2Dir, lv2Dir);
+    
+    int result = system(downloadCmd);
+    
+    if (result == 0) {
+        pv.SetNotification("Mutated Instruments LV2 plugin installed successfully");
+    } else {
+        MessageBox *mb = new MessageBox(pv, "Failed to install Mutated Instruments LV2 plugin", MBBF_OK);
+        pv.DoModal(mb);
+    }
 }
 
 ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
@@ -273,7 +293,7 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
     T_SimpleList<UIField>::Insert(a1);
 
     position._y += 1;
-    a1 = new UIActionField("Install packages for lv2 support", ACTION_INSTALL_LV2, position);
+    a1 = new UIActionField("Install Mutated Instruments LV2 plugin", ACTION_INSTALL_LV2, position);
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 

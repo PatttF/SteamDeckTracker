@@ -3,6 +3,7 @@
 #include "Application/Commands/EventDispatcher.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Mixer/MixerService.h"
+#include "Application/Model/Song.h"
 #include "Application/Persistency/PersistencyService.h"
 #include "Application/Player/TablePlayback.h"
 #include "Application/Utils/char.h"
@@ -337,6 +338,17 @@ void AppWindow::LoadProject(const Path &p) {
     PersistencyService *persist = PersistencyService::GetInstance();
 
     TablePlayback::Reset();
+
+    // Reset all mixer channels and master to 100 before loading project values
+    // This fixes edge case where changed mixer values persist when loading 
+    // projects that don't contain mixer data
+    MixerService *mixerService = MixerService::GetInstance();
+    if (mixerService) {
+        mixerService->SetMasterVolume(100);
+        for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+            mixerService->SetChannelVolume(i, 100);
+        }
+    }
 
     Path::SetAlias("project", _root.GetPath().c_str());
     Path::SetAlias("samples", "project:samples");

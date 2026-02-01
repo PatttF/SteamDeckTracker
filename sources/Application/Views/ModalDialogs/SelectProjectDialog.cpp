@@ -5,6 +5,7 @@
 #include "Application/Views/ModalDialogs/MessageBox.h"
 
 #include <algorithm>
+#include <cstdlib>  // for getenv
 
 #define LIST_SIZE 20
 #define LIST_WIDTH 32
@@ -165,7 +166,23 @@ void SelectProjectDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 					} else {
 						if (current->GetName() == "..") {
 							Path parent=currentPath_.GetParent() ;
-							setCurrentFolder(parent) ;
+							
+							// Prevent navigating above the user's home directory to avoid crashes
+							const char* homeDir = getenv("HOME");
+							if (homeDir) {
+								std::string homePath = std::string(homeDir);
+								std::string parentPath = parent.GetPath();
+								
+								// Only allow navigation if the parent is at or below the home directory
+								if (parentPath.length() >= homePath.length() && 
+								    parentPath.substr(0, homePath.length()) == homePath) {
+									setCurrentFolder(parent);
+								}
+								// If above home dir, do nothing (stay in current directory)
+							} else {
+								// If we can't get home dir, still allow navigation for compatibility
+								setCurrentFolder(parent);
+							}
 						} else {
 							Path newdir=*current ;
 							setCurrentFolder(newdir) ;
