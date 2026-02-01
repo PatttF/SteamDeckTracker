@@ -12,6 +12,50 @@
 #include "Services/Midi/MidiService.h"
 
 #include <math.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdlib.h>
+
+// Crash handler: write backtrace to stderr and to /tmp/lgpt-crash-<pid>.log
+static void CrashHandler(int signum) {
+    void *bt[50];
+    int n = backtrace(bt, 50);
+
+    char header[256];
+    int hlen = snprintf(header, sizeof(header), "*** Crash: signal %d pid=%d\n", signum, (int)getpid());
+    // write to stderr
+    write(2, header, hlen);
+
+    // Also write to a file for easier retrieval
+    char fname[128];
+    int flen = snprintf(fname, sizeof(fname), "/tmp/lgpt-crash-%d.log", (int)getpid());
+    int fd = open(fname, O_CREAT | O_WRONLY | O_APPEND, 0644);
+    if (fd >= 0) {
+        write(fd, header, hlen);
+        backtrace_symbols_fd(bt, n, fd);
+        close(fd);
+    }
+
+    // Also emit to stderr for immediate visibility
+    backtrace_symbols_fd(bt, n, 2);
+
+    // Ensure we don't return
+    _exit(128 + signum);
+}
+
+static void InstallCrashHandler() {
+    struct sigaction sa;
+    sa.sa_handler = CrashHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESETHAND | SA_NODEFER;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
+    sigaction(SIGILL, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+}
 
 Application *Application::instance_=NULL ;
 
@@ -44,6 +88,9 @@ void Application::initMidiInput()
 }
 
 bool Application::Init(GUICreateWindowParams &params) {
+    // Install crash handler early so we get a stacktrace if the LV2 plugin crashes
+    InstallCrashHandler();
+
 	const char* root=Config::GetInstance()->GetValue("ROOTFOLDER") ;
 	if (root) {
 		Path::SetAlias("root",root) ;
@@ -101,17 +148,17 @@ bool Application::Init(GUICreateWindowParams &params) {
           maps the button "8" to left shoulder
           maps the button "6" to right shoulder
       -->
-        <MAP src="but:0:8" dst="/event/rshoulder" />
-        <MAP src="but:0:6" dst="/event/lshoulder" />
+        <MAP src="but:4:4" dst="/event/rshoulder" />
+        <MAP src="but:4:5" dst="/event/lshoulder" />
 
-      	<MAP src="but:0:0" dst="/event/up" />
-      	<MAP src="but:0:2" dst="/event/down" />
-      	<MAP src="but:0:3" dst="/event/left" />
-      	<MAP src="but:0:1" dst="/event/right" />
+      	<MAP src="hat:0:0" dst="/event/up" />
+      	<MAP src="hat:0:2" dst="/event/down" />
+      	<MAP src="hat:0:3" dst="/event/left" />
+      	<MAP src="hat:0:1" dst="/event/right" />
 
-      	<MAP src="but:0:0" dst="/event/a" />
-      	<MAP src="but:0:1" dst="/event/b" />
-      	<MAP src="but:0:4" dst="/event/start" />
+      	<MAP src="but:1:1" dst="/event/a" />
+      	<MAP src="but:0:0" dst="/event/b" />
+      	<MAP src="but:3:3" dst="/event/start" />
 
       <!--
       Macro 1

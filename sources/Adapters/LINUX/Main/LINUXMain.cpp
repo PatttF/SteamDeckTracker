@@ -9,7 +9,7 @@ int main(int argc,char *argv[]) {
 	LINUXSystem::Boot(argc,argv);
 
 	SDLCreateWindowParams params;
-	params.title="littlegptracker";
+	params.title="SDTracker";
 	params.cacheFonts_=true;
 
 	Application::GetInstance()->Init(params);

@@ -30,6 +30,7 @@ struct LV2PluginParameter {
     int portIndex;
     Variable *variable;  // Variable for UI binding
     std::vector<LV2ScalePoint> scalePoints;  // Scale points for enumerated values
+    bool isEnumeration = false; // True when LV2 port has enumeration property
 };
 
 class LV2Instrument : public I_Instrument {
@@ -125,6 +126,7 @@ private:
     // Plugin parameters
     std::vector<LV2PluginParameter> parameters_;
     std::vector<float> controlValues_; // Storage for control port values
+    std::vector<float> portControlStorage_; // Per-port storage indexed by port index to safely connect to LV2
     bool isActivated_;  // Track if plugin is activated
     
     // Helper methods

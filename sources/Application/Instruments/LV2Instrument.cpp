@@ -236,8 +236,49 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             int scaledValue = parameters_[i].variable->GetInt();
             float realValue = parameters_[i].minValue + 
                 (scaledValue / 127.0f) * (parameters_[i].maxValue - parameters_[i].minValue);
+
+            // If enumerated: prefer explicit scale points if present, otherwise snap to integer steps
+            if (!parameters_[i].scalePoints.empty()) {
+                float closest = parameters_[i].scalePoints[0].value;
+                float bestDiff = std::fabs(realValue - closest);
+                for (size_t sp = 1; sp < parameters_[i].scalePoints.size(); ++sp) {
+                    float v = parameters_[i].scalePoints[sp].value;
+                    float d = std::fabs(realValue - v);
+                    if (d < bestDiff) {
+                        bestDiff = d;
+                        closest = v;
+                    }
+                }
+                if (closest != realValue) {
+                    Trace::Log("LV2","Snapped to nearest scale point: param=%s:%s from %f to %f", parameters_[i].groupName.c_str(), parameters_[i].name.c_str(), realValue, closest);
+                }
+                realValue = closest;
+            } else if (parameters_[i].isEnumeration) {
+                // No explicit labels available, but port is enumerated: round to integer within range
+                float rounded = std::round(realValue);
+                if (rounded < parameters_[i].minValue) rounded = parameters_[i].minValue;
+                if (rounded > parameters_[i].maxValue) rounded = parameters_[i].maxValue;
+                if (rounded != realValue) {
+                    Trace::Log("LV2","Rounded enumerated param: param=%s:%s from %f to %f", parameters_[i].groupName.c_str(), parameters_[i].name.c_str(), realValue, rounded);
+                }
+                realValue = rounded;
+            }
+
+            // Extra logging for braids shape crashes
+            if (parameters_[i].groupName == "braids" && parameters_[i].name.find("Shape") != std::string::npos) {
+                Trace::Log("LV2","Braids shape set: port=%d scaled=%d value=%f", parameters_[i].portIndex, scaledValue, realValue);
+            }
+
             controlValues_[i] = realValue;
             parameters_[i].currentValue = realValue;
+
+            // Sync to per-port storage so connected LV2 ports see the updated value immediately
+            if (parameters_[i].portIndex >= 0) {
+                if ((int)portControlStorage_.size() <= parameters_[i].portIndex) {
+                    portControlStorage_.resize(parameters_[i].portIndex + 1, 0.0f);
+                }
+                portControlStorage_[parameters_[i].portIndex] = realValue;
+            }
         }
     }
 
@@ -280,6 +321,14 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
 
     // Run the plugin to generate output
     LilvInstance* instance = (LilvInstance*)pluginInstance_;
+
+    // Debug: log braids shape parameter(s) before calling into the plugin
+    for (size_t i = 0; i < parameters_.size() && i < controlValues_.size(); ++i) {
+        if (parameters_[i].groupName == "braids" && parameters_[i].name.find("Shape") != std::string::npos) {
+            Trace::Log("LV2","Running plugin with braids shape port=%d value=%f", parameters_[i].portIndex, controlValues_[i]);
+        }
+    }
+
     lilv_instance_run(instance, size);
 
     // Convert float output to fixed point stereo interleaved
@@ -640,6 +689,9 @@ void LV2Instrument::discoverParameters() {
                 lilv_nodes_free((LilvNodes*)port_properties);
             }
             lilv_node_free(port_property_uri);
+
+            // Store enumeration flag so we can handle discrete parameters later
+            param.isEnumeration = isEnumeration;
             
             // Use TTL default value if available, otherwise use minimum
             if (def_node) {
@@ -695,6 +747,15 @@ void LV2Instrument::discoverParameters() {
             
             // Allocate storage for this control value
             controlValues_.push_back(param.defaultValue);
+
+            // Diagnostic dump for braids/plaits to inspect scale points and ranges (helps debug crashes)
+            if (param.groupName == "braids" || param.groupName == "plaits") {
+                Trace::Log("LV2","Param discovered: %s:%s port=%d min=%f max=%f default=%f enum=%d scalePoints=%zu",
+                    param.groupName.c_str(), param.name.c_str(), param.portIndex, param.minValue, param.maxValue, param.defaultValue, param.isEnumeration ? 1 : 0, param.scalePoints.size());
+                for (size_t sp=0; sp<param.scalePoints.size(); ++sp) {
+                    Trace::Log("LV2","  scalepoint[%zu] = %f -> '%s'", sp, param.scalePoints[sp].value, param.scalePoints[sp].label.c_str());
+                }
+            }
         }
     }
     
@@ -760,9 +821,41 @@ void LV2Instrument::connectPorts(int bufferSize) {
     }
     
     // Connect control parameters
+    // Ensure we have a stable separate storage indexed by port index so plugin pointers are unique and immutable
+    int maxPort = -1;
+    for (size_t i = 0; i < parameters_.size(); ++i) {
+        if (parameters_[i].portIndex > maxPort) maxPort = parameters_[i].portIndex;
+    }
+    if (maxPort >= 0) {
+        // Resize storage if necessary (keep previous values if possible)
+        if ((int)portControlStorage_.size() <= maxPort) portControlStorage_.resize(maxPort + 1, 0.0f);
+    }
+
     for (size_t i = 0; i < parameters_.size() && i < controlValues_.size(); i++) {
+        // Update both controlValues_ (indexed by parameter order) and per-port storage (indexed by port index)
         controlValues_[i] = parameters_[i].currentValue;
-        lilv_instance_connect_port(instance, parameters_[i].portIndex, &controlValues_[i]);
+        if (parameters_[i].portIndex >= 0) {
+            if ((int)portControlStorage_.size() <= parameters_[i].portIndex) {
+                // Safety: expand if needed (shouldn't normally happen)
+                portControlStorage_.resize(parameters_[i].portIndex + 1, 0.0f);
+            }
+            portControlStorage_[parameters_[i].portIndex] = parameters_[i].currentValue;
+
+            // Diagnostic logging for braids parameters and for unexpected large port indexes
+            if (parameters_[i].groupName == "braids") {
+                Trace::Log("LV2","Connect braids param '%s' to port=%d addr=%p value=%f",
+                    parameters_[i].name.c_str(), parameters_[i].portIndex, (void*)&portControlStorage_[parameters_[i].portIndex], portControlStorage_[parameters_[i].portIndex]);
+            }
+
+            // Avoid connecting to obviously invalid ports (negative) and log suspicious indexes
+            if (parameters_[i].portIndex < 0 || parameters_[i].portIndex > 65536) {
+                Trace::Error("LV2","Suspicious port index %d for param %s", parameters_[i].portIndex, parameters_[i].name.c_str());
+            }
+
+            lilv_instance_connect_port(instance, parameters_[i].portIndex, &portControlStorage_[parameters_[i].portIndex]);
+        } else {
+            Trace::Log("LV2","Skipping connect for param %s with invalid portIndex=%d", parameters_[i].name.c_str(), parameters_[i].portIndex);
+        }
     }
 }
 
@@ -771,6 +864,14 @@ void LV2Instrument::SetParameterValue(int index, float value) {
         parameters_[index].currentValue = value;
         if (index < (int)controlValues_.size()) {
             controlValues_[index] = value;
+        }
+        // Also sync to port indexed storage so connected plugin ports receive the new value
+        int pidx = parameters_[index].portIndex;
+        if (pidx >= 0) {
+            if ((int)portControlStorage_.size() <= pidx) {
+                portControlStorage_.resize(pidx + 1, 0.0f);
+            }
+            portControlStorage_[pidx] = value;
         }
     }
 }
