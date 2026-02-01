@@ -1,6 +1,7 @@
 #include "InstrumentView.h"
 #include "Application/Instruments/MidiInstrument.h"
 #include "Application/Instruments/SampleInstrument.h"
+#include "Application/Instruments/LV2Instrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Config.h"
 #include "BaseClasses/UIBigHexVarField.h"
@@ -9,6 +10,7 @@
 #include "BaseClasses/UIStaticField.h"
 #include "Foundation/Variables/Variable.h"
 #include "ModalDialogs/ImportSampleDialog.h"
+#include "ModalDialogs/ImportLV2Dialog.h"
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
 
@@ -17,6 +19,7 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	project_=data->project_ ;
 	lastFocusID_=0 ;
 	current_=0 ;
+	lv2ScrollOffset_=0 ;
 	onInstrumentChange() ;
 }
 
@@ -53,6 +56,9 @@ void InstrumentView::onInstrumentChange() {
 			break ;
 		case IT_SAMPLE:
 			fillSampleParameters() ;
+			break ;
+		case IT_LV2:
+			fillLV2Parameters() ;
 			break ;
 	} ;
 
@@ -262,6 +268,78 @@ void InstrumentView::fillMidiParameters() {
 
 } ;
 
+void InstrumentView::fillLV2Parameters() {
+
+	int i=viewData_->currentInstrument_ ;
+	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
+	I_Instrument *instr=bank->GetInstrument(i) ;
+	LV2Instrument *instrument=(LV2Instrument *)instr  ;
+	GUIPoint position=GetAnchor() ;
+
+	// Display the plugin selector (static field)
+	// Press B button to open plugin browser
+	// Use member variable for persistent storage
+	if (instrument->IsEmpty()) {
+		strcpy(lv2PluginLabel_, "load list");
+	} else {
+		snprintf(lv2PluginLabel_, 80, "plugin: %s", instrument->GetName());
+	}
+	UIStaticField *sf=new UIStaticField(position, lv2PluginLabel_) ;
+	T_SimpleList<UIField>::Insert(sf) ;
+	// Don't set focus on static field - let it fall through to first editable field
+
+	position._y+=1;
+	
+	// Show parameters if plugin is loaded
+	if (!instrument->IsEmpty()) {
+		int paramCount = instrument->GetParameterCount();
+		if (paramCount > 0) {
+			// Display parameters (show up to 10 at a time)
+			int startIdx = lv2ScrollOffset_;
+			int endIdx = startIdx + 10;
+			if (endIdx > paramCount) endIdx = paramCount;
+			
+			int textIdx = 0;
+			for (int p = startIdx; p < endIdx && textIdx < 10; p++, textIdx++) {
+				const LV2PluginParameter *param = instrument->GetParameter(p);
+				if (param && param->variable) {
+					// Create editable parameter field using persistent format string
+					snprintf(lv2ParamText_[textIdx], 80, "%s: %%d", param->name.c_str());
+					UIIntVarField *pfield = new UIIntVarField(position, *param->variable, lv2ParamText_[textIdx], 0, 127, 1, 1);
+					T_SimpleList<UIField>::Insert(pfield);
+					position._y+=1;
+				}
+			}
+			
+			if (paramCount > 10) {
+				position._y+=1;
+			}
+		}
+	}
+
+	position._y+=1;
+	Variable *v=instrument->FindVariable(LV2IP_VOLUME) ;
+	UIIntVarField* f1=new UIIntVarField(position,*v,"volume: %2.2X",0,0xFF,1,0x10) ;
+	T_SimpleList<UIField>::Insert(f1) ;
+	f1->SetFocus() ;
+
+	position._y+=1;
+	v=instrument->FindVariable(LV2IP_PAN) ;
+	f1=new UIIntVarField(position,*v,"pan: %2.2X",0,0xFE,1,0x10) ;
+	T_SimpleList<UIField>::Insert(f1) ;
+
+	v=instrument->FindVariable(LV2IP_TABLEAUTO) ;
+	position._y+=2 ;
+	UIIntVarField *f2=new UIIntVarField(position,*v,"automation: %s",0,1,1,1) ;
+	T_SimpleList<UIField>::Insert(f2) ;
+
+	position._y+=1;
+	v=instrument->FindVariable(LV2IP_TABLE) ;
+	f1=new UIIntVarOffField(position,*v,"table: %2.2X",0,0x7F,1,0x10) ;
+	T_SimpleList<UIField>::Insert(f1) ;
+
+} ;
+
 
 void InstrumentView::warpToNext(int offset) {
 	int instrument=viewData_->currentInstrument_+offset ;
@@ -284,26 +362,28 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
 	if (viewMode_==VM_NEW) {
 		if (mask==EPBM_A) {
-			UIIntVarField *field=(UIIntVarField *)GetFocus() ;
-			Variable &v=field->GetVariable() ;
-			switch(v.GetID()) {
-				case SIP_SAMPLE:
-				 {
-                    // First check if the samplelib exists
+			// For variable-based fields
+			if (mask&EPBM_A) {
+				UIIntVarField *field=(UIIntVarField *)GetFocus() ;
+				Variable &v=field->GetVariable() ;
+				switch(v.GetID()) {
+					case SIP_SAMPLE:
+					 {
+						// First check if the samplelib exists
 
-					 Path sampleLib(SamplePool::GetInstance()->GetSampleLib()) ;
-					 if (FileSystem::GetInstance()->GetFileType(sampleLib.GetPath().c_str())!=FT_DIR) {
-						 MessageBox *mb=new MessageBox(*this,"Can't access the samplelib",MBBF_OK) ;
-						 DoModal(mb) ;
-					 } else { ;
-						// Go to import sample
+						 Path sampleLib(SamplePool::GetInstance()->GetSampleLib()) ;
+						 if (FileSystem::GetInstance()->GetFileType(sampleLib.GetPath().c_str())!=FT_DIR) {
+							 MessageBox *mb=new MessageBox(*this,"Can't access the samplelib",MBBF_OK) ;
+							 DoModal(mb) ;
+						 } else { ;
+							// Go to import sample
 
-						 ImportSampleDialog *isd=new ImportSampleDialog(*this) ;
-						 DoModal(isd) ;
-					}
-					break ;
-				 }
-				case SIP_TABLE:
+							 ImportSampleDialog *isd=new ImportSampleDialog(*this) ;
+							 DoModal(isd) ;
+						}
+						break ;
+					 }
+					case SIP_TABLE:
 				 {
 					int next=TableHolder::GetInstance()->GetNext() ;
 					if (next!=NO_MORE_TABLE) {
@@ -320,23 +400,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
                 }
                 default:
                     break ;
-			}
-			mask&=(0xFFFF-EPBM_A) ;
-		}
-	}
-
-	if (viewMode_==VM_CLONE) {
-        if ((mask&EPBM_A)&&(mask&EPBM_L)) {
-			UIIntVarField *field=(UIIntVarField *)GetFocus() ;
-			mask&=(0xFFFF-EPBM_A) ;
-			Variable &v=field->GetVariable() ;
-			int current=v.GetInt() ;
-			if (current==-1) return ;
-
-			int next=TableHolder::GetInstance()->Clone(current) ;
-			if (next!=NO_MORE_TABLE) {
-				v.SetInt(next) ;
-				isDirty_=true ;
+				}
 			}
 		}
 		mask&=(0xFFFF-(EPBM_A|EPBM_L)) ;
@@ -350,6 +414,19 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 	FieldView::ProcessButtonMask(mask) ;
 
     Player *player=Player::GetInstance() ;
+    
+	// B button - LV2 plugin selection (when not holding B as modifier)
+	if (mask == EPBM_B) {
+		InstrumentType it=getInstrumentType() ;
+		if (it==IT_LV2) {
+			ImportLV2Dialog *dialog=new ImportLV2Dialog(*this) ;
+			DoModal(dialog) ;
+			onInstrumentChange() ; // Refresh to show plugin name
+			isDirty_=true ;
+			return ;
+		}
+	}
+	
 	// B Modifier
 
     if (mask & EPBM_B) {
@@ -398,6 +475,22 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
             // R Modifier
 
             if (mask & EPBM_R) {
+                // Check if we're on LV2 instrument with scrollable parameters
+                InstrumentType it=getInstrumentType() ;
+                if (it==IT_LV2 && !(mask & EPBM_LEFT) && !(mask & EPBM_DOWN)) {
+                    LV2Instrument *lv2instr=(LV2Instrument *)current_ ;
+                    if (!lv2instr->IsEmpty() && lv2instr->GetParameterCount() > 15) {
+                        lv2ScrollOffset_ += 5;
+                        if (lv2ScrollOffset_ + 15 > lv2instr->GetParameterCount()) {
+                            lv2ScrollOffset_ = lv2instr->GetParameterCount() - 15;
+                        }
+                        if (lv2ScrollOffset_ < 0) lv2ScrollOffset_ = 0;
+                        onInstrumentChange();
+                        isDirty_=true;
+                        return; // Don't process other R commands
+                    }
+                }
+                
                 if (mask & EPBM_LEFT) {
                     ViewType vt = VT_PHRASE;
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
@@ -437,6 +530,19 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
                 if (mask & EPBM_START) {
                     player->OnStartButton(PM_PHRASE, viewData_->songX_, true,
                                           viewData_->chainRow_);
+                }
+            } else if (mask & EPBM_L) {
+                // L shoulder - scroll LV2 parameters backwards
+                InstrumentType it=getInstrumentType() ;
+                if (it==IT_LV2) {
+                    LV2Instrument *lv2instr=(LV2Instrument *)current_ ;
+                    if (!lv2instr->IsEmpty() && lv2instr->GetParameterCount() > 15) {
+                        lv2ScrollOffset_ -= 5;
+                        if (lv2ScrollOffset_ < 0) lv2ScrollOffset_ = 0;
+                        onInstrumentChange();
+                        isDirty_=true;
+                        return; // Don't process other L commands
+                    }
                 }
             } else {
                 // No modifier

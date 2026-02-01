@@ -3,6 +3,7 @@
 #include "Application/Instruments/SampleInstrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Instruments/MidiInstrument.h"
+#include "Application/Instruments/LV2Instrument.h"
 #include "System/io/Status.h"
 #include "Application/Utils/char.h"
 #include "Application/Model/Config.h"
@@ -11,7 +12,8 @@
 
 char *InstrumentTypeData[IT_LAST]= {
 	"Sample",
-	"Midi"
+	"Midi",
+	"LV2"
 } ;
 
 
@@ -27,6 +29,10 @@ InstrumentBank::InstrumentBank():Persistent("INSTRUMENTBANK") {
         MidiInstrument *s=new MidiInstrument() ;
         s->SetChannel(i) ;
         instrument_[MAX_SAMPLEINSTRUMENT_COUNT+i]=s ;
+    }
+	for (int i=0;i<MAX_LV2INSTRUMENT_COUNT;i++) {
+        LV2Instrument *s=new LV2Instrument() ;
+        instrument_[MAX_SAMPLEINSTRUMENT_COUNT+MAX_MIDIINSTRUMENT_COUNT+i]=s ;
     }
     Status::Set("All instrument loaded") ;
 } ;
@@ -139,6 +145,9 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						case IT_MIDI:
 							instr=new MidiInstrument() ;
 							break ;
+						case IT_LV2:
+							instr=new LV2Instrument() ;
+							break ;
 					}
 					instrument_[id]=instr ;
 				} ;
@@ -230,8 +239,10 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
   
 	if (src->GetType()==IT_SAMPLE) {
 		dst=new SampleInstrument() ;
-	} else {
+	} else if (src->GetType()==IT_MIDI) {
 		dst=new MidiInstrument() ;
+	} else {
+		dst=new LV2Instrument() ;
 	}
 	instrument_[next]=dst ;
 	IteratorPtr<Variable> it(src->GetIterator()) ;

@@ -88,7 +88,21 @@ void AudioOutDriver::Trigger() {
 
     prepareMixBuffers();
     hasSound_=AudioMixer::Render(primarySoundBuffer_,sampleCount_) ;
+    
+    // Debug: Check what's in primarySoundBuffer after render
+    if (hasSound_ && sampleCount_ > 0) {
+        Trace::Debug("[AudioOutDriver] hasSound=1 sampleCount=%d primaryBuf[0]=%d primaryBuf[1]=%d",
+            sampleCount_, fp2i(primarySoundBuffer_[0]), fp2i(primarySoundBuffer_[1]));
+    }
+    
     clipToMix();
+    
+    // Debug: Check what's in mixBuffer after clipToMix
+    if (hasSound_ && sampleCount_ > 0) {
+        Trace::Debug("[AudioOutDriver] After clip: mixBuf[0]=%d mixBuf[1]=%d masterVol=%d",
+            mixBuffer_[0], mixBuffer_[1], masterVolume_);
+    }
+    
     if (!shuttingDown_) driver_->AddBuffer(mixBuffer_,sampleCount_) ;
 }
 

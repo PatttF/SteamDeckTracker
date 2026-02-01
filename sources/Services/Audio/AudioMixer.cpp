@@ -40,8 +40,10 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 
      fixed *mixBuffer=0 ;
      bool gotData=false ;
+     int moduleCount = 0;
      IteratorPtr<AudioModule>it(GetIterator()) ;
      for (it->Begin();!it->IsDone();it->Next()) {
+         moduleCount++;
          AudioModule &current=it->CurrentItem() ;
          if (!gotData) {
             gotData=current.Render(buffer,samplecount) ;           
@@ -60,6 +62,11 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
                }
             }
          }
+     }
+     
+     static int debugCount = 0;
+     if (gotData && debugCount++ % 200 == 0) {
+         Trace::Log("AudioMixer", "%s: modules=%d gotData=%d buf[0]=%d", name_.c_str(), moduleCount, gotData, buffer[0]);
      }
 
      //  Apply volume
@@ -93,6 +100,13 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 		writer_->AddBuffer(buffer,samplecount) ;
 	}
      SAFE_FREE(mixBuffer) ;
+     
+     // Debug: Always log for AudioOut to trace the exact buffer content at return
+     if (gotData && name_ == "AudioOut") {
+         Trace::Debug("[AudioMixer] %s RETURNING: gotData=%d buf[0]=%d buf[1]=%d", 
+                      name_.c_str(), gotData, buffer[0], buffer[1]);
+     }
+     
      return gotData ;
 } ;
 

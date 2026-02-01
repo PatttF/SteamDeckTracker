@@ -51,7 +51,15 @@ bool PlayerChannel::Render(fixed *buffer,int samplecount) {
    if (localInstr) {
      bool tableSlice=SyncMaster::GetInstance()->TableSlice() ;
      bool status=localInstr->Render(index_,buffer,samplecount,tableSlice) ;
-     return ((status)&&(!muted_)) ;
+     bool result = ((status)&&(!muted_));
+     
+     static int debugCount = 0;
+     if (localInstr->GetType() == IT_LV2 && debugCount++ % 100 == 0) {
+         Trace::Log("PlayerChannel", "ch=%d type=LV2 status=%d muted=%d result=%d buf[0]=%d", 
+                    index_, status, muted_, result, buffer[0]);
+     }
+     
+     return result;
    } else {
      return false ;
    }
