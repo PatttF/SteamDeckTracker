@@ -8,11 +8,21 @@
 #include "BaseClasses/UIIntVarOffField.h"
 #include "BaseClasses/UINoteVarField.h"
 #include "BaseClasses/UIStaticField.h"
+#include "BaseClasses/UILV2ParameterField.h"
 #include "Foundation/Variables/Variable.h"
 #include "ModalDialogs/ImportSampleDialog.h"
 #include "ModalDialogs/ImportLV2Dialog.h"
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
+#include <map>
+#include <vector>
+#include <string>
+
+// Callback for LV2 plugin selection dialog
+static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
+	InstrumentView &iv = (InstrumentView &)v;
+	iv.OnLV2PluginSelected();
+}
 
 InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
@@ -275,10 +285,18 @@ void InstrumentView::fillLV2Parameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	LV2Instrument *instrument=(LV2Instrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
+	
+	// Constants for two-column layout
+	const int COL_WIDTH = 27;      // Width of each column (25 + 2 space gap)
+	const int MAX_ROWS = 17;       // Max rows for parameters (leaving room for header + footer)
+	const int PARAMS_PER_PAGE = MAX_ROWS * 2;  // Two columns
+
+	// Display help text at top
+	UIStaticField *helpField=new UIStaticField(position, "Press B to open LV2 list, L to scroll") ;
+	T_SimpleList<UIField>::Insert(helpField) ;
+	position._y+=1;
 
 	// Display the plugin selector (static field)
-	// Press B button to open plugin browser
-	// Use member variable for persistent storage
 	if (instrument->IsEmpty()) {
 		strcpy(lv2PluginLabel_, "load list");
 	} else {
@@ -286,7 +304,6 @@ void InstrumentView::fillLV2Parameters() {
 	}
 	UIStaticField *sf=new UIStaticField(position, lv2PluginLabel_) ;
 	T_SimpleList<UIField>::Insert(sf) ;
-	// Don't set focus on static field - let it fall through to first editable field
 
 	position._y+=1;
 	
@@ -294,48 +311,120 @@ void InstrumentView::fillLV2Parameters() {
 	if (!instrument->IsEmpty()) {
 		int paramCount = instrument->GetParameterCount();
 		if (paramCount > 0) {
-			// Display parameters (show up to 10 at a time)
-			int startIdx = lv2ScrollOffset_;
-			int endIdx = startIdx + 10;
-			if (endIdx > paramCount) endIdx = paramCount;
+			// Group parameters by groupName, preserving order
+			std::vector<std::pair<std::string, std::vector<int>>> groups;
+			std::map<std::string, int> groupIndex;
 			
-			int textIdx = 0;
-			for (int p = startIdx; p < endIdx && textIdx < 10; p++, textIdx++) {
+			for (int p = 0; p < paramCount; p++) {
 				const LV2PluginParameter *param = instrument->GetParameter(p);
-				if (param && param->variable) {
-					// Create editable parameter field using persistent format string
-					snprintf(lv2ParamText_[textIdx], 80, "%s: %%d", param->name.c_str());
-					UIIntVarField *pfield = new UIIntVarField(position, *param->variable, lv2ParamText_[textIdx], 0, 127, 1, 1);
-					T_SimpleList<UIField>::Insert(pfield);
-					position._y+=1;
+				if (!param) continue;
+				
+				std::string grp = param->groupName.empty() ? "" : param->groupName;
+				if (groupIndex.find(grp) == groupIndex.end()) {
+					groupIndex[grp] = (int)groups.size();
+					groups.push_back({grp, {}});
+				}
+				groups[groupIndex[grp]].second.push_back(p);
+			}
+			
+			// Flatten grouped params into display order
+			std::vector<int> displayOrder;
+			for (auto &grp : groups) {
+				for (int idx : grp.second) {
+					displayOrder.push_back(idx);
 				}
 			}
 			
-			if (paramCount > 10) {
-				position._y+=1;
+			// Calculate scroll range
+			int totalParams = (int)displayOrder.size();
+			int startIdx = lv2ScrollOffset_;
+			if (startIdx >= totalParams) startIdx = 0;
+			int endIdx = startIdx + PARAMS_PER_PAGE;
+			if (endIdx > totalParams) endIdx = totalParams;
+			
+			// Display in two columns - left-align for long labels
+			int baseY = position._y;
+			int baseX = 0;  // Start at left edge of screen
+			int col = 0;
+			int row = 0;
+			int textIdx = 0;
+			
+			for (int i = startIdx; i < endIdx && textIdx < 40; i++, textIdx++) {
+				int p = displayOrder[i];
+				const LV2PluginParameter *param = instrument->GetParameter(p);
+				if (!param || !param->variable) continue;
+				
+				// Position for this parameter - columns at left edge
+				GUIPoint pos(baseX + col * COL_WIDTH, baseY + row);
+				
+				// Truncate name to fit column (allow more chars now that we're left-aligned)
+				strncpy(lv2ParamText_[textIdx], param->name.c_str(), 22);
+				lv2ParamText_[textIdx][22] = '\0';
+				
+				// Calculate step size: 127 steps should span the actual min/max range
+				// So each +1 on 0-127 = (max-min)/127 actual value change
+				int stepSize = 1;
+				int bigStep = 10;
+				
+				// For enumerated params with scale points, step to next point
+				if (!param->scalePoints.empty()) {
+					int numPoints = (int)param->scalePoints.size();
+					if (numPoints > 1) {
+						// Step size to move between scale points
+						stepSize = 127 / (numPoints - 1);
+						if (stepSize < 1) stepSize = 1;
+						bigStep = stepSize * 4;
+					}
+				}
+				
+				// Variable stores values scaled to 0-127, so use those as min/max
+				UILV2ParameterField *pfield = new UILV2ParameterField(
+					pos, 
+					*param->variable, 
+					lv2ParamText_[textIdx],
+					instrument,
+					p,
+					0,    // min: Variable is scaled 0-127
+					127,  // max: Variable is scaled 0-127
+					stepSize, 
+					bigStep
+				);
+				T_SimpleList<UIField>::Insert(pfield);
+				
+				row++;
+				if (row >= MAX_ROWS) {
+					row = 0;
+					col++;
+					if (col >= 2) break;  // Only two columns
+				}
 			}
+			
+			// Move position down past the parameter grid
+			position._y = baseY + MAX_ROWS + 1;
 		}
+	} else {
+		position._y += 2;
 	}
 
-	position._y+=1;
+	// Footer controls
 	Variable *v=instrument->FindVariable(LV2IP_VOLUME) ;
 	UIIntVarField* f1=new UIIntVarField(position,*v,"volume: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 	f1->SetFocus() ;
 
-	position._y+=1;
+	position._x += 15;
 	v=instrument->FindVariable(LV2IP_PAN) ;
 	f1=new UIIntVarField(position,*v,"pan: %2.2X",0,0xFE,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
+	position._x += 12;
 	v=instrument->FindVariable(LV2IP_TABLEAUTO) ;
-	position._y+=2 ;
-	UIIntVarField *f2=new UIIntVarField(position,*v,"automation: %s",0,1,1,1) ;
+	UIIntVarField *f2=new UIIntVarField(position,*v,"auto: %s",0,1,1,1) ;
 	T_SimpleList<UIField>::Insert(f2) ;
 
-	position._y+=1;
+	position._x += 10;
 	v=instrument->FindVariable(LV2IP_TABLE) ;
-	f1=new UIIntVarOffField(position,*v,"table: %2.2X",0,0x7F,1,0x10) ;
+	f1=new UIIntVarOffField(position,*v,"tbl: %2.2X",0,0x7F,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 } ;
@@ -420,9 +509,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 		InstrumentType it=getInstrumentType() ;
 		if (it==IT_LV2) {
 			ImportLV2Dialog *dialog=new ImportLV2Dialog(*this) ;
-			DoModal(dialog) ;
-			onInstrumentChange() ; // Refresh to show plugin name
-			isDirty_=true ;
+			DoModal(dialog, LV2PluginSelectCallback) ;
 			return ;
 		}
 	}
@@ -475,22 +562,6 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
             // R Modifier
 
             if (mask & EPBM_R) {
-                // Check if we're on LV2 instrument with scrollable parameters
-                InstrumentType it=getInstrumentType() ;
-                if (it==IT_LV2 && !(mask & EPBM_LEFT) && !(mask & EPBM_DOWN)) {
-                    LV2Instrument *lv2instr=(LV2Instrument *)current_ ;
-                    if (!lv2instr->IsEmpty() && lv2instr->GetParameterCount() > 15) {
-                        lv2ScrollOffset_ += 5;
-                        if (lv2ScrollOffset_ + 15 > lv2instr->GetParameterCount()) {
-                            lv2ScrollOffset_ = lv2instr->GetParameterCount() - 15;
-                        }
-                        if (lv2ScrollOffset_ < 0) lv2ScrollOffset_ = 0;
-                        onInstrumentChange();
-                        isDirty_=true;
-                        return; // Don't process other R commands
-                    }
-                }
-                
                 if (mask & EPBM_LEFT) {
                     ViewType vt = VT_PHRASE;
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
@@ -532,13 +603,17 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
                                           viewData_->chainRow_);
                 }
             } else if (mask & EPBM_L) {
-                // L shoulder - scroll LV2 parameters backwards
+                // L shoulder - scroll LV2 parameters with wrap-around
                 InstrumentType it=getInstrumentType() ;
+                const int PARAMS_PER_PAGE = 36;  // 18 rows x 2 columns
                 if (it==IT_LV2) {
                     LV2Instrument *lv2instr=(LV2Instrument *)current_ ;
-                    if (!lv2instr->IsEmpty() && lv2instr->GetParameterCount() > 15) {
-                        lv2ScrollOffset_ -= 5;
-                        if (lv2ScrollOffset_ < 0) lv2ScrollOffset_ = 0;
+                    if (!lv2instr->IsEmpty() && lv2instr->GetParameterCount() > PARAMS_PER_PAGE) {
+                        lv2ScrollOffset_ += 18;  // Scroll by one column
+                        // Wrap around when hitting the end
+                        if (lv2ScrollOffset_ >= lv2instr->GetParameterCount()) {
+                            lv2ScrollOffset_ = 0;
+                        }
                         onInstrumentChange();
                         isDirty_=true;
                         return; // Don't process other L commands
@@ -583,6 +658,13 @@ void InstrumentView::DrawView() {
 } ;
 
 void InstrumentView::OnFocus() { onInstrumentChange(); }
+
+void InstrumentView::OnLV2PluginSelected() {
+	// Reset scroll offset when new plugin is loaded
+	lv2ScrollOffset_ = 0;
+	onInstrumentChange();
+	isDirty_ = true;
+}
 
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {
 	onInstrumentChange() ;

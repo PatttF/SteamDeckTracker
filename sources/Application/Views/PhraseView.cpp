@@ -524,6 +524,11 @@ void PhraseView::TriggerAudition(int targetRow, int targetCol) {
             auditionStartMs_ = 0;
             auditionTimeoutMs_ = 0;
         }
+    } else if (instr->GetType() == IT_LV2) {
+        // LV2 instruments always use short audition like oscillator mode
+        auditionTimeoutMs_ = 500;
+        auditionStartMs_ = System::GetInstance()->GetClock();
+        Player::GetInstance()->SetChannelTimeToLiveMs(viewData_->songX_, 500);
     } else {
         auditionStartMs_ = 0;
         auditionTimeoutMs_ = 0;

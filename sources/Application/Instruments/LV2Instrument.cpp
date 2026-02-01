@@ -4,6 +4,8 @@
 #include <string.h>
 #include <cmath>
 #include <map>
+#include <cstdlib>
+#include <algorithm>
 #include <lilv/lilv.h>
 #include <lv2/urid/urid.h>
 #include <lv2/atom/atom.h>
@@ -464,7 +466,6 @@ void LV2Instrument::loadPlugin() {
     if (g_midiEventUrid == 0) {
         g_midiEventUrid = urid_map(nullptr, LV2_MIDI__MidiEvent);
         g_atomSequenceUrid = urid_map(nullptr, LV2_ATOM__Sequence);
-        Trace::Log("LV2", "URIDs initialized: midiEvent=%d, atomSequence=%d", g_midiEventUrid, g_atomSequenceUrid);
     }
     
     // Instantiate the plugin with 44100 Hz sample rate and URID features
@@ -476,7 +477,6 @@ void LV2Instrument::loadPlugin() {
     }
     
     pluginInstance_ = instance;
-    Trace::Log("LV2", "Successfully loaded plugin: %s", name_);
 }
 
 void LV2Instrument::discoverParameters() {
@@ -515,13 +515,13 @@ void LV2Instrument::discoverParameters() {
             lilv_port_is_a(plugin, port, atom_port) &&
             lilv_port_is_a(plugin, port, input_class)) {
             // Check if it supports MIDI events
-            const LilvNodes* buf_types = lilv_port_get_value(plugin, port,
-                lilv_new_uri(world, "http://lv2plug.in/ns/ext/atom#bufferType"));
+            LilvNode* buffer_type_uri = lilv_new_uri(world, "http://lv2plug.in/ns/ext/atom#bufferType");
+            const LilvNodes* buf_types = lilv_port_get_value(plugin, port, buffer_type_uri);
             if (buf_types) {
                 midiInputPort_ = i;
                 lilv_nodes_free((LilvNodes*)buf_types);
-                Trace::Log("LV2", "Found MIDI atom input port at index %d", i);
             }
+            lilv_node_free(buffer_type_uri);
         }
         
         // Check for audio ports
@@ -548,12 +548,47 @@ void LV2Instrument::discoverParameters() {
             LV2PluginParameter param;
             param.variable = nullptr;  // Initialize to null
             
-            // Get port name
-            LilvNode* name_node = lilv_port_get_name(plugin, port);
-            param.name = lilv_node_as_string(name_node);
-            lilv_node_free(name_node);
+            // Get port label (preferred over name for UI display)
+            LilvNode* label_uri = lilv_new_uri(world, "http://www.w3.org/2000/01/rdf-schema#label");
+            const LilvNodes* label_nodes = lilv_port_get_value(plugin, port, label_uri);
+            if (label_nodes && lilv_nodes_size(label_nodes) > 0) {
+                const LilvNode* first_label = lilv_nodes_get_first(label_nodes);
+                param.name = lilv_node_as_string(first_label);
+                lilv_nodes_free((LilvNodes*)label_nodes);
+            } else {
+                // Fallback to port name if no label
+                LilvNode* name_node = lilv_port_get_name(plugin, port);
+                param.name = lilv_node_as_string(name_node);
+                lilv_node_free(name_node);
+            }
+            lilv_node_free(label_uri);
             
-            // Get port range (min, max, default)
+            // Get port group information
+            // Just get the group URI for now - the full name lookup via lilv_world_get is problematic
+            LilvNode* group_uri = lilv_new_uri(world, "http://lv2plug.in/ns/ext/port-groups#group");
+            const LilvNodes* group_nodes = lilv_port_get_value(plugin, port, group_uri);
+            std::string groupName = "";
+            if (group_nodes && lilv_nodes_size(group_nodes) > 0) {
+                const LilvNode* first_group = lilv_nodes_get_first(group_nodes);
+                // Extract short name from URI (e.g., "mutated:braids" -> "braids")
+                if (lilv_node_is_uri(first_group)) {
+                    const char* group_uri_str = lilv_node_as_uri(first_group);
+                    const char* hash = strrchr(group_uri_str, '#');
+                    const char* colon = strrchr(group_uri_str, ':');
+                    if (hash) {
+                        groupName = hash + 1;
+                    } else if (colon) {
+                        groupName = colon + 1;
+                    }
+                }
+                lilv_nodes_free((LilvNodes*)group_nodes);
+            }
+            lilv_node_free(group_uri);
+            
+            // Store group name in parameter
+            param.groupName = groupName;
+            
+            // Get port range with proper defaults from TTL
             LilvNode* def_node = nullptr;
             LilvNode* min_node = nullptr;
             LilvNode* max_node = nullptr;
@@ -561,17 +596,94 @@ void LV2Instrument::discoverParameters() {
             
             param.minValue = min_node ? lilv_node_as_float(min_node) : 0.0f;
             param.maxValue = max_node ? lilv_node_as_float(max_node) : 1.0f;
-            param.defaultValue = def_node ? lilv_node_as_float(def_node) : param.minValue;
+            
+            // Read scale points for enumerated parameters using the proper lilv API
+            LilvScalePoints* scale_points = lilv_port_get_scale_points(plugin, port);
+            if (scale_points) {
+                LILV_FOREACH(scale_points, sp_iter, scale_points) {
+                    const LilvScalePoint* sp = lilv_scale_points_get(scale_points, sp_iter);
+                    if (sp) {
+                        const LilvNode* label_node = lilv_scale_point_get_label(sp);
+                        const LilvNode* value_node = lilv_scale_point_get_value(sp);
+                        if (label_node && value_node) {
+                            LV2ScalePoint scale_pt;
+                            scale_pt.value = lilv_node_as_float(value_node);
+                            scale_pt.label = std::string(lilv_node_as_string(label_node));
+                            param.scalePoints.push_back(scale_pt);
+                        }
+                    }
+                }
+                lilv_scale_points_free(scale_points);
+                
+                // Sort scale points by value for consistent ordering
+                if (!param.scalePoints.empty()) {
+                    std::sort(param.scalePoints.begin(), param.scalePoints.end(),
+                        [](const LV2ScalePoint& a, const LV2ScalePoint& b) {
+                            return a.value < b.value;
+                        });
+                }
+            }
+            
+            // Also check for enumeration property which indicates discrete values
+            LilvNode* port_property_uri = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#portProperty");
+            const LilvNodes* port_properties = lilv_port_get_value(plugin, port, port_property_uri);
+            bool isEnumeration = false;
+            if (port_properties) {
+                LILV_FOREACH(nodes, prop_iter, port_properties) {
+                    const LilvNode* property = lilv_nodes_get(port_properties, prop_iter);
+                    const char* prop_uri = lilv_node_as_uri(property);
+                    if (strcmp(prop_uri, "http://lv2plug.in/ns/lv2core#enumeration") == 0) {
+                        isEnumeration = true;
+                        break;
+                    }
+                }
+                lilv_nodes_free((LilvNodes*)port_properties);
+            }
+            lilv_node_free(port_property_uri);
+            
+            // Use TTL default value if available, otherwise use minimum
+            if (def_node) {
+                param.defaultValue = lilv_node_as_float(def_node);
+            } else {
+                // If no default specified, use a sensible default based on range
+
+                if (param.minValue >= 0.0f && param.maxValue <= 1.0f) {
+                    // Normalized range, default to 0.5
+                    param.defaultValue = 0.5f;
+                } else if (param.minValue < 0.0f && param.maxValue > 0.0f) {
+                    // Bipolar range, default to 0
+                    param.defaultValue = 0.0f;
+                } else {
+                    // Use minimum value as default
+                    param.defaultValue = param.minValue;
+                }
+            }
+            
             param.currentValue = param.defaultValue;
             param.portIndex = i;
             
-            // Create a Variable for this parameter (scaled to 0-127 for UI)
-            int scaledValue = (int)((param.currentValue - param.minValue) / (param.maxValue - param.minValue) * 127.0f);
+            // Create a Variable with better naming
+            // Use group prefix if available, otherwise use parameter label
+            std::string varDisplayName = param.name;
+            if (!groupName.empty()) {
+                varDisplayName = groupName + ":" + param.name;
+            }
+            
+            // Limit variable name length and create unique variable name
+            char varName[64];
+            if (varDisplayName.length() > 20) {
+                // Truncate long names but keep meaningful part
+                std::string shortName = varDisplayName.substr(0, 17) + "...";
+                snprintf(varName, 64, "%s", shortName.c_str());
+            } else {
+                snprintf(varName, 64, "%s", varDisplayName.c_str());
+            }
+            
+            // Scale default value to 0-127 for UI (use rounding for better precision)
+            int scaledValue = (int)(((param.currentValue - param.minValue) / (param.maxValue - param.minValue) * 127.0f) + 0.5f);
             if (scaledValue < 0) scaledValue = 0;
             if (scaledValue > 127) scaledValue = 127;
             
-            char varName[64];
-            snprintf(varName, 64, "p%d", (int)parameters_.size());
             param.variable = new Variable(varName, MAKE_FOURCC('L','P',i/256,i%256), scaledValue);
             Insert(param.variable);
             
@@ -592,9 +704,6 @@ void LV2Instrument::discoverParameters() {
     lilv_node_free(control_class);
     lilv_node_free(output_class);
     lilv_node_free(input_class);
-    
-    Trace::Log("LV2", "Discovered %d control parameters, audio ports: in=%d/%d out=%d/%d, MIDI: %d", 
-               (int)parameters_.size(), audioInputPortL_, audioInputPortR_, audioOutputPortL_, audioOutputPortR_, midiInputPort_);
     
     // Allocate MIDI buffer if we have a MIDI port (16KB should be enough)
     if (midiInputPort_ >= 0 && !midiBuffer_) {
@@ -643,7 +752,6 @@ void LV2Instrument::connectPorts(int bufferSize) {
         seq->body_pad = 0;
         
         lilv_instance_connect_port(instance, midiInputPort_, midiBuffer_);
-        Trace::Log("LV2", "Connected MIDI port %d", midiInputPort_);
     }
     
     // If mono output, connect same buffer to both channels
@@ -656,8 +764,6 @@ void LV2Instrument::connectPorts(int bufferSize) {
         controlValues_[i] = parameters_[i].currentValue;
         lilv_instance_connect_port(instance, parameters_[i].portIndex, &controlValues_[i]);
     }
-    
-    Trace::Log("LV2", "Connected ports");
 }
 
 void LV2Instrument::SetParameterValue(int index, float value) {
@@ -667,4 +773,31 @@ void LV2Instrument::SetParameterValue(int index, float value) {
             controlValues_[index] = value;
         }
     }
+}
+
+std::string LV2Instrument::GetParameterScalePointLabel(int paramIndex, float value) const {
+    if (paramIndex < 0 || paramIndex >= (int)parameters_.size()) {
+        return "";
+    }
+    
+    const LV2PluginParameter& param = parameters_[paramIndex];
+    
+    // Find the closest scale point to the given value
+    if (!param.scalePoints.empty()) {
+        float minDiff = std::abs(param.scalePoints[0].value - value);
+        int bestIndex = 0;
+        
+        for (size_t i = 1; i < param.scalePoints.size(); i++) {
+            float diff = std::abs(param.scalePoints[i].value - value);
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestIndex = i;
+            }
+        }
+        
+        // Return the closest scale point label
+        return param.scalePoints[bestIndex].label;
+    }
+    
+    return ""; // No scale points defined
 }

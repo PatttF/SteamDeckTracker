@@ -145,7 +145,6 @@ void ImportLV2Dialog::selectPlugin() {
             if (instr->GetType() == IT_LV2) {
                 LV2Instrument *lv2instr = (LV2Instrument *)instr;
                 lv2instr->SetPlugin(info.uri.c_str());
-                Trace::Log("LV2", "Selected plugin: %s", info.name.c_str());
             }
             
             EndModal(0);

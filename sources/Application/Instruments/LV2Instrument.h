@@ -15,14 +15,21 @@
 #define LV2IP_TABLE         MAKE_FOURCC('T','A','B','L')
 #define LV2IP_TABLEAUTO     MAKE_FOURCC('T','B','L','A')
 
+struct LV2ScalePoint {
+    float value;
+    std::string label;
+};
+
 struct LV2PluginParameter {
     std::string name;
+    std::string groupName;  // Port group name from TTL
     float minValue;
     float maxValue;
     float defaultValue;
     float currentValue;
     int portIndex;
     Variable *variable;  // Variable for UI binding
+    std::vector<LV2ScalePoint> scalePoints;  // Scale points for enumerated values
 };
 
 class LV2Instrument : public I_Instrument {
@@ -72,6 +79,9 @@ public:
         return nullptr;
     }
     void SetParameterValue(int index, float value);
+    
+    // Scale point support for enumerated parameters
+    std::string GetParameterScalePointLabel(int paramIndex, float value) const;
     // Store a variable value read from project file when variable doesn't yet exist
     void StorePendingVariable(const char *name, const char *value);
 

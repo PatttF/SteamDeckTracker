@@ -194,8 +194,9 @@ static void InstallLV2Callback(View &v,ModalView &dialog) {
         "wget -O mi_mutated.lv2.zip 'https://github.com/PatttF/zynMI/releases/download/BraidsPlaitsMarbles/mi_mutated.lv2.zip' && "
         "unzip -o mi_mutated.lv2.zip -d '%s' && "
         "chmod -R 755 '%s'/mi_mutated.lv2 && "
-        "rm -f mi_mutated.lv2.zip", 
-        lv2Dir, lv2Dir);
+        "rm -f mi_mutated.lv2.zip && "
+        "rm -f '%s'/mi_mutated.lv2.zip", 
+        lv2Dir, lv2Dir, lv2Dir);
     
     int result = system(downloadCmd);
     

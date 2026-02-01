@@ -15,6 +15,7 @@ public:
 	virtual void DrawView() ;
 	virtual void OnPlayerUpdate(PlayerEventType,unsigned int) {} ;
 	virtual void OnFocus() ;
+	void OnLV2PluginSelected() ;  // Callback when LV2 plugin is selected
 
 protected:
 	void warpToNext(int offset) ;
@@ -31,6 +32,6 @@ private:
 	I_Instrument *current_ ;
 	int lv2ScrollOffset_ ;  // For scrolling LV2 parameters
 	char lv2PluginLabel_[80];  // Persistent storage for plugin label
-	char lv2ParamText_[10][80];  // Storage for up to 10 parameter labels
+	char lv2ParamText_[40][40];  // Storage for parameter labels (2 cols x 20 rows)
 } ;
 #endif

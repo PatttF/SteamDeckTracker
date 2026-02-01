@@ -4,7 +4,7 @@
 .SUFFIXES:
 #---------------------------------------------------------------------------------
 
-PLATFORM:=  RASPI
+PLATFORM:=  X64
 FONT := original.bmp
 include $(PWD)/Makefile.$(PLATFORM)
 
@@ -250,7 +250,7 @@ COMMONFILES := \
 	MixerView.o NullView.o \
 	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o UIController.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
-	UIIntVarOffField.o UIIntVarField.o ViewEvent.o I_Action.o\
+	UIIntVarOffField.o UIIntVarField.o UILV2ParameterField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \
 	MessageBox.o \
 	GrooveView.o UINoteVarField.o UIBigHexVarField.o \
