@@ -111,9 +111,19 @@ void TableHolder::RestoreContent(TiXmlElement *element) {
 			// Get the table ID
 			
 			const char* hexid=current->Attribute("ID") ;
+			if (!hexid || strlen(hexid) < 2) {
+				current=current->NextSiblingElement() ;
+				continue ;
+			}
 			unsigned char b1=(c2h__(hexid[0]))<<4 ;
 			unsigned char b2=c2h__(hexid[1]) ;
 			unsigned char id=b1+b2 ;	
+
+			// Bounds check
+			if (id >= TABLE_COUNT) {
+				current=current->NextSiblingElement() ;
+				continue ;
+			}
 
 			Table &table=table_[id] ;
 

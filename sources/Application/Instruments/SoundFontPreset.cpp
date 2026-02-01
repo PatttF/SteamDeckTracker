@@ -60,7 +60,7 @@ bool SoundFontPreset::IsMulti() {
 
 bool SoundFontPreset::IsLooped(int note) {
 	checkNote(note) ;
-	return ((vect_->shSampleModes&0x1)!=0) ;
+	return (vect_ && (vect_->shSampleModes&0x1)!=0) ;
 } ;
 
 int SoundFontPreset::GetLoopStart(int note) {

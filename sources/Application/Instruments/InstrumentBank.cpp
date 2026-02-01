@@ -55,6 +55,9 @@ InstrumentBank::~InstrumentBank() {
 } ;
 
 I_Instrument *InstrumentBank::GetInstrument(int i) {
+	if (i < 0 || i >= MAX_INSTRUMENT_COUNT) {
+		return instrument_[0] ; // Return first instrument as fallback
+	}
 	return instrument_[i] ;
 } ;
 
@@ -105,6 +108,10 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 			// Get the instrument ID
 			
 			const char* hexid=current->Attribute("ID") ;
+			if (!hexid || strlen(hexid) < 2) {
+				current=current->NextSiblingElement() ;
+				continue ;
+			}
 			unsigned char b1=(c2h__(hexid[0]))<<4 ;
 			unsigned char b2=c2h__(hexid[1]) ;
 			unsigned char id=b1+b2 ;			

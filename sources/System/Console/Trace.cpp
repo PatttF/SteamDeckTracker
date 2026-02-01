@@ -38,11 +38,7 @@ Trace::Logger *Trace::SetLogger(Trace::Logger& logger)
 
 //------------------------------------------------------------------------------
 
-#ifdef _64BIT
-void Trace::VLog(const char* category,  const char *fmt, va_list& args) 
-#else
-void Trace::VLog(const char* category,  const char *fmt, const va_list& args) 
-#endif
+void Trace::VLog(const char* category,  const char *fmt, va_list args) 
 {
   char buffer[4096] ;
   sprintf(buffer, "[%s] ",category);

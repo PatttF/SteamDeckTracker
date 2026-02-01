@@ -113,6 +113,9 @@ int SamplePool::getIndexOf(const char *name) {
 }
 
 SoundSource *SamplePool::GetSource(int i) {
+	if (i < 0 || i >= count_) {
+		return 0 ;
+	}
 	return wav_[i] ;
 } ;
 

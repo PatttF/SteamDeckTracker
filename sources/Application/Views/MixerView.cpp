@@ -9,6 +9,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdlib.h>
+#include <cmath>
 #include <vector>
 #include <SDL.h>
 #include "Services/Audio/Audio.h"
@@ -442,8 +443,8 @@ void MixerView::DrawView() {
 					MixBus *mb = MixerService::GetInstance()->GetMixBus(bus);
 					if (mb) mbPeak = mb->GetLastPeak();
 				}
-				// if the bus peak indicates clipping, show red; otherwise use purple hilite
-                if (mbPeak >= 0.999f) SetColor(CD_CLIP);
+				// show clip color only when master output is actually clipping
+                if (MixerService::GetInstance()->Clipped()) SetColor(CD_CLIP);
                 else SetColor(mbPeak > 0.02f ? CD_HILITE2 : CD_HILITE1);
 				// draw the filled glyphs and then pad to the full column width
 				DrawString(colX, pos._y + m, fillBlock, props);
@@ -504,8 +505,8 @@ void MixerView::DrawView() {
 		int pad = dx - 2;
 		if (row < masterFilled) {
 			float mp = MixerService::GetInstance()->GetMasterPeak();
-			// show clip color if output driver flagged clipping or master peak is at maximum
-                if (MixerService::GetInstance()->Clipped() || mp >= 0.999f) SetColor(CD_CLIP);
+			// show clip color only when output driver flags actual clipping
+                if (MixerService::GetInstance()->Clipped()) SetColor(CD_CLIP);
                 else SetColor(mp > 0.02f ? CD_HILITE2 : CD_HILITE1);
 			// draw the filled glyphs and then pad to the full column width
 			DrawString(colX, pos._y + m, "##", props);

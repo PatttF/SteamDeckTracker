@@ -14,6 +14,7 @@
 #include "Services/Midi/MidiService.h"
 #include "System/System/System.h"
 #include "Application/Instruments/SamplePool.h"
+#include <cstdint>
 
 #define ACTION_PURGE            MAKE_FOURCC('P','U','R','G')
 #define ACTION_SAVE             MAKE_FOURCC('S','A','V','E')
@@ -342,10 +343,10 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
 		return ;
 	}
 
-# ifdef _64BIT
-	int fourcc=*((int*)data);
+#ifdef _64BIT
+    int fourcc = *((unsigned int *)data);
 #else
-    int fourcc = (unsigned int)data;
+    int fourcc = (int)(intptr_t)data;
 #endif
 
     UIField *focus = GetFocus();

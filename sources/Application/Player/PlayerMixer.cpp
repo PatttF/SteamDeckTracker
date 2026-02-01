@@ -39,6 +39,12 @@ bool PlayerMixer::Init(Project *project) {
         lastInstrument_[i]=0 ;
 	} ;
 
+	// Connect all channels to their respective buses at init time
+	Mixer *mixerModel = Mixer::GetInstance();
+	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+		channel_[i]->SetMixBus(mixerModel->GetBus(i));
+	}
+
 	clipped_=false ;
 	return true ;
 } ;
@@ -63,7 +69,10 @@ bool PlayerMixer::Start() {
 		ms->SetMasterVolume(project_->GetMasterVolume());
 	}
 
+	// Connect all channels to their respective buses before starting
+	Mixer *mixer = Mixer::GetInstance();
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+		channel_[i]->SetMixBus(mixer->GetBus(i));
         notes_[i]=0xFF ;
     } ;
 

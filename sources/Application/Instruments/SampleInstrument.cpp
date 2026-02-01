@@ -25,7 +25,7 @@ bool SampleInstrument::useDirtyDownsampling_ = false;
 #define SHOULD_KILL_CLICKS false
 
 int SampleInstrument::lastMidiNote_[SONG_CHANNEL_COUNT]= {
-	-1,-1,-1,-1,-1,-1,-1,-1
+	-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
 } ;
 
 #define KRATE_SAMPLE_COUNT 100
@@ -1493,7 +1493,7 @@ void SampleInstrument::SetTableState(TableSaveState &state) {
 } ;
 
 bool SampleInstrument::IsMulti() {
-	return source_->IsMulti() ;
+	return source_ ? source_->IsMulti() : false ;
 }
 
 void SampleInstrument::EnableDownsamplingLegacy()

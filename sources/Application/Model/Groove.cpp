@@ -23,6 +23,7 @@ void Groove::Clear() {
 		channelGroove_[i].groove_=0 ;
 		channelGroove_[i].position_=0 ;
 		channelGroove_[i].ticks_=data_[0][0] ;
+		channelStepped_[i]=false ;
 	} ;
 } ;
 // Resest groove data at song startup
@@ -33,6 +34,7 @@ void Groove::Reset() {
 		ChannelGroove &c=channelGroove_[i] ;
 		c.position_=0 ;
 		c.ticks_=data_[c.groove_][c.position_] ;
+		channelStepped_[i]=false ;
 	}
 } ;
 
@@ -55,7 +57,7 @@ void Groove::SaveContent(TiXmlNode *node) {
 void Groove::Trigger() {
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		ChannelGroove &c=channelGroove_[i] ;
-		UpdateGroove(c,false) ;
+		channelStepped_[i] = UpdateGroove(c,false) ;
 	}
 } ;
 
@@ -105,8 +107,7 @@ void Groove::SetGroove(int channel,int groove) {
 // to the next sequencing step
 
 bool Groove::TriggerChannel(int i) {
-	ChannelGroove &c=channelGroove_[i] ;
-	return ((c.ticks_)%(data_[c.groove_][c.position_])==0) ;
+	return channelStepped_[i] ;
 } ;
 
 unsigned char *Groove::GetGrooveData(int groove) {

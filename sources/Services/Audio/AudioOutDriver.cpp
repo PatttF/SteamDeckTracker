@@ -9,6 +9,14 @@
 #include <math.h>
 
 AudioOutDriver::AudioOutDriver(AudioDriver &driver) {
+    // Initialize member variables to safe defaults
+    clipped_ = false;
+    hasSound_ = false;
+    softclip_ = -1;  // bypass
+    softclipGain_ = 0;
+    masterVolume_ = 100;
+    sampleCount_ = 0;
+
     // Precalculate constant values for softclipping algorithm
     softClipData_[0].alpha = 1.45f; // -1.5db (approx.)
 	softClipData_[1].alpha = 1.07f; // -3db (approx.)

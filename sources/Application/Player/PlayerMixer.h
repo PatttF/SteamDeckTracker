@@ -10,6 +10,7 @@
 #include "PlayerChannel.h"
 #include "Foundation/Observable.h"
 #include "Services/Audio/AudioOut.h"
+#include <atomic>
 
 #define STREAM_MIX_BUS 8
 
@@ -65,7 +66,7 @@ private:
 	bool clipped_ ;
 	
     I_Instrument *lastInstrument_[SONG_CHANNEL_COUNT] ;
-	bool isChannelPlaying_[SONG_CHANNEL_COUNT] ;
+	std::atomic<bool> isChannelPlaying_[SONG_CHANNEL_COUNT] ;
 
 	AudioFileStreamer fileStreamer_ ;
 	PlayerChannel *channel_[SONG_CHANNEL_COUNT] ;

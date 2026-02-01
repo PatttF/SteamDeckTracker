@@ -95,19 +95,22 @@ int SDLEventManager::MainLoop()
 
 
 				case SDL_JOYBUTTONDOWN:
-					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,true) ;
+					if (event.jbutton.which < MAX_JOY_COUNT && buttonCS_[event.jbutton.which])
+						buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,true) ;
 					break ;
 				case SDL_JOYBUTTONUP:
 					if (dumpEvent_) {
 						Trace::Log("EVENT","but(%d):%d",event.button.which,event.jbutton.button) ;
 					}
-					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,false) ;
+					if (event.jbutton.which < MAX_JOY_COUNT && buttonCS_[event.jbutton.which])
+						buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,false) ;
 					break ;
 				case SDL_JOYAXISMOTION:
 					if (dumpEvent_) {
 						Trace::Log("EVENT","joy(%d)::%d=%d",event.jaxis.which,event.jaxis.axis,event.jaxis.value) ;
 					}
-					joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
+					if (event.jaxis.which < MAX_JOY_COUNT && joystickCS_[event.jaxis.which])
+						joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
 					break ;
 				case SDL_JOYHATMOTION:
 					if (dumpEvent_)
@@ -121,7 +124,8 @@ int SDLEventManager::MainLoop()
 							}
 						}
 					}
-					hatCS_[event.jhat.which]->SetHat(event.jhat.hat,event.jhat.value) ;
+					if (event.jhat.which < MAX_JOY_COUNT && hatCS_[event.jhat.which])
+						hatCS_[event.jhat.which]->SetHat(event.jhat.hat,event.jhat.value) ;
 					break ;
 				case SDL_JOYBALLMOTION:
 					if (dumpEvent_)

@@ -32,8 +32,9 @@ void UnixDir::GetContent(char *mask) {
 	}
 
 	while ((entry = readdir (directory)) != NULL) {
- 		char current[128] ;
-        strcpy(current,entry->d_name) ;
+ 		char current[256] ;
+        strncpy(current,entry->d_name,sizeof(current)-1) ;
+        current[sizeof(current)-1] = '\0' ;
         char *c=current ;
 		while(*c) {
             *c=tolower(*c) ;
@@ -42,7 +43,8 @@ void UnixDir::GetContent(char *mask) {
   //      Trace::Dump("testing mask") ;
         
         if (wildcardfit (mask,current)) {
-            strcpy(current,entry->d_name) ;
+            strncpy(current,entry->d_name,sizeof(current)-1) ;
+            current[sizeof(current)-1] = '\0' ;
 //            Trace::Dump("Inserting %s/%s",path_,current) ;
 			std::string fullpath=path_ ;
 			if (path_[strlen(path_)-1]!='/') {
@@ -74,8 +76,9 @@ void UnixDir::GetProjectContent() {
 	}
 	
 	while ((entry = readdir (directory)) != NULL) {
- 		char current[128] ;
-        strcpy(current,entry->d_name) ;
+ 		char current[256] ;
+        strncpy(current,entry->d_name,sizeof(current)-1) ;
+        current[sizeof(current)-1] = '\0' ;
         char *c=current ;
 		while(*c) {
             *c=tolower(*c) ;
@@ -84,7 +87,8 @@ void UnixDir::GetProjectContent() {
 		//      Trace::Dump("testing mask") ;
         
         if (wildcardfit (mask,current)) {
-            strcpy(current,entry->d_name) ;
+            strncpy(current,entry->d_name,sizeof(current)-1) ;
+            current[sizeof(current)-1] = '\0' ;
 			//            Trace::Dump("Inserting %s/%s",path_,current) ;
 			
 			

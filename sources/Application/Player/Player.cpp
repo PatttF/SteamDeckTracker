@@ -509,6 +509,9 @@ void Player::QueueChannel(int i,QueueingMode mode,unsigned char position,unsigne
 
 void Player::Update(Observable &o,I_ObservableData *d) {
 
+	// Note: This is called from within MixerService::Update() which already holds the lock.
+	// Do NOT acquire the lock here — it would cause deadlock.
+
 	// Make sure sync's ok
 
 	MidiService::GetInstance()->Trigger() ;
@@ -1162,7 +1165,7 @@ void Player::moveToNextChain(int channel,int hop) {
 
     if (searchNext) {
     	int pos=(viewData_->songPlayPos_[channel])+1 ;
-     	unsigned char *data=viewData_->song_->data_+channel+8*pos ;
+     	unsigned char *data=viewData_->song_->data_+channel+SONG_CHANNEL_COUNT*pos ;
       	bool loopBack=(*data==0xFF) ;
         	// Check if first step of chain contains somethin, if not we loop back
        	if (!loopBack) {

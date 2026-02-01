@@ -33,7 +33,8 @@ public:
 	virtual void RestoreContent(TiXmlElement *element);
 	
 private:
-	ChannelGroove channelGroove_[SONG_CHANNEL_COUNT] ; 
+	ChannelGroove channelGroove_[SONG_CHANNEL_COUNT] ;
+	bool channelStepped_[SONG_CHANNEL_COUNT] ; // cached stepped flag per channel
 	static unsigned char data_[MAX_GROOVES][16] ;
 } ;
 #endif

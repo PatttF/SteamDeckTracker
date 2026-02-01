@@ -39,10 +39,12 @@ bool MixerService::Init() {
 	// Initialize bus volumes from Mixer model
 	Mixer *mixer = Mixer::GetInstance();
 	if (mixer) {
-		for (int i = 0; i < SONG_CHANNEL_COUNT && i < MAX_BUS_COUNT; i++) {
+		for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
 			int vol = mixer->GetChannelVolume(i);
+			int bus = mixer->GetBus(i);
+			if (bus < 0 || bus >= MAX_BUS_COUNT) continue;
 			fixed fvol = fp_mul(i2fp(vol), fl2fp(0.01f));
-			bus_[i].SetVolume(fvol);
+			bus_[bus].SetVolume(fvol);
 		}
 	}
 
@@ -132,6 +134,9 @@ void MixerService::Stop() {
 }
 
 MixBus *MixerService::GetMixBus(int i) {
+	if (i < 0 || i >= MAX_BUS_COUNT) {
+		return &(bus_[0]) ; // Return first bus as fallback
+	}
 	return &(bus_[i]) ;
 } ;
 
@@ -159,7 +164,7 @@ void MixerService::Update(Observable &o,I_ObservableData *d)  {
 }
 
 bool MixerService::Clipped() {
-     return out_->Clipped() ;
+     return (out_) ? out_->Clipped() : false;
 } ;
 
 void MixerService::SetPregain(int vol) {
@@ -175,14 +180,16 @@ void MixerService::SetPregain(int vol) {
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
         int chPercent = 100;
         if (mixer) chPercent = mixer->GetChannelVolume(i);
+        int bus = mixer ? mixer->GetBus(i) : i;
+        if (bus < 0 || bus >= MAX_BUS_COUNT) continue;
         fixed chFactor = fp_mul(i2fp(chPercent), fl2fp(0.01f));
         fixed combined = fp_mul(chFactor, pregainFactor);
-        bus_[i].SetVolume(combined);
+        bus_[bus].SetVolume(combined);
     }
 };
 
 void MixerService::SetSoftclip(int clip, int gain) {
-    out_->SetSoftclip(clip, gain);
+    if (out_) out_->SetSoftclip(clip, gain);
 }
 
 void MixerService::SetMasterVolume(int attn) {
@@ -194,7 +201,7 @@ void MixerService::SetMasterVolume(int attn) {
 }
 
 int MixerService::GetPlayedBufferPercentage() {
-	return out_->GetPlayedBufferPercentage() ;
+	return out_ ? out_->GetPlayedBufferPercentage() : 0;
 }
 
 // Set per-channel volume (0..100). This maps channel -> bus then sets bus volume.
