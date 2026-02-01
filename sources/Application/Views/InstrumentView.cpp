@@ -406,25 +406,25 @@ void InstrumentView::fillLV2Parameters() {
 		position._y += 2;
 	}
 
-	// Footer controls
+	// Footer controls - stacked vertically since LV2 has no note blocks
 	Variable *v=instrument->FindVariable(LV2IP_VOLUME) ;
 	UIIntVarField* f1=new UIIntVarField(position,*v,"volume: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 	f1->SetFocus() ;
 
-	position._x += 15;
+	position._y += 1;
 	v=instrument->FindVariable(LV2IP_PAN) ;
 	f1=new UIIntVarField(position,*v,"pan: %2.2X",0,0xFE,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
-	position._x += 12;
+	position._y += 1;
 	v=instrument->FindVariable(LV2IP_TABLEAUTO) ;
-	UIIntVarField *f2=new UIIntVarField(position,*v,"auto: %s",0,1,1,1) ;
+	UIIntVarField *f2=new UIIntVarField(position,*v,"automation: %s",0,1,1,1) ;
 	T_SimpleList<UIField>::Insert(f2) ;
 
-	position._x += 10;
+	position._y += 1;
 	v=instrument->FindVariable(LV2IP_TABLE) ;
-	f1=new UIIntVarOffField(position,*v,"tbl: %2.2X",0,0x7F,1,0x10) ;
+	f1=new UIIntVarOffField(position,*v,"table: %2.2X",0,0x7F,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 } ;
