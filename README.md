@@ -9,3 +9,7 @@ Instruments 90 - 9F are dedicated for LV2 plugins.
 <img width="550" height="272" alt="image" src="https://github.com/user-attachments/assets/9cc5d3ff-fce2-4935-92a8-356b7d3509f9" />
 
 <img width="550" height="272" alt="image" src="https://github.com/user-attachments/assets/97edbbb9-9726-4635-9faa-87f7c9080765" />
+<<<<<<< HEAD
+=======
+
+>>>>>>> d17f78c (cleanup)
