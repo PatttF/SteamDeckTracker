@@ -79,6 +79,34 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 			data.SetAttribute("TYPE",InstrumentTypeData[instr->GetType()]) ;
 
 			IteratorPtr<Variable> it(instr->GetIterator()) ;
+			// For LV2 instruments, ensure parameter Variables exist and are
+			// synchronized from the instrument's internal parameter state so
+			// they will be serialized reliably.
+			if (instr->GetType() == IT_LV2) {
+				LV2Instrument *lin = (LV2Instrument *)instr;
+				int pc = lin->GetParameterCount();
+				for (int pi = 0; pi < pc; ++pi) {
+					const LV2PluginParameter *p = lin->GetParameter(pi);
+					if (!p) continue;
+					char varName[64];
+					snprintf(varName, sizeof(varName), "p%d", pi);
+					// compute scaled 0-127 value from parameter currentValue
+					int scaled = 0;
+					if (p->maxValue > p->minValue) {
+						float normalized = (p->currentValue - p->minValue) / (p->maxValue - p->minValue);
+						scaled = int(normalized * 127.0f + 0.5f);
+						if (scaled < 0) scaled = 0; if (scaled > 127) scaled = 127;
+					}
+					Variable *v = instr->FindVariable(varName);
+					if (v) {
+						v->SetInt(scaled, false);
+					} else {
+						Variable *nv = new Variable(varName, MAKE_FOURCC('L','P',pi/256,pi%256), scaled);
+						instr->Insert(nv);
+					}
+				}
+			}
+
 			int count=0 ;
 			for (it->Begin();!it->IsDone();it->Next()) {
 				Variable &v=it->CurrentItem() ;
@@ -87,6 +115,50 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 				param.SetAttribute("VALUE",v.GetString()) ;
 				data.InsertEndChild(param) ;
 				count++ ;
+			}
+
+			// Ensure LV2 plugin URI and parameter values are recorded even if
+			// Variables weren't present for some reason (fallback persistence).
+			if (instr->GetType() == IT_LV2) {
+				LV2Instrument *lin = (LV2Instrument *)instr;
+				// Plugin URI
+				const char *puri = lin->GetPluginURI();
+				if (puri && puri[0]) {
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", "plugin");
+					paramp.SetAttribute("VALUE", puri);
+					data.InsertEndChild(paramp);
+					count++;
+				}
+				// Parameters: prefer to save Variable values if available, otherwise
+				// save the parameter currentValue scaled to 0-127 to match UI scaling.
+				int pc = lin->GetParameterCount();
+				for (int pi = 0; pi < pc; ++pi) {
+					const LV2PluginParameter *p = lin->GetParameter(pi);
+					if (!p) continue;
+					char varName[64];
+					snprintf(varName, sizeof(varName), "p%d", pi);
+					// Try to find the Variable on the instrument
+					Variable *v = lin->FindVariable(varName);
+					std::string val;
+					if (v) {
+						val = v->GetString();
+					} else {
+						// scale currentValue to 0-127
+						float normalized = 0.0f;
+						if (p->maxValue > p->minValue)
+							normalized = (p->currentValue - p->minValue) / (p->maxValue - p->minValue);
+						int scaled = int(normalized * 127.0f + 0.5f);
+						if (scaled < 0) scaled = 0; if (scaled > 127) scaled = 127;
+						char buf[16]; snprintf(buf, sizeof(buf), "%d", scaled);
+						val = buf;
+					}
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", varName);
+					paramp.SetAttribute("VALUE", val.c_str());
+					data.InsertEndChild(paramp);
+					count++;
+				}
 			}
 			if (count) node->InsertEndChild(data) ;
 		}
@@ -173,11 +245,22 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
           }
 
 					IteratorPtr<Variable> it(instr->GetIterator()) ;
+					bool applied=false;
 					for (it->Begin();!it->IsDone();it->Next()) {
 						Variable &v=it->CurrentItem() ;
 						if (!strcmp(v.GetName(),name)) {
 							v.SetString(value) ;
-						} ;
+							applied=true;
+							break;
+						}
+					}
+					if (!applied) {
+						// If this is an LV2 instrument, store the param for later when
+						// parameters are discovered during Init()
+						if (instr->GetType()==IT_LV2) {
+							LV2Instrument *lin = (LV2Instrument *)instr;
+							lin->StorePendingVariable(name,value);
+						}
 					}
 					param=param->NextSiblingElement() ;
 				}

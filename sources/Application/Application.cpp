@@ -179,6 +179,50 @@ bool Application::Init(GUICreateWindowParams &params) {
       }
     }
   }
+
+  // If installer script missing in root:scripts, try to copy from bundled bin: locations
+  {
+    Path dst("root:scripts/install_lv2_steamos.sh");
+    std::string dstPath = dst.GetPath();
+    struct stat st;
+    if (stat(dstPath.c_str(), &st) != 0) {
+      // not present; try candidate sources under bin:
+      const char *candidates[] = {"bin:scripts/install_lv2_steamos.sh","bin:../scripts/install_lv2_steamos.sh","bin:../../scripts/install_lv2_steamos.sh"};
+      bool copied = false;
+      for (size_t i=0;i<sizeof(candidates)/sizeof(candidates[0]);++i) {
+        Path src(candidates[i]);
+        if (FileSystem::GetInstance()->GetFileType(src.GetPath().c_str())==FT_FILE) {
+          // ensure destination directory exists
+          size_t ppos = dstPath.find_last_of('/');
+          if (ppos!=std::string::npos) {
+            std::string dir = dstPath.substr(0,ppos);
+            struct stat st2;
+            if (stat(dir.c_str(),&st2)!=0) {
+              mkdir(dir.c_str(),0755);
+            }
+          }
+          // copy file contents
+          std::string srcCanon = src.GetCanonicalPath();
+          std::ifstream in(srcCanon.c_str(), std::ios::binary);
+          std::ofstream out(dstPath.c_str(), std::ios::binary);
+          if (in && out) {
+            out << in.rdbuf();
+            out.close();
+            in.close();
+            chmod(dstPath.c_str(),0755);
+            Trace::Log("APP","Copied %s to %s", srcCanon.c_str(), dstPath.c_str());
+            copied = true;
+            break;
+          } else {
+            Trace::Log("APP","Failed to copy installer from %s to %s", src.GetPath().c_str(), dstPath.c_str());
+          }
+        }
+      }
+      if (!copied) {
+        Trace::Log("APP","No bundled LV2 installer script found to copy to %s", dstPath.c_str());
+      }
+    }
+  }
 	return true ;
 } ;
 

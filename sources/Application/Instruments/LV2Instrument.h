@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <map>
 
 // LV2 instrument parameters
 #define LV2IP_PLUGIN        MAKE_FOURCC('P','L','U','G')
@@ -71,6 +72,8 @@ public:
         return nullptr;
     }
     void SetParameterValue(int index, float value);
+    // Store a variable value read from project file when variable doesn't yet exist
+    void StorePendingVariable(const char *name, const char *value);
 
 private:
     char name_[80];                     // Instrument name
@@ -106,6 +109,8 @@ private:
         int size;
     };
     std::vector<MidiEvent> pendingMidiEvents_;
+    // Pending variable values loaded from project file before parameters exist
+    std::map<std::string,std::string> pendingParamValues_;
     
     // Plugin parameters
     std::vector<LV2PluginParameter> parameters_;
@@ -117,6 +122,7 @@ private:
     void loadPlugin();
     void cleanupPlugin();
     void connectPorts(int bufferSize);
+    
 };
 
 #endif

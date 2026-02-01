@@ -24,6 +24,7 @@
 #define ACTION_PURGE_INSTRUMENT MAKE_FOURCC('P','R','G','I')
 #define ACTION_TEMPO_CHANGED    MAKE_FOURCC('T','E','M','P')
 #define ACTION_INSTALL_SAMPLES  MAKE_FOURCC('I','N','S','T')
+#define ACTION_INSTALL_LV2      MAKE_FOURCC('I','L','V','2')
 
 static void SaveAsProjectCallback(View &v,ModalView &dialog) {
 
@@ -165,6 +166,27 @@ static void InstallSamplesCallback(View &v,ModalView &dialog) {
     pv.SetNotification("Default samples installed");
 } ;
 
+// Callback for installing LV2 packages (will attempt pkexec then sudo)
+static void InstallLV2Callback(View &v,ModalView &dialog) {
+    if (dialog.GetReturnCode()!=MBL_YES) return;
+
+    ProjectView &pv = (ProjectView &)v;
+
+    // Resolve script path relative to the executable (bin:../scripts/...)
+    Path scriptPath("bin:../scripts/install_lv2_steamos.sh");
+    std::string scriptCanon = scriptPath.GetCanonicalPath();
+
+    std::string cmd = std::string("pkexec \"") + scriptCanon + "\" || sudo \"" + scriptCanon + "\"";
+    int rc = system(cmd.c_str());
+    if (rc != 0) {
+        MessageBox *mb = new MessageBox(pv, "Failed to install LV2 packages (user cancelled or error).", MBBF_OK);
+        pv.DoModal(mb);
+        return;
+    }
+
+    pv.SetNotification("LV2 packages install finished (check terminal for details)");
+}
+
 ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
     lastClock_ = 0;
@@ -247,6 +269,11 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
     position._y += 1;
     a1 = new UIActionField("Install default samples", ACTION_INSTALL_SAMPLES, position);
+    a1->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(a1);
+
+    position._y += 1;
+    a1 = new UIActionField("Install packages for lv2 support", ACTION_INSTALL_LV2, position);
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 
@@ -392,6 +419,11 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
         case ACTION_INSTALL_SAMPLES: {
             MessageBox *mb = new MessageBox(*this, "Install default samples into samplelib?", MBBF_YES | MBBF_NO);
             DoModal(mb, InstallSamplesCallback);
+            break;
+        }
+        case ACTION_INSTALL_LV2: {
+            MessageBox *mb = new MessageBox(*this, "Install LV2 packages on this system? (requires sudo)", MBBF_YES | MBBF_NO);
+            DoModal(mb, InstallLV2Callback);
             break;
         }
         case ACTION_QUIT: {

@@ -75,7 +75,8 @@ LV2Instrument::LV2Instrument() {
     }
 
     // Setup variables
-    Variable *v = new Variable("plugin", LV2IP_PLUGIN, -1);
+    // Use a string variable for plugin URI (empty = no plugin)
+    Variable *v = new Variable("plugin", LV2IP_PLUGIN, "");
     Insert(v);
     v = new Variable("volume", LV2IP_VOLUME, 255);
     Insert(v);
@@ -93,7 +94,44 @@ LV2Instrument::~LV2Instrument() {
 
 bool LV2Instrument::Init() {
     tableState_.Reset();
-    // TODO: Initialize LV2 plugin here when plugin hosting is implemented
+    // If a plugin URI was saved in the 'plugin' Variable, load it now so
+    // that parameter Variables get created and we can apply any saved values.
+    Variable *pv = FindVariable(LV2IP_PLUGIN);
+    if (pv) {
+        const char *s = pv->GetString();
+        // Ignore empty or numeric placeholder values like "-1" or "0"
+        if (s && s[0] != '\0') {
+            bool allDigits = true;
+            const char *p = s;
+            if (*p == '-') p++;
+            while (*p) { if (!(*p >= '0' && *p <= '9')) { allDigits = false; break; } p++; }
+            if (!allDigits) {
+                SetPlugin(s);
+            }
+        }
+    }
+
+    // After parameters discovered, apply any pending parameter values loaded
+    // earlier from the project file (they were saved before the parameters
+    // variables were created).
+    for (auto &kv : pendingParamValues_) {
+        const std::string &name = kv.first;
+        const std::string &val = kv.second;
+        Variable *v = nullptr;
+        // Find variable by name
+        IteratorPtr<Variable> it(GetIterator());
+        for (it->Begin(); !it->IsDone(); it->Next()) {
+            Variable &vv = it->CurrentItem();
+            if (name == vv.GetName()) {
+                v = &vv;
+                break;
+            }
+        }
+        if (v) {
+            v->SetString(val.c_str(), false);
+        }
+    }
+    pendingParamValues_.clear();
     return true;
 }
 
@@ -127,8 +165,6 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
     noteOn.size = 3;
     pendingMidiEvents_.push_back(noteOn);
 
-    Trace::Log("LV2", "Note on: channel=%d note=%d (queued)", channel, note);
-
     return true;
 }
 
@@ -148,16 +184,9 @@ void LV2Instrument::Stop(int channel) {
         noteOff.size = 3;
         pendingMidiEvents_.push_back(noteOff);
     }
-
-    Trace::Log("LV2", "Note off: channel=%d note=%d (queued)", channel, lastNote_[channel]);
 }
 
 bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick) {
-    static int renderCallCount = 0;
-    if (renderCallCount++ % 100 == 0) {
-        Trace::Log("LV2", "Render called: channel=%d size=%d playing=%d empty=%d", 
-                   channel, size, playing_[channel], IsEmpty());
-    }
     
     if (IsEmpty() || !playing_[channel]) {
         // Fill with silence
@@ -178,7 +207,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
     // Allocate buffers if needed (use fixed size of 2048 to avoid constant reallocation)
     const int BUFFER_SIZE = 2048;
     if (!audioBufferL_) {
-        Trace::Log("LV2", "Allocating audio buffers size=%d", BUFFER_SIZE);
         audioBufferL_ = new float[BUFFER_SIZE];
         audioBufferR_ = new float[BUFFER_SIZE];
         audioInputL_ = new float[BUFFER_SIZE];
@@ -192,7 +220,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         LilvInstance* instance = (LilvInstance*)pluginInstance_;
         lilv_instance_activate(instance);
         isActivated_ = true;
-        Trace::Log("LV2", "Plugin activated");
     }
 
     // Clear input buffers (no audio input for synths)
@@ -242,12 +269,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             // Calculate padded size (atoms must be 64-bit aligned)
             size_t padded_size = sizeof(LV2_Atom_Event) + ((evt.size + 7) & ~7);
             offset += padded_size;
-            
-            static int logCount = 0;
-            if (logCount++ < 10) {
-                Trace::Log("LV2", "Wrote MIDI event: %02X %02X %02X (URID=%d)", 
-                           evt.data[0], evt.data[1], evt.data[2], g_midiEventUrid);
-            }
         }
         pendingMidiEvents_.clear();
         
@@ -264,39 +285,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
     Variable *volVar = FindVariable(LV2IP_VOLUME);
     float volume = volVar ? (volVar->GetInt() / 255.0f) : 1.0f;
 
-    // Check if we're getting any audio
-    float maxSample = 0.0f;
-    for (int i = 0; i < size; i++) {
-        if (fabs(audioBufferL_[i]) > maxSample) maxSample = fabs(audioBufferL_[i]);
-        if (fabs(audioBufferR_[i]) > maxSample) maxSample = fabs(audioBufferR_[i]);
-    }
-    
-    // DEBUG: If no audio from plugin, generate test tone
-    if (maxSample < 0.001f) {
-        static int logCount = 0;
-        if (logCount++ % 100 == 0) {
-            Trace::Log("LV2", "No audio from plugin, generating test tone");
-        }
-        
-        // Generate simple sine wave test tone at 440Hz
-        static float phase = 0.0f;
-        float frequency = 440.0f;
-        float sampleRate = 44100.0f;
-        float phaseIncrement = (frequency * 2.0f * 3.14159f) / sampleRate;
-        
-        for (int i = 0; i < size; i++) {
-            float sample = sinf(phase) * 0.3f; // 30% amplitude
-            audioBufferL_[i] = sample;
-            audioBufferR_[i] = sample;
-            phase += phaseIncrement;
-            if (phase > 6.28318f) phase -= 6.28318f;
-        }
-    } else {
-        static int logCount = 0;
-        if (logCount++ % 100 == 0) {
-            Trace::Log("LV2", "Audio output: max=%.3f", maxSample);
-        }
-    }
+    // Plugin audio is now in audioBufferL_ and audioBufferR_
 
     for (int i = 0; i < size; i++) {
         float l = audioBufferL_[i] * volume;
@@ -311,12 +300,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         // Convert to fixed-point: audio samples must use i2fp() to shift into proper range
         buffer[i * 2] = i2fp((int)(l * 32767.0f));
         buffer[i * 2 + 1] = i2fp((int)(r * 32767.0f));
-    }
-
-    static int debugCount = 0;
-    if (debugCount++ % 100 == 0) {
-        Trace::Log("LV2", "Render returning: vol=%.2f, buf[0]=%d, buf[1]=%d", 
-                   volume, buffer[0], buffer[1]);
     }
 
     return true;
@@ -339,13 +322,9 @@ const char *LV2Instrument::GetName() {
 }
 
 void LV2Instrument::Purge() {
-    // Delete parameter variables before clearing
-    for (size_t i = 0; i < parameters_.size(); i++) {
-        if (parameters_[i].variable) {
-            delete parameters_[i].variable;
-            parameters_[i].variable = nullptr;
-        }
-    }
+    // Parameter Variables are owned by the instrument's VariableContainer
+    // (inserted via `Insert(variable)`). Do not delete them here to avoid
+    // double-free; the container's destructor will free owned Variables.
     cleanupPlugin();
     pluginURI_[0] = '\0';
     strcpy(name_, "LV2");
@@ -434,7 +413,15 @@ void LV2Instrument::SetPlugin(const char *uri) {
         // Load the plugin and discover parameters
         loadPlugin();
         discoverParameters();
+        // Update the 'plugin' Variable so the value is saved with the project
+        Variable *pv = FindVariable(LV2IP_PLUGIN);
+        if (pv) pv->SetString(pluginURI_, false);
     }
+}
+
+void LV2Instrument::StorePendingVariable(const char *name, const char *value) {
+    if (!name || !value) return;
+    pendingParamValues_[std::string(name)] = std::string(value);
 }
 
 void LV2Instrument::loadPlugin() {
