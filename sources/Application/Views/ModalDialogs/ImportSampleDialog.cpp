@@ -259,10 +259,21 @@ void ImportSampleDialog::setCurrentFolder(Path *path) {
 			dir->GetContent("*") ;
 			dir->Sort() ;
 			IteratorPtr<Path>it(dir->GetIterator()) ;
+			// First pass: add ".." at the very top
+			for (it->Begin();!it->IsDone();it->Next()) {
+				Path &current=it->CurrentItem() ;
+		 		if (current.IsDirectory() && current.GetName()=="..") {
+					Path *sample=new Path(current) ;
+					sampleList_.Insert(sample) ;
+					count++ ;
+					break ;
+				}
+			}
+			// Second pass: add other directories (excluding ".." and hidden)
 			for (it->Begin();!it->IsDone();it->Next()) {
 				Path &current=it->CurrentItem() ;
 		 		if (current.IsDirectory()) {
-					if (current.GetName().substr(0,1)!="." || current.GetName()=="..") {
+					if (current.GetName().substr(0,1)!="." ) {
 						Path *sample=new Path(current) ;
 						sampleList_.Insert(sample) ;
 						if (!formerPath.Compare(current)) {
@@ -272,10 +283,16 @@ void ImportSampleDialog::setCurrentFolder(Path *path) {
 					}
 				}
 			}
+			// Third pass: add audio files
 			for (it->Begin();!it->IsDone();it->Next()) {
 				Path &current=it->CurrentItem() ;
 		 		if (!current.IsDirectory()) {
-					if (current.Matches("*.wav") && current.GetName()[0]!='.') {
+					// Check for supported audio formats
+					if ((current.Matches("*.wav") || current.Matches("*.mp3") ||
+					     current.Matches("*.flac") || current.Matches("*.ogg") ||
+					     current.Matches("*.aiff") || current.Matches("*.aif") ||
+					     current.Matches("*.m4a") || current.Matches("*.opus")) &&
+					    current.GetName()[0]!='.') {
 						Path *sample=new Path(current) ;
 						sampleList_.Insert(sample) ;
 					}

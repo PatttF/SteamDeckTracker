@@ -3,7 +3,7 @@
 
 #include "Services/Audio/AudioModule.h"
 #include "System/FileSystem/FileSystem.h"
-#include "Application/Instruments/WavFile.h"
+#include "Application/Instruments/AudioFile.h"
 
 enum AudioFileStreamerMode {
 	AFSM_STOPPED,
@@ -21,7 +21,7 @@ protected:
 	AudioFileStreamerMode mode_ ;
 	Path path_ ;
 	bool newPath_ ;
-	WavFile *wav_ ;
+	AudioFile *wav_ ;
 	int position_ ;
 	int shift_ ;
 } ;

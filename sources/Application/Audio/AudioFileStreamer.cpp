@@ -50,7 +50,7 @@ bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
 
 	if (!wav_) 
   {
-		wav_=WavFile::Open(path_.GetPath().c_str()) ;
+		wav_=AudioFile::Open(path_.GetPath().c_str()) ;
 		if (!wav_) 
     {
       Trace::Error("Failed to open streaming of %s",path_.GetPath().c_str());
@@ -71,9 +71,10 @@ bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
 		mode_=AFSM_STOPPED ;
 		memset(buffer,0,2*samplecount*sizeof(fixed)) ;
 	}
-	wav_->GetBuffer(position_,count) ;
+	// AudioFile already has all samples loaded
 	fixed *dst=buffer ;
 	short *src=(short *)wav_->GetSampleBuffer(-1) ;
+	src += position_ * wav_->GetChannelCount(-1);  // Advance to current position
 	int channel=wav_->GetChannelCount(-1) ;
 
  // I might need to do sample interpolation here

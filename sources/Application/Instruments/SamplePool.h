@@ -3,7 +3,7 @@
 #define _SAMPLE_POOL_H_
 
 #include "Foundation/T_Singleton.h"
-#include "WavFile.h"
+#include "SoundSource.h"
 #include "Application/Model/Song.h"
 #include "Foundation/Observable.h"
 

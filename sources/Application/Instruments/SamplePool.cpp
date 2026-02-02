@@ -9,6 +9,7 @@
 #include "SoundFontPreset.h"
 #include "SoundFontManager.h"
 #include "Application/Model/Config.h"
+#include "AudioFile.h"
 
 #define SAMPLE_LIB "root:samplelib" 
 
@@ -51,21 +52,27 @@ void SamplePool::Load() {
 		return ;
 	}
 
-	// First, find all wav files
+	// First, find all audio files
 
-	dir->GetContent("*.wav") ;
+	dir->GetContent("*") ;
 	IteratorPtr<Path> it(dir->GetIterator()) ;
 	count_=0 ;
 
 	for(it->Begin();!it->IsDone();it->Next()) {
 		Path &path=it->CurrentItem() ;
-        Trace::Log("Load", "%s", path.GetCanonicalPath().c_str());
-        loadSample(path.GetPath().c_str()) ;
-		if (count_==MAX_PIG_SAMPLES) {
-		   Trace::Error("Warning maximum sample count reached") ;
-		   break ;
-		} ;
-
+		if (path.IsDirectory()) continue;
+		// Check for supported audio formats
+		if (path.Matches("*.wav") || path.Matches("*.mp3") || 
+		    path.Matches("*.flac") || path.Matches("*.ogg") ||
+		    path.Matches("*.aiff") || path.Matches("*.aif") ||
+		    path.Matches("*.m4a") || path.Matches("*.opus")) {
+			Trace::Log("Load", "%s", path.GetCanonicalPath().c_str());
+			loadSample(path.GetPath().c_str()) ;
+			if (count_==MAX_PIG_SAMPLES) {
+			   Trace::Error("Warning maximum sample count reached") ;
+			   break ;
+			} ;
+		}
 	} ;
 
 	// now, let's look at soundfonts
@@ -133,23 +140,22 @@ bool SamplePool::loadSample(const char *path) {
 
 	Path sPath(path) ;
     Status::Set("Loading %s",sPath.GetName().c_str()) ;
-    Trace::Log("loadSample", "%s", path);
 
     Path wavPath(path);
-    WavFile *wave=WavFile::Open(path) ;
-	if (wave) {
-		wav_[count_]=wave ;
-		const std::string name=wavPath.GetName() ;
-		names_[count_]=(char*)SYS_MALLOC(name.length()+1) ;
-		strcpy(names_[count_],name.c_str()) ;
-		count_++ ;
-		wave->GetBuffer(0,wave->GetSize(-1)) ;
-		wave->Close() ;
-		return true ;
-	} else {
-		Trace::Error("Failed to load samples %s",wavPath.GetName().c_str()) ;
-		return false ;
- 	}
+    
+    // Use FFmpeg-based AudioFile (supports WAV, MP3, FLAC, OGG, AIFF, etc.)
+    AudioFile *audio = AudioFile::Open(path);
+    if (audio) {
+        wav_[count_] = audio;
+        const std::string name = wavPath.GetName();
+        names_[count_] = (char*)SYS_MALLOC(name.length() + 1);
+        strcpy(names_[count_], name.c_str());
+        count_++;
+        return true;
+    }
+    
+    Trace::Error("Failed to load sample %s", wavPath.GetName().c_str());
+    return false;
 }
 
 #define IMPORT_CHUNK_SIZE 1000

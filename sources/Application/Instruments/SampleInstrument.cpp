@@ -207,6 +207,20 @@ bool SampleInstrument::Init() {
 	int index=vSample->GetInt() ;
 	source_=(index>=0)?pool->GetSource(index):0 ;
 	tableState_.Reset() ;
+	
+	// Sync loopEnd with actual sample size if it seems wrong
+	// This handles cases where samples were loaded via FFmpeg and size may differ
+	// from saved project data, or was never properly initialized
+	if (source_ && !source_->IsMulti()) {
+		int actualSize = source_->GetSize(-1);
+		int storedEnd = loopEnd_->GetInt();
+		// Update if stored value is 0, negative, or exceeds actual size
+		if (storedEnd <= 0 || storedEnd > actualSize) {
+			loopEnd_->SetInt(actualSize) ;
+			Trace::Log("Init", "Fixed loopEnd: stored=%d, actual=%d", storedEnd, actualSize);
+		}
+	}
+	
 	return false ;
 }
 
@@ -280,6 +294,9 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 
      float driverRate=float(Audio::GetInstance()->GetSampleRate()) ;
      
+	 Trace::Log("Sample", "Start: loopmode=%d, rendLoopStart=%d, rendLoopEnd=%d, loopStart=%d, loopEnd=%d",
+		loopmode, rp->rendLoopStart_, rp->rendLoopEnd_, loopStart_->GetInt(), loopEnd_->GetInt());
+     
 	 switch (loopmode) {
 		 case SILM_ONESHOT:
 		 case SILM_LOOP:
@@ -339,6 +356,9 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 		int note = rp->midiNote_;
 		int wavSize=rp->rendLoopEnd_;
 		int slice = wavSize/slices_->GetInt();
+
+		Trace::Log("Slice", "wavSize=%d, slices=%d, slice=%d, note=%d, pos=%d, end=%d",
+			wavSize, slices_->GetInt(), slice, note, note*slice, (note+1)*slice);
 
 		rp->position_= float(note*slice);
 		rp->baseSpeed_=fl2fp(source_->GetSampleRate(rp->midiNote_)/driverRate) ;
@@ -1157,11 +1177,13 @@ void SampleInstrument::updateInstrumentData(bool search) {
 		if (source_&&(!source_->IsMulti()))
     {
     		instrSize=source_->GetSize(-1) ;
+			Trace::Log("SampleInstrument", "Sample size: %d frames", instrSize);
 		}
 	}
 
 	Variable *v=FindVariable(SIP_END) ;
 	v->SetInt(instrSize) ;
+	Trace::Log("SampleInstrument", "Set loopEnd to %d", instrSize);
 	v=FindVariable(SIP_LOOPSTART) ;
 	v->SetInt(0) ;
 	v=FindVariable(SIP_START) ;
