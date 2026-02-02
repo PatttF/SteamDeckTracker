@@ -1,5 +1,5 @@
 # SDTracker
-Steam Deck focused tracker based on Little Piggy Tracker with 16 tracks instead of 8, broader wav file support, a mixer page, and LV2 support. All external files moved to SDTracker in users Documents folder. This is all generated on first launch, samples just need added to the samplelib folder. The dafault samples can be installed via the projects page as well as my Mutated Instruments LV2 plugin. In steam search for SDTracker control layout in community.
+Steam Deck focused tracker based on Little Piggy Tracker, I want to take the workflow of tye classic handheld tracker and expand it to use all of the power of modern computing. There will be a lot added/changed from the base LGPT code so while the basic usage will be the same this will be so mich more.  Now with 16 tracks instead of 8, MUCH broader sample format support thanks to ffmpeg integration, a mixer page, LV2 plugin support, and mich more to come. All external files moved to SDTracker in users Documents folder. This is all generated on first launch, samples just need added to the samplelib folder. The dafault samples can be installed via the projects page as well as my Mutated Instruments LV2 plugin. In steam search for SDTracker control layout in community.
 
 
 Instruments 90 - 9F are dedicated for LV2 plugins.
