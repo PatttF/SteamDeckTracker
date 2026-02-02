@@ -129,6 +129,11 @@ static inline std::string* getHelpLegend(FourCC command) {
 			result[1].assign("immediately");
 			result[2].assign("");
 			break;
+		case I_CMD_REVB:
+			result[0].assign("REVerB:aabb");
+			result[1].assign("aa=decay bb=send");
+			result[2].assign("multi-tap delay reverb");
+			break;
 		default:
 
 			result[0].assign("");

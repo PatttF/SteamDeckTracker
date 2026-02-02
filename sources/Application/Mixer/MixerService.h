@@ -7,11 +7,13 @@
 #include <SDL/SDL.h>
 #endif
 #include "Application/Commands/CommandDispatcher.h" // Would be better done externally and call an API here
+#include "Application/Model/Song.h" // For SONG_CHANNEL_COUNT
 #include "Foundation/Observable.h"
 #include "Foundation/T_Singleton.h"
 #include "Services/Audio/AudioMixer.h"
 #include "Services/Audio/AudioOut.h"
 #include "MixBus.h"
+#include "Reverb.h"
 
 enum MixerServiceRenderMode {
     MSRM_PLAYBACK,
@@ -74,6 +76,17 @@ public:
 	void ToggleChannelMute(int channel);
 	void ToggleChannelSolo(int channel);
 
+	// Reverb control
+	void SetReverbSend(int channel, float amount); // 0.0 to 1.0
+	float GetReverbSend(int channel);
+	void SetReverbDecay(float decay); // 0.0 to 1.0 (maps to 0.0 to 0.95 internal)
+	void SetReverbDamping(float damping); // 0.0 to 1.0
+	Reverb &GetReverb() { return reverb_; }
+	
+	// Per-channel reverb send levels (set via REVB command)
+	float GetChannelReverbSend(int channel);
+	void SetChannelReverbSend(int channel, float send);
+
 protected:
 	void toggleRendering(bool enable) ;
 private:
@@ -91,5 +104,9 @@ private:
   static const int WAVE_SAMPLES_CONST = 512;
   float waveform_[WAVE_SAMPLES_CONST];
   int waveformPos_;
+  
+  // Reverb effect
+  Reverb reverb_;
+  float channelReverbSend_[SONG_CHANNEL_COUNT]; // Per-channel reverb send (0.0 to 1.0)
 } ;
 #endif

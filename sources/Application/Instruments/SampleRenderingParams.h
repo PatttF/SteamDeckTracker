@@ -78,5 +78,10 @@ struct renderParams {
 	bool couldClick_ ;
 
 	char midiNote_ ;  // Current midi note
+	
+	// Per-channel reverb parameters (set via REVB command)
+	fixed reverbDecay_ ;   // Feedback decay amount (0 = off)
+	fixed reverbSend_ ;    // Send level
+	int reverbPos_ ;       // Current position in reverb buffer
 } ;
 #endif

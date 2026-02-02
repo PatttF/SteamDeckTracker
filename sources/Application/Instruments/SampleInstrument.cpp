@@ -9,6 +9,7 @@
 #include "Application/Instruments/Filters.h"
 #include "Application/Model/Table.h"
 #include "Services/Audio/Audio.h"
+#include "Application/Mixer/MixerService.h"
 #include "SampleVariable.h"
 
 #include <stdio.h>
@@ -19,6 +20,7 @@
 #include "Application/Player/SyncMaster.h"
 
 fixed SampleInstrument::feedback_[SONG_CHANNEL_COUNT][FB_BUFFER_LENGTH*2] ;
+fixed SampleInstrument::reverb_[SONG_CHANNEL_COUNT][REVERB_BUFFER_LENGTH*2] ;
 
 bool SampleInstrument::useDirtyDownsampling_ = false;
 
@@ -186,6 +188,11 @@ SampleInstrument::SampleInstrument() {
          rp->activeUpdaters_.clear();
          rp->couldClick_ = false;
          rp->midiNote_ = -1;
+         
+         // Initialize reverb state
+         rp->reverbDecay_ = 0;
+         rp->reverbSend_ = 0;
+         rp->reverbPos_ = 0;
     }
 
     // Reset table state
@@ -379,7 +386,12 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 	rp->feedbackMode_=FB_NONE ;
 
 	rp->baseFbTun_=rp->fbTun_=fl2fp(fbTune_->GetInt()/255.0f) ; 
-	rp->baseFbMix_=rp->fbMix_=fl2fp(fbMix_->GetInt()/255.0f) ; 
+	rp->baseFbMix_=rp->fbMix_=fl2fp(fbMix_->GetInt()/255.0f) ;
+
+	// Clear reverb delay line but preserve send/decay settings across notes
+	memset(reverb_[channel],0,REVERB_BUFFER_LENGTH*2*sizeof(fixed)) ;
+	rp->reverbPos_ = 0 ;
+	// Note: reverbSend_ and reverbDecay_ are NOT reset - they persist from REVB command
 
   // If we do a clean start (there was a instr number on the line)
 
@@ -1037,6 +1049,56 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 
 		rp->feedbackIn_=(feedbackIn-feedbackStart)/2 ;
 		rp->feedbackOut_=(feedbackPick-feedbackStart)/2 ;
+		
+		// Apply per-channel reverb effect if enabled
+		if (rp->reverbSend_ > 0) {
+			fixed *reverbBuf = reverb_[channel];
+			int reverbPos = rp->reverbPos_;
+			fixed decay = rp->reverbDecay_;
+			fixed send = rp->reverbSend_;
+			
+			// Tap offsets for early reflections (prime-ish for less metallic sound)
+			const int tapOffsets[4] = {1557, 2801, 4409, 4000};
+			const fixed tapGains[4] = {fl2fp(0.35f), fl2fp(0.25f), fl2fp(0.18f), fl2fp(0.12f)};
+			
+			fixed *outPtr = buffer;
+			for (int i = 0; i < size; i++) {
+				fixed dryL = *outPtr;
+				fixed dryR = *(outPtr + 1);
+				
+				// Read from delay taps and sum
+				fixed wetL = 0;
+				fixed wetR = 0;
+				for (int t = 0; t < 4; t++) {
+					int readPos = reverbPos - tapOffsets[t];
+					if (readPos < 0) readPos += REVERB_BUFFER_LENGTH;
+					
+					wetL = fp_add(wetL, fp_mul(reverbBuf[readPos * 2], tapGains[t]));
+					wetR = fp_add(wetR, fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]));
+				}
+				
+				// Write input + decayed feedback to delay line
+				int fbPos = reverbPos - REVERB_BUFFER_LENGTH + 100;
+				if (fbPos < 0) fbPos += REVERB_BUFFER_LENGTH;
+				fixed fbL = fp_mul(reverbBuf[fbPos * 2], decay);
+				fixed fbR = fp_mul(reverbBuf[fbPos * 2 + 1], decay);
+				
+				reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
+				reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
+				
+				// Mix wet with dry output
+				*outPtr = fp_add(dryL, wetL);
+				*(outPtr + 1) = fp_add(dryR, wetR);
+				
+				outPtr += 2;
+				reverbPos++;
+				if (reverbPos >= REVERB_BUFFER_LENGTH) {
+					reverbPos = 0;
+				}
+			}
+			rp->reverbPos_ = reverbPos;
+		}
+		
 		somethingToMix=true ;
     }
 
@@ -1432,6 +1494,24 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 				if (drive >0 ) rp->drive_=drive ;
 				if (crush >0 ) rp->crush_=crush ;
 			}
+			break;
+			
+		case I_CMD_REVB:
+			{
+				// REVB:aabb - aa=decay (0-FF), bb=send amount (0-FF)
+				// Sets per-channel reverb for this note
+				unsigned char decayVal = (value >> 8) & 0xFF;
+				unsigned char sendAmount = value & 0xFF;
+				
+				// Set decay (scale 0-255 to fixed point 0.0-0.9)
+				rp->reverbDecay_ = fl2fp((decayVal / 255.0f) * 0.9f);
+				// Set send amount (scale 0-255 to fixed point 0.0-1.0)
+				rp->reverbSend_ = fl2fp(sendAmount / 255.0f);
+				
+				Trace::Log("REVERB", "Sample Channel %d: decay=%d send=%d", channel, decayVal, sendAmount);
+			}
+			break;
+
 		default:
 			break;
 	} ;

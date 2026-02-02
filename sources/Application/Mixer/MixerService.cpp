@@ -12,6 +12,7 @@
 MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100), masterVolume_(100), waveformPos_(0) {
     mode_ = MSRM_PLAYBACK;
     for (int i=0;i<WAVE_SAMPLES_CONST;i++) waveform_[i]=0.0f;
+    for (int i=0;i<SONG_CHANNEL_COUNT;i++) channelReverbSend_[i]=0.0f;
 };
 
 MixerService::~MixerService(){};
@@ -363,4 +364,36 @@ void MixerService::Lock() {
 
 void MixerService::Unlock() {
 	if (sync_) SDL_UnlockMutex(sync_) ;
+}
+// Reverb control methods
+void MixerService::SetReverbSend(int channel, float amount) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    channelReverbSend_[channel] = amount;
+}
+
+float MixerService::GetReverbSend(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return 0.0f;
+    return channelReverbSend_[channel];
+}
+
+void MixerService::SetReverbDecay(float decay) {
+    reverb_.SetDecay(decay);
+}
+
+void MixerService::SetReverbDamping(float damping) {
+    reverb_.SetDamping(damping);
+}
+
+float MixerService::GetChannelReverbSend(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return 0.0f;
+    return channelReverbSend_[channel];
+}
+
+void MixerService::SetChannelReverbSend(int channel, float send) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
+    if (send < 0.0f) send = 0.0f;
+    if (send > 1.0f) send = 1.0f;
+    channelReverbSend_[channel] = send;
 }

@@ -53,8 +53,8 @@ void InstrumentView::onInstrumentChange() {
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	current_=bank->GetInstrument(i) ;
 
-	if (current_!=old) {
-		current_->RemoveObserver(*this) ;
+	if (current_!=old && old!=0) {
+		old->RemoveObserver(*this) ;
 	} ;
 	T_SimpleList<UIField>::Empty() ;
 

@@ -265,7 +265,7 @@ COMMONFILES := \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \
 	AudioOut.o \
 	DummyAudioOut.o PlayerChannel.o AudioFileStreamer.o \
-	MixBus.o \
+	MixBus.o Reverb.o \
 	MixerService.o PlayerMixer.o \
 	Service.o ServiceRegistry.o SubService.o \
 	Variable.o VariableContainer.o WatchedVariable.o \

@@ -3,7 +3,6 @@
 #include "Application/Model/Project.h"
 #include "Application/Player/SyncMaster.h" // Should be installable
 #include "AudioDriver.h"
-#include "Services/Time/TimeService.h"
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
 #include <math.h>
@@ -84,24 +83,14 @@ bool AudioOutDriver::Clipped() { return clipped_; };
 void AudioOutDriver::Trigger() {
 
 	if (shuttingDown_) return;
-	TimeService *ts=TimeService::GetInstance() ;
 
     prepareMixBuffers();
     hasSound_=AudioMixer::Render(primarySoundBuffer_,sampleCount_) ;
     
-    // Debug: Check what's in primarySoundBuffer after render
-    if (hasSound_ && sampleCount_ > 0) {
-        Trace::Debug("[AudioOutDriver] hasSound=1 sampleCount=%d primaryBuf[0]=%d primaryBuf[1]=%d",
-            sampleCount_, fp2i(primarySoundBuffer_[0]), fp2i(primarySoundBuffer_[1]));
-    }
+    // NOTE: Per-channel reverb is now applied in SampleInstrument::Render()
+    // The REVB command sets per-note reverb parameters
     
     clipToMix();
-    
-    // Debug: Check what's in mixBuffer after clipToMix
-    if (hasSound_ && sampleCount_ > 0) {
-        Trace::Debug("[AudioOutDriver] After clip: mixBuf[0]=%d mixBuf[1]=%d masterVol=%d",
-            mixBuffer_[0], mixBuffer_[1], masterVolume_);
-    }
     
     if (!shuttingDown_) driver_->AddBuffer(mixBuffer_,sampleCount_) ;
 }

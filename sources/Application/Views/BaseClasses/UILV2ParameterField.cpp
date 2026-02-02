@@ -35,6 +35,13 @@ void UILV2ParameterField::Draw(GUIWindow &w, int offset) {
 	char buffer[80];
 	int scaledValue = src_.GetInt();
 	
+	// Safety check - instrument may have been changed/deleted
+	if (!instrument_ || instrument_->IsEmpty()) {
+		snprintf(buffer, 80, "%s: %d", nameBuffer_, scaledValue);
+		w.DrawString(buffer, position, props);
+		return;
+	}
+	
 	// Try to get scale point label for this value
 	if (instrument_) {
 		// Convert scaled 0-127 value back to actual parameter value for scale point lookup

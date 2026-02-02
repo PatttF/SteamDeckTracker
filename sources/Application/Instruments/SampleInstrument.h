@@ -53,6 +53,7 @@ enum SampleInstrumentLoopMode {
 #define SIP_IR_WET MAKE_FOURCC('I', 'R', 'W', 'T')
 
 #define FB_BUFFER_LENGTH 3500 // (in samples)
+#define REVERB_BUFFER_LENGTH 4410 // (in samples) ~100ms at 44.1kHz
 
 class SampleInstrument: public I_Instrument,I_Observer {
 
@@ -111,6 +112,7 @@ private:
 	   static int lastMidiNote_[SONG_CHANNEL_COUNT] ;
 	   static fixed lastSample_[SONG_CHANNEL_COUNT][2] ;
 	   static fixed feedback_[SONG_CHANNEL_COUNT][FB_BUFFER_LENGTH*2] ;
+	   static fixed reverb_[SONG_CHANNEL_COUNT][REVERB_BUFFER_LENGTH*2] ; // Per-channel reverb delay line
 
 	   Variable *volume_ ;
 	   Variable *crush_ ;

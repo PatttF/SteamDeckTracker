@@ -92,6 +92,13 @@ private:
     int lastNote_[SONG_CHANNEL_COUNT];  // Last note played per channel
     bool playing_[SONG_CHANNEL_COUNT];  // Playing state per channel
     TableSaveState tableState_;
+    
+    // Per-channel reverb state
+    static const int LV2_REVERB_BUFFER_LENGTH = 4410; // ~100ms at 44.1kHz
+    fixed reverbBuffer_[SONG_CHANNEL_COUNT][LV2_REVERB_BUFFER_LENGTH * 2]; // Stereo delay line per channel
+    fixed reverbDecay_[SONG_CHANNEL_COUNT];   // Decay amount per channel
+    fixed reverbSend_[SONG_CHANNEL_COUNT];    // Send level per channel
+    int reverbPos_[SONG_CHANNEL_COUNT];       // Write position per channel
 
     // LV2 plugin state
     void *world_;                       // LilvWorld*

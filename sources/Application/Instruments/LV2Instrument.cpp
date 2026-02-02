@@ -1,6 +1,7 @@
 #include "LV2Instrument.h"
 #include "CommandList.h"
 #include "System/Console/Trace.h"
+#include "Application/Mixer/MixerService.h"
 #include <string.h>
 #include <cmath>
 #include <map>
@@ -74,6 +75,11 @@ LV2Instrument::LV2Instrument() {
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
         lastNote_[i] = -1;
         playing_[i] = false;
+        // Initialize reverb state
+        memset(reverbBuffer_[i], 0, sizeof(reverbBuffer_[i]));
+        reverbDecay_[i] = 0;
+        reverbSend_[i] = 0;
+        reverbPos_[i] = 0;
     }
 
     // Setup variables
@@ -353,12 +359,72 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         buffer[i * 2 + 1] = i2fp((int)(r * 32767.0f));
     }
 
+    // Apply per-channel reverb effect if enabled
+    if (reverbSend_[channel] > 0) {
+        fixed *reverbBuf = reverbBuffer_[channel];
+        int reverbPos = reverbPos_[channel];
+        fixed decay = reverbDecay_[channel];
+        fixed send = reverbSend_[channel];
+        
+        // Tap offsets for early reflections
+        const int tapOffsets[4] = {1557, 2801, 4409, 4000};
+        const fixed tapGains[4] = {fl2fp(0.35f), fl2fp(0.25f), fl2fp(0.18f), fl2fp(0.12f)};
+        
+        fixed *outPtr = buffer;
+        for (int i = 0; i < size; i++) {
+            fixed dryL = *outPtr;
+            fixed dryR = *(outPtr + 1);
+            
+            // Read from delay taps and sum
+            fixed wetL = 0;
+            fixed wetR = 0;
+            for (int t = 0; t < 4; t++) {
+                int readPos = reverbPos - tapOffsets[t];
+                if (readPos < 0) readPos += LV2_REVERB_BUFFER_LENGTH;
+                
+                wetL = fp_add(wetL, fp_mul(reverbBuf[readPos * 2], tapGains[t]));
+                wetR = fp_add(wetR, fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]));
+            }
+            
+            // Write input + decayed feedback to delay line
+            int fbPos = reverbPos - LV2_REVERB_BUFFER_LENGTH + 100;
+            if (fbPos < 0) fbPos += LV2_REVERB_BUFFER_LENGTH;
+            fixed fbL = fp_mul(reverbBuf[fbPos * 2], decay);
+            fixed fbR = fp_mul(reverbBuf[fbPos * 2 + 1], decay);
+            
+            reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
+            reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
+            
+            // Mix wet with dry output
+            *outPtr = fp_add(dryL, wetL);
+            *(outPtr + 1) = fp_add(dryR, wetR);
+            
+            outPtr += 2;
+            reverbPos++;
+            if (reverbPos >= LV2_REVERB_BUFFER_LENGTH) {
+                reverbPos = 0;
+            }
+        }
+        reverbPos_[channel] = reverbPos;
+    }
+
     return true;
 }
 
 void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
-    // TODO: Handle commands like volume, pan, etc.
-    // Could be mapped to LV2 plugin parameters
+    // Handle REVB command for reverb effect
+    if (cc == I_CMD_REVB) {
+        // REVB:aabb - aa=decay (0-FF), bb=send amount (0-FF)
+        unsigned char decayVal = (value >> 8) & 0xFF;
+        unsigned char sendAmount = value & 0xFF;
+        
+        // Set per-channel reverb parameters
+        reverbDecay_[channel] = fl2fp((decayVal / 255.0f) * 0.9f);
+        reverbSend_[channel] = fl2fp(sendAmount / 255.0f);
+        
+        Trace::Log("REVERB", "LV2 Channel %d: decay=%d send=%d", channel, decayVal, sendAmount);
+    }
+    // TODO: Handle other commands like volume, pan, etc.
 }
 
 bool LV2Instrument::IsInitialized() {
