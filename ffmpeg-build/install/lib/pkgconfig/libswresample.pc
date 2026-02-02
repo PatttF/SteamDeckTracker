@@ -1,0 +1,14 @@
+prefix=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install
+exec_prefix=${prefix}
+libdir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/lib
+includedir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/include
+
+Name: libswresample
+Description: FFmpeg audio resampling library
+Version: 6.2.100
+Requires: libavutil >= 60.24.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lswresample -lm -latomic
+Libs.private: 
+Cflags: -I${includedir}

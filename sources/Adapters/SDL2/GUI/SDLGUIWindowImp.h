@@ -50,8 +50,8 @@ protected:
 
 private:
     SDL_Window *window_;
-    SDL_Surface *surface_;
-//	SDL_Surface *offscreen_ ;
+    SDL_Surface *surface_;         // Display surface (what gets shown)
+    SDL_Surface *backbuffer_;      // Drawing surface (app draws here)
     GUIRect screenRect_ ;
 	unsigned int currentColor_ ;
 	unsigned int backgroundColor_ ;

@@ -1,0 +1,14 @@
+prefix=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install
+exec_prefix=${prefix}
+libdir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/lib
+includedir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/include
+
+Name: libavformat
+Description: FFmpeg container format library
+Version: 62.8.102
+Requires: libavcodec >= 62.23.103, libswresample >= 6.2.100, libavutil >= 60.24.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavformat -lm -latomic
+Libs.private: 
+Cflags: -I${includedir}
