@@ -348,10 +348,18 @@ void InstrumentView::fillLV2Parameters() {
         wtv->AddObserver(*this);
     }
 
-    // Display help text at top-right
-    GUIPoint helpPos = position;
-    helpPos._x = 27; // top-right column
-    UIStaticField *helpField = new UIStaticField(helpPos, "L to change pages");
+    // Display help text at top-right (compute rightmost x based on visible logical width)
+    const char *helpText = "L to change pages";
+    const int CHAR_PX = 8; // character pixel width
+    int winPixelWidth = w_.GetRect().Width();
+    int visibleCols = winPixelWidth / CHAR_PX;
+    // Avoid requiring LOGICAL_COLS here (not always in scope). Use visibleCols with a sane fallback.
+    int width = (visibleCols > 0) ? visibleCols : 80;
+    int helpLen = (int)strlen(helpText);
+    int helpX = width - helpLen - View::margin_;
+    if (helpX < 0) helpX = 0;
+    GUIPoint helpPos(helpX, 0);
+    UIStaticField *helpField = new UIStaticField(helpPos, helpText);
     T_SimpleList<UIField>::Insert(helpField);
     position._y += 1;
 
