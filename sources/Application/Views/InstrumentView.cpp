@@ -348,10 +348,12 @@ void InstrumentView::fillLV2Parameters() {
         wtv->AddObserver(*this);
     }
 
-    // Display help text at top
-    UIStaticField *helpField=new UIStaticField(position, "Press B to open LV2 list, L to scroll") ;
-    T_SimpleList<UIField>::Insert(helpField) ;
-    position._y+=1;
+    // Display help text at top-right
+    GUIPoint helpPos = position;
+    helpPos._x = 27; // top-right column
+    UIStaticField *helpField = new UIStaticField(helpPos, "L to change pages");
+    T_SimpleList<UIField>::Insert(helpField);
+    position._y += 1;
 
     // Display the plugin selector as a clickable action (opens LV2 browser)
     if (instrument->IsEmpty()) {
@@ -361,6 +363,7 @@ void InstrumentView::fillLV2Parameters() {
     }
     UIActionField *af = new UIActionField(lv2PluginLabel_, ACTION_LOAD_LV2, position);
     T_SimpleList<UIField>::Insert(af);
+    af->AddObserver(*this);
     // Keep pointer so we can react to A presses explicitly
     lv2LoadField_ = af;
 
@@ -599,15 +602,9 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
     Player *player=Player::GetInstance() ;
     
-	// B button - LV2 plugin selection (when not holding B as modifier)
-	if (mask == EPBM_B) {
-		InstrumentType it=getInstrumentType() ;
-		if (it==IT_LV2) {
-			ImportLV2Dialog *dialog=new ImportLV2Dialog(*this) ;
-			DoModal(dialog, LV2PluginSelectCallback) ;
-			return ;
-		}
-	}
+	// B single-press no longer opens the LV2 list. Use A on 'load list' to open the LV2 browser.
+	// (Previous behavior removed)
+
 	
 	// B Modifier
 
@@ -783,7 +780,25 @@ void InstrumentView::OnLV2PluginSelected() {
 	isDirty_ = true;
 }
 
-void InstrumentView::Update(Observable &o,I_ObservableData *d) {
+void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle action field clicks (e.g. LV2 load action)
+    UIActionField *action = dynamic_cast<UIActionField *>(&o);
+    if (action) {
+        if (d) {
+#ifdef _64BIT
+            unsigned int fourcc = *(unsigned int *)d;
+#else
+            unsigned int fourcc = (unsigned int)(intptr_t)d;
+#endif
+            if (fourcc == ACTION_LOAD_LV2) {
+                InstrumentType it = getInstrumentType();
+                if (it == IT_LV2) {
+                    ImportLV2Dialog *dialog = new ImportLV2Dialog(*this);
+                    DoModal(dialog, LV2PluginSelectCallback);
+                }
+                return;
+            }
+        }
+    }
     // Check for a change in the 'type' variable so we can switch instrument types on demand
     int i = viewData_->currentInstrument_;
     InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
