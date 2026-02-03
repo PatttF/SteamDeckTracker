@@ -147,7 +147,9 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
                         focus_->SetFocus() ;
                         isDirty_=true ;
                     }
-if (mask&EPBM_UP) {
+                }
+
+                if (mask&EPBM_UP) {
 
                     // Prefer candidates in the same column (same _x) when moving up
                     UIField *prevSameCol = 0;
