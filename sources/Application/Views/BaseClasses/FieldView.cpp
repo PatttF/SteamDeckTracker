@@ -111,85 +111,79 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 			if (!(mask&(EPBM_A|EPBM_B|EPBM_L|EPBM_R|EPBM_SELECT|EPBM_START))) {
 
 				if (mask&EPBM_DOWN) {
-					UIField *next=0 ;
-					UIField *first=0 ;
+                    // Prefer candidates in the same column (same _x) when moving down
+                    UIField *nextSameCol = 0;
+                    UIField *nextAny = 0;
+                    UIField *first = 0;
 
-					GUIPoint focusPos=focus_->GetPosition() ;
+                    GUIPoint focusPos = focus_->GetPosition();
 
-					IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator()) ;
-					for (it->Begin();!it->IsDone();it->Next()) {
-						UIField &current=it->CurrentItem() ;
-						if (!current.IsStatic()) {
-							if (first) {
-								if (current.GetPosition()._y<first->GetPosition()._y) {
-									first=&current ;
-								} ;
-							} else {
-								first=&current ;
-							}
-							if (current.GetPosition()._y>focus_->GetPosition()._y) {
-								if (next) {
-									if (current.GetPosition()._y<next->GetPosition()._y) {
-										next=&current ;
-									} else {
-										// if both target at same height
-									} ;
-								} else {
-									next=&current ;
-								};
-							} ;
+                    IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator());
+                    for (it->Begin();!it->IsDone();it->Next()) {
+                        UIField &current=it->CurrentItem();
+                        if (!current.IsStatic()) {
+                            GUIPoint curPos = current.GetPosition();
+                            if (!first) first = &current;
+                            if (curPos._y > focusPos._y) {
+                                // candidate in same column
+                                if (curPos._x == focusPos._x) {
+                                    if (!nextSameCol || curPos._y < nextSameCol->GetPosition()._y) {
+                                        nextSameCol = &current;
+                                    }
+                                }
+                                // fallback any column
+                                if (!nextAny || curPos._y < nextAny->GetPosition()._y) {
+                                    nextAny = &current;
+                                }
+                            }
 
-						}
-					}
-					if (next==0) {
-						next=first ;
-					}
+                        }
+                    }
+                    UIField *next = nextSameCol ? nextSameCol : (nextAny ? nextAny : first);
 
-					focus_->ClearFocus() ;
-					focus_=next ;
-					focus_->SetFocus() ;
-					isDirty_=true ;
-				}
+                    if (next) {
+                        focus_->ClearFocus() ;
+                        focus_=next ;
+                        focus_->SetFocus() ;
+                        isDirty_=true ;
+                    }
+if (mask&EPBM_UP) {
 
+                    // Prefer candidates in the same column (same _x) when moving up
+                    UIField *prevSameCol = 0;
+                    UIField *prevAny = 0;
+                    UIField *last = 0;
+                    GUIPoint focusPos = focus_->GetPosition();
 
-				if (mask&EPBM_UP){
+                    IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator()) ;
+                    for (it->Begin();!it->IsDone();it->Next()) {
+                        UIField &current=it->CurrentItem() ;
+                        if (!current.IsStatic()) {
+                            GUIPoint curPos = current.GetPosition();
+                            if (!last) last = &current;
+                            if (curPos._y < focusPos._y) {
+                                // candidate in same column
+                                if (curPos._x == focusPos._x) {
+                                    if (!prevSameCol || curPos._y > prevSameCol->GetPosition()._y) {
+                                        prevSameCol = &current;
+                                    }
+                                }
+                                // fallback any column
+                                if (!prevAny || curPos._y > prevAny->GetPosition()._y) {
+                                    prevAny = &current;
+                                }
+                            }
 
-					UIField *prev=0 ;
-					UIField *last=0 ;
+                        }
+                    }
+                    UIField *prev = prevSameCol ? prevSameCol : (prevAny ? prevAny : last);
 
-					IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator()) ;
-					for (it->Begin();!it->IsDone();it->Next()) {
-						UIField &current=it->CurrentItem() ;
-						if (!current.IsStatic()) {
-							if (last) {
-								if (current.GetPosition()._y>last->GetPosition()._y) {
-									last=&current ;
-								} ;
-							} else {
-								last=&current ;
-							}
-							if (current.GetPosition()._y<focus_->GetPosition()._y) {
-								if (prev) {
-									if (current.GetPosition()._y>prev->GetPosition()._y) {
-										prev=&current ;
-									} else {
-										// if both target at same height
-									} ;
-								} else {
-									prev=&current ;
-								};
-							} ;
-
-						}
-					}
-					if (prev==0) {
-						prev=last ;
-					}
-
-					focus_->ClearFocus() ;
- 					focus_=prev ;
-					focus_->SetFocus() ;
-					isDirty_=true ;
+                    if (prev) {
+                        focus_->ClearFocus() ;
+                        focus_=prev ;
+                        focus_->SetFocus() ;
+                        isDirty_=true ;
+                    }
 				}
 
 				if (mask&EPBM_RIGHT) {
