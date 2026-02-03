@@ -10,7 +10,11 @@
 #include <lilv/lilv.h>
 #include <lv2/urid/urid.h>
 #include <lv2/atom/atom.h>
+#include <lv2/atom/forge.h>
+#include <lv2/patch/patch.h>
 #include <lv2/midi/midi.h>
+#include <lv2/options/options.h>
+#include <lv2/buf-size/buf-size.h>
 
 // LV2 URI definitions
 #define LV2_ATOM__Sequence "http://lv2plug.in/ns/ext/atom#Sequence"
@@ -45,7 +49,17 @@ static LV2_URID_Unmap g_uridUnmapFeature = { nullptr, urid_unmap };
 
 static LV2_Feature g_mapFeature = { LV2_URID__map, &g_uridMapFeature };
 static LV2_Feature g_unmapFeature = { LV2_URID__unmap, &g_uridUnmapFeature };
-static const LV2_Feature* g_features[] = { &g_mapFeature, &g_unmapFeature, nullptr };
+
+// Minimal options array (zero-terminated) for LV2_OPTIONS__options feature
+// Single zeroed element = empty options list
+static LV2_Options_Option g_optionsArray[1] = {{ (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }};
+static LV2_Feature g_optionsFeature = { LV2_OPTIONS__options, (void*)g_optionsArray };
+
+// Minimal bounded block length data for LV2_BUF_SIZE__boundedBlockLength feature
+static uint32_t g_boundedBlockLength[2] = {64, 4096};
+static LV2_Feature g_boundedFeature = { LV2_BUF_SIZE__boundedBlockLength, &g_boundedBlockLength };
+
+static const LV2_Feature* g_features[] = { &g_mapFeature, &g_unmapFeature, &g_optionsFeature, &g_boundedFeature, nullptr };
 
 // Cached URIDs for performance
 static LV2_URID g_midiEventUrid = 0;
@@ -70,6 +84,7 @@ LV2Instrument::LV2Instrument() {
     midiBuffer_ = nullptr;
     midiBufferSize_ = 0;
     isActivated_ = false;
+    forcedOutputChannels_ = 0; // default to automatic
 
     // Initialize channel state
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
@@ -256,7 +271,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
                     }
                 }
                 if (closest != realValue) {
-                    Trace::Log("LV2","Snapped to nearest scale point: param=%s:%s from %f to %f", parameters_[i].groupName.c_str(), parameters_[i].name.c_str(), realValue, closest);
                 }
                 realValue = closest;
             } else if (parameters_[i].isEnumeration) {
@@ -265,14 +279,12 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
                 if (rounded < parameters_[i].minValue) rounded = parameters_[i].minValue;
                 if (rounded > parameters_[i].maxValue) rounded = parameters_[i].maxValue;
                 if (rounded != realValue) {
-                    Trace::Log("LV2","Rounded enumerated param: param=%s:%s from %f to %f", parameters_[i].groupName.c_str(), parameters_[i].name.c_str(), realValue, rounded);
                 }
                 realValue = rounded;
             }
 
             // Extra logging for braids shape crashes
             if (parameters_[i].groupName == "braids" && parameters_[i].name.find("Shape") != std::string::npos) {
-                Trace::Log("LV2","Braids shape set: port=%d scaled=%d value=%f", parameters_[i].portIndex, scaledValue, realValue);
             }
 
             controlValues_[i] = realValue;
@@ -288,7 +300,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         }
     }
 
-    // Write pending MIDI events to the atom buffer
+    // Write pending MIDI events and atom messages to the atom buffer
     if (midiBuffer_ && midiInputPort_ >= 0 && g_midiEventUrid > 0) {
         // LV2 Atom Sequence structure using proper LV2 atom types
         LV2_Atom_Sequence* seq = (LV2_Atom_Sequence*)midiBuffer_;
@@ -303,7 +315,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         size_t offset = 0;
         size_t capacity = midiBufferSize_ - sizeof(LV2_Atom_Sequence);
         
-        // Write pending MIDI events
+        // Write pending MIDI events (as before)
         for (size_t i = 0; i < pendingMidiEvents_.size() && offset + 32 < capacity; i++) {
             MidiEvent& evt = pendingMidiEvents_[i];
             
@@ -320,6 +332,26 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             offset += padded_size;
         }
         pendingMidiEvents_.clear();
+
+        // Write pending atom events (e.g., patch messages built with LV2_Atom_Forge)
+        for (size_t i = 0; i < pendingAtomEvents_.size() && offset + 64 < capacity; i++) {
+            PendingAtomEvent &ae = pendingAtomEvents_[i];
+
+            // Ensure there is enough space for header + data
+            size_t required = sizeof(LV2_Atom_Event) + ((ae.data.size() + 7) & ~7);
+            if (offset + required > capacity) break;
+
+            LV2_Atom_Event* event = (LV2_Atom_Event*)(buf + offset);
+            event->time.frames = 0;
+            event->body.size = (uint32_t)ae.data.size();
+            event->body.type = ae.type;
+
+            memcpy(LV2_ATOM_BODY(&event->body), ae.data.data(), ae.data.size());
+
+            size_t padded_size = sizeof(LV2_Atom_Event) + ((ae.data.size() + 7) & ~7);
+            offset += padded_size;
+        }
+        pendingAtomEvents_.clear();
         
         // Update final sequence size
         seq->atom.size = sizeof(LV2_Atom_Sequence_Body) + offset;
@@ -331,7 +363,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
     // Debug: log braids shape parameter(s) before calling into the plugin
     for (size_t i = 0; i < parameters_.size() && i < controlValues_.size(); ++i) {
         if (parameters_[i].groupName == "braids" && parameters_[i].name.find("Shape") != std::string::npos) {
-            Trace::Log("LV2","Running plugin with braids shape port=%d value=%f", parameters_[i].portIndex, controlValues_[i]);
         }
     }
 
@@ -551,7 +582,6 @@ void LV2Instrument::loadPlugin() {
     // Create LV2 world
     world_ = lilv_world_new();
     if (!world_) {
-        Trace::Error("LV2: Failed to create world");
         return;
     }
     
@@ -561,7 +591,6 @@ void LV2Instrument::loadPlugin() {
     // Find the plugin by URI
     LilvNode* uri_node = lilv_new_uri(world, pluginURI_);
     if (!uri_node) {
-        Trace::Error("LV2: Invalid plugin URI: %s", pluginURI_);
         cleanupPlugin();
         return;
     }
@@ -570,27 +599,84 @@ void LV2Instrument::loadPlugin() {
     lilv_node_free(uri_node);
     
     if (!plugin) {
-        Trace::Error("LV2: Plugin not found: %s", pluginURI_);
         cleanupPlugin();
         return;
     }
     
     plugin_ = (void*)plugin;
     
+    // Diagnostic: list plugin info before instantiation
+    {
+        const LilvNodes* req = lilv_plugin_get_required_features(plugin);
+        const LilvNodes* opt = lilv_plugin_get_optional_features(plugin);
+        if (req) {
+            LILV_FOREACH(nodes, it, req) {
+                const LilvNode* n = lilv_nodes_get(req, it);
+            }
+            lilv_nodes_free((LilvNodes*)req);
+        }
+        if (opt) {
+            LILV_FOREACH(nodes, it2, opt) {
+                const LilvNode* n = lilv_nodes_get(opt, it2);
+            }
+            lilv_nodes_free((LilvNodes*)opt);
+        }
+
+        // Log audio ports and resize info
+        uint32_t np = lilv_plugin_get_num_ports(plugin);
+        int audioOutputs = 0;
+        for (uint32_t i = 0; i < np; ++i) {
+            const LilvPort* port = lilv_plugin_get_port_by_index(plugin, i);
+            if (lilv_port_is_a(plugin, port, lilv_new_uri(world, LILV_URI_AUDIO_PORT))) {
+                const LilvNode* name = lilv_port_get_name(plugin, port);
+                bool isInput = lilv_port_is_a(plugin, port, lilv_new_uri(world, LILV_URI_INPUT_PORT));
+                bool isOutput = lilv_port_is_a(plugin, port, lilv_new_uri(world, LILV_URI_OUTPUT_PORT));
+                if (isOutput) audioOutputs++;
+                // Check for resize properties
+                LilvNode* rsz_uri = lilv_new_uri(world, "http://lv2plug.in/ns/ext/resize-port#minimumSize");
+                const LilvNodes* rsz_nodes = lilv_port_get_value(plugin, port, rsz_uri);
+                if (rsz_nodes && lilv_nodes_size(rsz_nodes) > 0) {
+                    const LilvNode* rn = lilv_nodes_get_first(rsz_nodes);
+                    lilv_nodes_free((LilvNodes*)rsz_nodes);
+                }
+                lilv_node_free(rsz_uri);
+            }
+        }
+
+        if (audioOutputs > 2 && forcedOutputChannels_ == 0) {
+            forcedOutputChannels_ = 2;
+        }
+    }
+
     // Initialize URIDs if not already done
     if (g_midiEventUrid == 0) {
         g_midiEventUrid = urid_map(nullptr, LV2_MIDI__MidiEvent);
         g_atomSequenceUrid = urid_map(nullptr, LV2_ATOM__Sequence);
     }
     
-    // Instantiate the plugin with 44100 Hz sample rate and URID features
+    // Instantiate the plugin with 44100 Hz sample rate and our features
+
+
     LilvInstance* instance = lilv_plugin_instantiate(plugin, 44100.0, g_features);
     if (!instance) {
-        Trace::Error("LV2: Failed to instantiate plugin: %s", pluginURI_);
-        cleanupPlugin();
-        return;
+        // Try again with only URID map/unmap to see if extra features are causing the failure
+        const LV2_Feature* minimal_features[] = { &g_mapFeature, &g_unmapFeature, nullptr };
+
+        LilvInstance* inst2 = lilv_plugin_instantiate(plugin, 44100.0, minimal_features);
+        if (!inst2) {
+            // Also dump plugin manifest path hint if available (bundle path)
+            const LilvNode* uri_node = lilv_plugin_get_uri(plugin);
+            const char *bundle = uri_node ? lilv_node_as_uri(uri_node) : nullptr;
+
+            cleanupPlugin();
+            return;
+        } else {
+
+            pluginInstance_ = inst2;
+            return;
+        }
     }
-    
+
     pluginInstance_ = instance;
 }
 
@@ -602,6 +688,8 @@ void LV2Instrument::discoverParameters() {
     audioOutputPortL_ = -1;
     audioOutputPortR_ = -1;
     midiInputPort_ = -1;
+    audioOutputPorts_.clear();
+    forcedOutputChannels_ = 0;
     
     if (!plugin_ || !world_) {
         return;
@@ -621,6 +709,10 @@ void LV2Instrument::discoverParameters() {
     LilvNode* atom_port = lilv_new_uri(world, "http://lv2plug.in/ns/ext/atom#AtomPort");
     LilvNode* midi_event = lilv_new_uri(world, "http://lv2plug.in/ns/ext/midi#MidiEvent");
     
+    // Counters for diagnostics
+    int controlParamsFound = 0;
+    int resourceParamsFound = 0;
+
     // Iterate through all ports
     for (uint32_t i = 0; i < num_ports; i++) {
         const LilvPort* port = lilv_plugin_get_port_by_index(plugin, i);
@@ -648,6 +740,8 @@ void LV2Instrument::discoverParameters() {
                     audioInputPortR_ = i;
                 }
             } else if (lilv_port_is_a(plugin, port, output_class)) {
+                // Collect all audio output ports so we can optionally only connect stereo
+                audioOutputPorts_.push_back(i);
                 if (audioOutputPortL_ == -1) {
                     audioOutputPortL_ = i;
                 } else if (audioOutputPortR_ == -1) {
@@ -656,12 +750,15 @@ void LV2Instrument::discoverParameters() {
             }
         }
         
-        // Check if this is a control input port
-        if (lilv_port_is_a(plugin, port, control_class) &&
-            lilv_port_is_a(plugin, port, input_class)) {
+        // Check if this is a control port (accept input or output directions)
+        if (lilv_port_is_a(plugin, port, control_class)) {
             
             LV2PluginParameter param;
             param.variable = nullptr;  // Initialize to null
+            param.isOutput = lilv_port_is_a(plugin, port, output_class); // remember direction
+            // Log basic port characteristics for diagnostic purposes
+            const LilvNode* pname = lilv_port_get_name(plugin, port);
+            if (pname) lilv_node_free((LilvNode*)pname);
             
             // Get port label (preferred over name for UI display)
             LilvNode* label_uri = lilv_new_uri(world, "http://www.w3.org/2000/01/rdf-schema#label");
@@ -814,12 +911,13 @@ void LV2Instrument::discoverParameters() {
             // Allocate storage for this control value
             controlValues_.push_back(param.defaultValue);
 
+            // Discovered control param (debug logging removed)
+
+            controlParamsFound++;
+
             // Diagnostic dump for braids/plaits to inspect scale points and ranges (helps debug crashes)
             if (param.groupName == "braids" || param.groupName == "plaits") {
-                Trace::Log("LV2","Param discovered: %s:%s port=%d min=%f max=%f default=%f enum=%d scalePoints=%zu",
-                    param.groupName.c_str(), param.name.c_str(), param.portIndex, param.minValue, param.maxValue, param.defaultValue, param.isEnumeration ? 1 : 0, param.scalePoints.size());
                 for (size_t sp=0; sp<param.scalePoints.size(); ++sp) {
-                    Trace::Log("LV2","  scalepoint[%zu] = %f -> '%s'", sp, param.scalePoints[sp].value, param.scalePoints[sp].label.c_str());
                 }
             }
         }
@@ -837,6 +935,127 @@ void LV2Instrument::discoverParameters() {
         midiBufferSize_ = 16384;
         midiBuffer_ = new uint8_t[midiBufferSize_];
     }
+
+    // Fallback: If no control ports were discovered, check for lv2:Parameter resources in the plugin's RDF
+    LilvNode* param_type = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#Parameter");
+    LilvNodes* param_nodes = lilv_plugin_get_related(plugin, param_type);
+    if (param_nodes && lilv_nodes_size(param_nodes) > 0) {
+
+        LilvIter *piter = lilv_nodes_begin(param_nodes);
+        while (!lilv_nodes_is_end(param_nodes, piter)) {
+            const LilvNode* pnode = lilv_nodes_get(param_nodes, piter);
+
+            // Get label
+            LilvNode* label_uri = lilv_new_uri(world, "http://www.w3.org/2000/01/rdf-schema#label");
+            const LilvNodes* label_nodes = lilv_world_find_nodes(world, pnode, label_uri, NULL);
+            std::string pname;
+            if (label_nodes && lilv_nodes_size(label_nodes) > 0) {
+                const LilvNode* ln = lilv_nodes_get_first(label_nodes);
+                pname = lilv_node_as_string(ln);
+                lilv_nodes_free((LilvNodes*)label_nodes);
+            } else {
+                // Fallback to URI fragment or node string
+                if (lilv_node_is_uri(pnode)) {
+                    const char* uri = lilv_node_as_uri(pnode);
+                    const char* slash = strrchr(uri, '/');
+                    pname = (slash ? slash + 1 : uri);
+                } else {
+                    pname = lilv_node_as_string(pnode);
+                }
+            }
+
+            // Skip if we already discovered a parameter with the same name
+            bool exists = false;
+            for (size_t pi = 0; pi < parameters_.size(); ++pi) {
+                if (parameters_[pi].name == pname) { exists = true; break; }
+            }
+            if (exists) { piter = lilv_nodes_next(param_nodes, piter); continue; }
+
+            LV2PluginParameter param;
+            param.name = pname;
+            param.groupName = "";
+
+            // Group
+            LilvNode* group_uri = lilv_new_uri(world, "http://lv2plug.in/ns/ext/port-groups#group");
+            const LilvNodes* group_nodes = lilv_world_find_nodes(world, pnode, group_uri, NULL);
+            if (group_nodes && lilv_nodes_size(group_nodes) > 0) {
+                const LilvNode* gn = lilv_nodes_get_first(group_nodes);
+                if (lilv_node_is_uri(gn)) {
+                    const char* guri = lilv_node_as_uri(gn);
+                    const char* hash = strrchr(guri, '#');
+                    const char* colon = strrchr(guri, ':');
+                    if (hash) param.groupName = std::string(hash + 1);
+                    else if (colon) param.groupName = std::string(colon + 1);
+                    else param.groupName = std::string(guri);
+                }
+                lilv_nodes_free((LilvNodes*)group_nodes);
+            }
+            lilv_node_free(group_uri);
+
+            // Min/Max/Default values
+            LilvNode* min_uri = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#minimum");
+            const LilvNodes* min_nodes = lilv_world_find_nodes(world, pnode, min_uri, NULL);
+            param.minValue = (min_nodes && lilv_nodes_size(min_nodes) > 0) ? lilv_node_as_float(lilv_nodes_get_first(min_nodes)) : 0.0f;
+            if (min_nodes) lilv_nodes_free((LilvNodes*)min_nodes);
+            lilv_node_free(min_uri);
+
+            LilvNode* max_uri = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#maximum");
+            const LilvNodes* max_nodes = lilv_world_find_nodes(world, pnode, max_uri, NULL);
+            param.maxValue = (max_nodes && lilv_nodes_size(max_nodes) > 0) ? lilv_node_as_float(lilv_nodes_get_first(max_nodes)) : 1.0f;
+            if (max_nodes) lilv_nodes_free((LilvNodes*)max_nodes);
+            lilv_node_free(max_uri);
+
+            LilvNode* def_uri = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#default");
+            const LilvNodes* def_nodes = lilv_world_find_nodes(world, pnode, def_uri, NULL);
+            param.defaultValue = (def_nodes && lilv_nodes_size(def_nodes) > 0) ? lilv_node_as_float(lilv_nodes_get_first(def_nodes)) : ((param.minValue >= 0.0f && param.maxValue <= 1.0f) ? 0.5f : (param.minValue < 0.0f && param.maxValue > 0.0f ? 0.0f : param.minValue));
+            if (def_nodes) lilv_nodes_free((LilvNodes*)def_nodes);
+            lilv_node_free(def_uri);
+
+            param.currentValue = param.defaultValue;
+            param.portIndex = -1; // no direct control port
+            param.variable = nullptr;
+
+            // If this is a discovered lv2:Parameter resource, record its URI so we can send patch:set messages later
+            if (lilv_node_is_uri(pnode)) {
+                const char *puri = lilv_node_as_uri(pnode);
+                if (puri) {
+                    param.resourceURI = puri;
+                }
+            }
+
+            // Create UI Variable for this parameter so it appears in the UI
+            std::string varDisplay = (param.groupName.empty() ? param.name : (param.groupName + ":" + param.name));
+            char varName[64];
+            if (varDisplay.length() > 20) {
+                std::string shortName = varDisplay.substr(0, 17) + "...";
+                snprintf(varName, 64, "%s", shortName.c_str());
+            } else {
+                snprintf(varName, 64, "%s", varDisplay.c_str());
+            }
+
+            int scaledValue = (int)(((param.currentValue - param.minValue) / (param.maxValue - param.minValue) * 127.0f) + 0.5f);
+            if (scaledValue < 0) scaledValue = 0;
+            if (scaledValue > 127) scaledValue = 127;
+            param.variable = new Variable(varName, MAKE_FOURCC('L','P', (int)parameters_.size()/256, (int)parameters_.size()%256), scaledValue);
+            Insert(param.variable);
+
+            parameters_.push_back(param);
+            controlValues_.push_back(param.defaultValue);
+            resourceParamsFound++;
+
+
+            piter = lilv_nodes_next(param_nodes, piter);
+        }
+        lilv_nodes_free(param_nodes);
+    }
+    lilv_node_free(param_type);
+
+    // Discovery summary logging removed
+}
+
+
+void LV2Instrument::SetForcedOutputChannels(int count) {
+    forcedOutputChannels_ = count;
 }
 
 void LV2Instrument::connectPorts(int bufferSize) {
@@ -886,6 +1105,21 @@ void LV2Instrument::connectPorts(int bufferSize) {
         lilv_instance_connect_port(instance, audioOutputPortL_, audioBufferR_);
     }
     
+    // Connect audio outputs up to forcedOutputChannels_ (default: first two)
+    int outputsToConnect = (forcedOutputChannels_ > 0) ? forcedOutputChannels_ : (int)audioOutputPorts_.size();
+    if (outputsToConnect > (int)audioOutputPorts_.size()) outputsToConnect = (int)audioOutputPorts_.size();
+    for (int idx = 0; idx < outputsToConnect; ++idx) {
+        int portIdx = audioOutputPorts_[idx];
+        // Only connect the first two to our stereo buffers (we only support stereo output)
+        if (idx == 0 && audioBufferL_) {
+            lilv_instance_connect_port(instance, portIdx, audioBufferL_);
+        } else if (idx == 1 && audioBufferR_) {
+            lilv_instance_connect_port(instance, portIdx, audioBufferR_);
+        } else {
+            // No buffer available for extra channels, skip connection
+        }
+    }
+    
     // Connect control parameters
     // Ensure we have a stable separate storage indexed by port index so plugin pointers are unique and immutable
     int maxPort = -1;
@@ -909,18 +1143,18 @@ void LV2Instrument::connectPorts(int bufferSize) {
 
             // Diagnostic logging for braids parameters and for unexpected large port indexes
             if (parameters_[i].groupName == "braids") {
-                Trace::Log("LV2","Connect braids param '%s' to port=%d addr=%p value=%f",
-                    parameters_[i].name.c_str(), parameters_[i].portIndex, (void*)&portControlStorage_[parameters_[i].portIndex], portControlStorage_[parameters_[i].portIndex]);
             }
 
-            // Avoid connecting to obviously invalid ports (negative) and log suspicious indexes
+            // Avoid connecting to obviously invalid ports (negative)
             if (parameters_[i].portIndex < 0 || parameters_[i].portIndex > 65536) {
-                Trace::Error("LV2","Suspicious port index %d for param %s", parameters_[i].portIndex, parameters_[i].name.c_str());
             }
 
-            lilv_instance_connect_port(instance, parameters_[i].portIndex, &portControlStorage_[parameters_[i].portIndex]);
+            // Connect control port to our storage only if it's an input port (plugin reads from it)
+            if (!parameters_[i].isOutput) {
+                lilv_instance_connect_port(instance, parameters_[i].portIndex, &portControlStorage_[parameters_[i].portIndex]);
+            } else {
+            }
         } else {
-            Trace::Log("LV2","Skipping connect for param %s with invalid portIndex=%d", parameters_[i].name.c_str(), parameters_[i].portIndex);
         }
     }
 }
@@ -938,6 +1172,43 @@ void LV2Instrument::SetParameterValue(int index, float value) {
                 portControlStorage_.resize(pidx + 1, 0.0f);
             }
             portControlStorage_[pidx] = value;
+        } else {
+            // No direct control port - try to send a patch:Set message if we have a resource URI and an atom input port
+            if (!parameters_[index].resourceURI.empty() && midiInputPort_ >= 0 && midiBuffer_) {
+                // Best-effort: send a patch:Set message describing subject + value using LV2_Atom_Forge
+                LV2_Atom_Forge forge;
+                lv2_atom_forge_init(&forge, &g_uridMapFeature);
+
+                const size_t TMP_SIZE = 1024;
+                uint8_t tmp[TMP_SIZE];
+                lv2_atom_forge_set_buffer(&forge, tmp, TMP_SIZE);
+
+                LV2_Atom_Forge_Frame frame;
+                // Create a typed object of type patch:Set
+                lv2_atom_forge_object(&forge, &frame, 0, urid_map(nullptr, LV2_PATCH__Set));
+                // subject
+                lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__subject));
+                lv2_atom_forge_uri(&forge, parameters_[index].resourceURI.c_str(), (uint32_t)parameters_[index].resourceURI.length());
+                // value
+                lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__value));
+                lv2_atom_forge_float(&forge, value);
+                lv2_atom_forge_pop(&forge, &frame);
+
+                // The forge wrote a full atom (header + body) into tmp with total length forge.offset
+                if (forge.offset >= sizeof(LV2_Atom)) {
+                    LV2_Atom* atom = (LV2_Atom*)tmp;
+                    uint32_t bodySize = atom->size; // size of inner atom body
+                    uint32_t atomType = atom->type; // URID
+
+                    PendingAtomEvent ae;
+                    ae.type = atomType; // use the typed atom type (should be LV2_PATCH__Set)
+                    ae.data.resize(bodySize);
+                    memcpy(ae.data.data(), LV2_ATOM_BODY(atom), bodySize);
+
+                    pendingAtomEvents_.push_back(std::move(ae));
+                } else {
+                }
+            }
         }
     }
 }

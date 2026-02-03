@@ -1,6 +1,7 @@
 #include "SDLAudioDriver.h"
 #include "Services/Midi/MidiService.h"
 #include "Services/Time/TimeService.h"
+#include "Services/Audio/Audio.h"
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
 
@@ -12,13 +13,21 @@ void sdl_callback(void *userdata, Uint8 *stream, int len) {
 SDLAudioDriverThread::SDLAudioDriverThread(SDLAudioDriver *driver) {
 	semaphore_=SysSemaphore::Create(0,4) ;
 	driver_=driver ;
+  percentage_ = 0 ;
 } ;
 
 bool SDLAudioDriverThread::Execute() {
-	while (!shouldTerminate()) {
-		semaphore_->Wait() ;
-		driver_->OnNewBufferNeeded();
-	} ;
+  int bufferFrames = Audio::GetInstance()->GetAudioBufferSize();
+  float cycleTime = bufferFrames/44100.0f;
+  TimeService *ts = TimeService::GetInstance();
+  while (!shouldTerminate()) {
+    semaphore_->Wait() ;
+    float before = float(ts->GetTime());
+    driver_->OnNewBufferNeeded();
+    float delta = float(ts->GetTime() - before);
+    if (cycleTime > 0.0f) percentage_ = int(delta/cycleTime*100);
+    else percentage_ = 0;
+  } ;
 	SysSemaphore *semaphore=semaphore_ ;		
 	semaphore_=0 ;
 	delete semaphore ;
@@ -192,8 +201,7 @@ void SDLAudioDriver::OnChunkDone(Uint8 *stream,int len) {
 }
 
 int SDLAudioDriver::GetPlayedBufferPercentage() {
-//	return 100-(bufferSize_-bufferPos_-fragSize_)*100/(bufferSize_-fragSize_) ;
-	return 0 ;
+  return thread_ ? thread_->GetPlayedBufferPercentage() : 0 ;
 } ;
 
 

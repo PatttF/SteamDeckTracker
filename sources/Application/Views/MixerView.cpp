@@ -615,21 +615,16 @@ void MixerView::OnPlayerUpdate(PlayerEventType ,unsigned int tick) {
 // Place playing info at the bottom-left so it doesn't compete with the guide/map (flush with content left margin)
 	pos = anchor;
 	pos._x = 0; // far left corner (flush)
-	// reserve 4 lines for playing info and place the top of that block accordingly
-	int infoLines = 4;
+	// reserve 2 lines for playing info (battery + time)
+	int infoLines = 2;
 	pos._y = anchor._y + View::songRowCount_ - infoLines + 4; // push down to overlap similar to Song view
 	if (player->Clipped()) {
 		SetColor(CD_CLIP);
 		DrawString(pos._x, pos._y, "clip", props);
-	} else {
-		SetColor(CD_NORMAL);
-		DrawString(pos._x, pos._y, "----", props);
+		pos._y += 1;
 	}
-	char strbuffer[32];
-	pos._y += 1;
-	snprintf(strbuffer, sizeof(strbuffer), "%3.3d%%", player->GetPlayedBufferPercentage());
-	DrawString(pos._x, pos._y, strbuffer, props);
 
+	char strbuffer[32];
 	System *sys = System::GetInstance();
 	int batt = sys->GetBatteryLevel();
 	if (batt >= 0) {

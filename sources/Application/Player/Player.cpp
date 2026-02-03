@@ -1206,12 +1206,24 @@ double Player::GetPlayTime() {
 } ;
 
 int Player::GetPlayedBufferPercentage() {
-	unsigned int beatCount=SyncMaster::GetInstance()->GetBeatCount();
-	if (beatCount!=lastBeatCount_) {
-		lastBeatCount_=beatCount ;
-		lastPercentage_=mixer_->GetPlayedBufferPercentage() ;
+	// Compute progress through the programmed steps (phrase position) across active channels.
+	// Phrase length is 16 steps.
+	const int PHRASE_LEN = 16;
+	int totalPercent = 0;
+	int activeChannels = 0;
+	for (int ch = 0; ch < SONG_CHANNEL_COUNT; ++ch) {
+		if (!mixer_->IsChannelPlaying(ch)) continue;
+		int phrase = viewData_->currentPlayPhrase_[ch];
+		if (phrase == 0xFF) continue;
+		int pos = viewData_->phrasePlayPos_[ch];
+		if (pos < 0) pos = 0;
+		if (pos >= PHRASE_LEN) pos = PHRASE_LEN - 1;
+		int pct = (pos * 100) / PHRASE_LEN;
+		totalPercent += pct;
+		activeChannels++;
 	}
-	return lastPercentage_ ;
+	if (activeChannels == 0) return 0;
+	return totalPercent / activeChannels;
 } ;
 
 PlayerEvent::PlayerEvent(PlayerEventType type,unsigned int tickCount):ViewEvent(VET_PLAYER_POSITION_UPDATE) {

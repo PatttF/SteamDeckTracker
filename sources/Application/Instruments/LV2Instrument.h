@@ -7,6 +7,7 @@
 #include <string>
 #include <cstdint>
 #include <map>
+#include <lv2/urid/urid.h>
 
 // LV2 instrument parameters
 #define LV2IP_PLUGIN        MAKE_FOURCC('P','L','U','G')
@@ -31,6 +32,8 @@ struct LV2PluginParameter {
     Variable *variable;  // Variable for UI binding
     std::vector<LV2ScalePoint> scalePoints;  // Scale points for enumerated values
     bool isEnumeration = false; // True when LV2 port has enumeration property
+    bool isOutput = false; // True if port is an output control port (host should not connect writable storage)
+    std::string resourceURI; // If this parameter is described by an lv2:Parameter resource, store its URI here
 };
 
 class LV2Instrument : public I_Instrument {
@@ -80,7 +83,8 @@ public:
         return nullptr;
     }
     void SetParameterValue(int index, float value);
-    
+    void SetForcedOutputChannels(int count);
+
     // Scale point support for enumerated parameters
     std::string GetParameterScalePointLabel(int paramIndex, float value) const;
     // Store a variable value read from project file when variable doesn't yet exist
@@ -116,6 +120,8 @@ private:
     int audioOutputPortL_;
     int audioOutputPortR_;
     int midiInputPort_;  // MIDI atom input port
+    std::vector<int> audioOutputPorts_; // list of audio output port indices
+    int forcedOutputChannels_; // if >0, limit connected output channels to this count
     
     // MIDI event buffer
     uint8_t *midiBuffer_;
@@ -135,7 +141,13 @@ private:
     std::vector<float> controlValues_; // Storage for control port values
     std::vector<float> portControlStorage_; // Per-port storage indexed by port index to safely connect to LV2
     bool isActivated_;  // Track if plugin is activated
-    
+
+    // Pending atom events to write to plugin atom input port (patch/midi messages etc.)
+    struct PendingAtomEvent {
+        std::vector<uint8_t> data;
+        LV2_URID type;
+    };
+    std::vector<PendingAtomEvent> pendingAtomEvents_;    
     // Helper methods
     void discoverParameters();
     void loadPlugin();

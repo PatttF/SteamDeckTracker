@@ -1,5 +1,6 @@
 
 #include "WatchedVariable.h"
+#include "System/Console/Trace.h"
 
 bool WatchedVariable::enabled_=true ;
 
@@ -20,6 +21,7 @@ WatchedVariable::WatchedVariable(const char *name,FourCC id,char **list,int size
 
 
 void WatchedVariable::onChange() {
+	Trace::Log("WatchedVariable","onChange id=%u name=%s", id_, name_.c_str());
 	if (!updating_&&enabled_) {
 		updating_=true ;
 		SetChanged() ;

@@ -9,7 +9,9 @@
 #include "BaseClasses/UINoteVarField.h"
 #include "BaseClasses/UIStaticField.h"
 #include "BaseClasses/UILV2ParameterField.h"
+#include "BaseClasses/UIActionField.h"
 #include "Foundation/Variables/Variable.h"
+#include "Foundation/Variables/WatchedVariable.h"
 #include "ModalDialogs/ImportSampleDialog.h"
 #include "ModalDialogs/ImportLV2Dialog.h"
 #include "ModalDialogs/MessageBox.h"
@@ -17,6 +19,8 @@
 #include <map>
 #include <vector>
 #include <string>
+
+#define ACTION_LOAD_LV2 MAKE_FOURCC('L','V','2','L')
 
 // Callback for LV2 plugin selection dialog
 static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
@@ -30,7 +34,19 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	lastFocusID_=0 ;
 	current_=0 ;
 	lv2ScrollOffset_=0 ;
-	onInstrumentChange() ;
+	pendingTypeInstrumentIdx_ = -1;
+	pendingType_ = IT_SAMPLE;
+	lv2LoadField_ = nullptr;
+	// Initialize lastType_ to mirror instrument types
+	for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
+		I_Instrument* instr = data->project_->GetInstrumentBank()->GetInstrument(i);
+		if (instr && instr->FindVariable(MAKE_FOURCC('I','T','Y','P')))
+			lastType_[i] = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'))->GetInt();
+		else
+			lastType_[i] = (instr && instr->GetType() == IT_LV2) ? 1 : 0;
+	}
+	// Delay onInstrumentChange to avoid notifications during construction
+
 }
 
 InstrumentView::~InstrumentView() {
@@ -94,23 +110,45 @@ void InstrumentView::fillSampleParameters() {
 	SampleInstrument *instrument=(SampleInstrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
 
-//	position._y+=View::fieldSpaceHeight_;
-	Variable *v=instrument->FindVariable(SIP_SAMPLE) ;
-	SamplePool *sp=SamplePool::GetInstance() ;
-	UIIntVarField *f1=new UIIntVarField(position,*v,"sample: %s",0,sp->GetNameListSize()-1,1,0x10) ;
-	T_SimpleList<UIField>::Insert(f1) ;
-	f1->SetFocus() ;
-
+    // Local variables used to create fields
+    Variable *v = nullptr;
+    UIIntVarField *f1 = nullptr;
+// Type selector: Sample vs LV2 instrument
+    Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
+    if (!tv) {
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, 0);
+        instrument->Insert(wtv);
+        tv = wtv;
+    }
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 1, 1, 7);
+    T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
+
+    // Ensure this view observes changes to the 'type' variable so we can react immediately
+    if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+        // Avoid duplicate observers
+        wtv->RemoveObserver(*this);
+        wtv->AddObserver(*this);
+    }
+    // Show current sample name as a clickable area that opens the Sample Import dialog
+    v = instrument->FindVariable(SIP_SAMPLE);
+    if (v) {
+        int maxIdx = (v->GetListSize() > 0) ? (v->GetListSize() - 1) : 0;
+        UIIntVarField *sampleField = new UIIntVarField(position, *v, "sample: %s", 0, maxIdx, 1, 1);
+        T_SimpleList<UIField>::Insert(sampleField);
+        position._y += 1;
+    }
 #ifdef FFMPEG_ENABLED
     v = instrument->FindVariable(SIP_PRINTFX);
-    f1 = new UIIntVarField(position, *v, "%s", 0, 3, 1, 2);
+    f1 = new UIIntVarField(position, *v, "%s", 0, 3, 1, 1);
     T_SimpleList<UIField>::Insert(f1) ;
 
     position._x += 7;
     v = instrument->FindVariable(SIP_IR_WET);
     f1 = new UIIntVarField(position, *v, "wet:%d%%", 0, 100, 1, 10);
-    T_SimpleList<UIField>::Insert(f1);
+    T_SimpleList<UIField>::Insert(f1) ;
+
     position._x += 9;
 
     v = instrument->FindVariable(SIP_IR_PAD);
@@ -291,21 +329,42 @@ void InstrumentView::fillLV2Parameters() {
 	const int MAX_ROWS = 17;       // Max rows for parameters (leaving room for header + footer)
 	const int PARAMS_PER_PAGE = MAX_ROWS * 2;  // Two columns
 
-	// Display help text at top
-	UIStaticField *helpField=new UIStaticField(position, "Press B to open LV2 list, L to scroll") ;
-	T_SimpleList<UIField>::Insert(helpField) ;
-	position._y+=1;
+    // Type selector: Sample vs LV2 instrument (keep accessible to switch back)
+    Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
+    if (!tv) {
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, 1);
+        instrument->Insert(wtv);
+        tv = wtv;
+    }
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 1, 1, 7);
+    T_SimpleList<UIField>::Insert(typeField);
+    position._y += 1;
 
-	// Display the plugin selector (static field)
-	if (instrument->IsEmpty()) {
-		strcpy(lv2PluginLabel_, "load list");
-	} else {
-		snprintf(lv2PluginLabel_, 80, "plugin: %s", instrument->GetName());
-	}
-	UIStaticField *sf=new UIStaticField(position, lv2PluginLabel_) ;
-	T_SimpleList<UIField>::Insert(sf) ;
+    // Ensure this view observes changes to the 'type' variable so we can react immediately
+    if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+        // Avoid duplicate observers
+        wtv->RemoveObserver(*this);
+        wtv->AddObserver(*this);
+    }
 
-	position._y+=1;
+    // Display help text at top
+    UIStaticField *helpField=new UIStaticField(position, "Press B to open LV2 list, L to scroll") ;
+    T_SimpleList<UIField>::Insert(helpField) ;
+    position._y+=1;
+
+    // Display the plugin selector as a clickable action (opens LV2 browser)
+    if (instrument->IsEmpty()) {
+        strcpy(lv2PluginLabel_, "load list");
+    } else {
+        snprintf(lv2PluginLabel_, 80, "plugin: %s", instrument->GetName());
+    }
+    UIActionField *af = new UIActionField(lv2PluginLabel_, ACTION_LOAD_LV2, position);
+    T_SimpleList<UIField>::Insert(af);
+    // Keep pointer so we can react to A presses explicitly
+    lv2LoadField_ = af;
+
+    position._y+=1;
 	
 	// Show parameters if plugin is loaded
 	if (!instrument->IsEmpty()) {
@@ -445,19 +504,51 @@ void InstrumentView::warpToNext(int offset) {
 
 void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
+    // Process any deferred type change request first (safe: executed outside of NotifyObservers)
+    if (pendingTypeInstrumentIdx_ != -1) {
+        int idx = pendingTypeInstrumentIdx_;
+        InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+        if (idx >= 0 && idx < MAX_INSTRUMENT_COUNT) {
+            bank->SetInstrumentType(idx, pendingType_);
+            // Update our current_ pointer to avoid dereferencing a deleted old object
+            current_ = bank->GetInstrument(idx);
+            // Do not auto-open the LV2 browser - just switch to lv2 (LV2) type
+            // User can press B to open the plugin list when they want to load a plugin.
+            onInstrumentChange();
+            isDirty_ = true;
+        }
+        pendingTypeInstrumentIdx_ = -1;
+        // Continue processing (do not return, let this button press still be handled)
+    }
+
 	if (!pressed) return ;
 
 	isDirty_=false ;
 
 	if (viewMode_==VM_NEW) {
 		if (mask==EPBM_A) {
+			UIField *focusField = GetFocus();
+			if (focusField == lv2LoadField_) {
+				InstrumentType it = getInstrumentType();
+				if (it == IT_LV2) {
+					ImportLV2Dialog *dialog = new ImportLV2Dialog(*this);
+					DoModal(dialog, LV2PluginSelectCallback);
+				}
+				return;
+			}
 			// For variable-based fields
 			if (mask&EPBM_A) {
 				UIIntVarField *field=(UIIntVarField *)GetFocus() ;
 				Variable &v=field->GetVariable() ;
 				switch(v.GetID()) {
 					case SIP_SAMPLE:
-					 {
+						 { 				// Prevent importing a sample if the instrument has been switched to lv2 (LV2)
+					InstrumentType curType = getInstrumentType();
+					if (curType != IT_SAMPLE) {
+						MessageBox *mb = new MessageBox(*this, "Cannot import a sample when Type is 'LV2'", MBBF_OK);
+						DoModal(mb);
+						break;
+					}
 						// First check if the samplelib exists
 
 						 Path sampleLib(SamplePool::GetInstance()->GetSampleLib()) ;
@@ -492,13 +583,17 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 				}
 			}
 		}
-		mask&=(0xFFFF-(EPBM_A|EPBM_L)) ;
+		// Only remove A/L when it was a pure A press — keep A for A+arrow so fields receive it
+		if (mask==EPBM_A) {
+			mask&=(0xFFFF-(EPBM_A|EPBM_L)) ;
+		}
 	} ;
 
 	if (viewMode_==VM_SELECTION) {
 	} else {
 		viewMode_=VM_NORMAL ;
 	}
+
 
 	FieldView::ProcessButtonMask(mask) ;
 
@@ -552,12 +647,34 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
         // A modifier
 
         if (mask == EPBM_A) {
-            FourCC varID = ((UIIntVarField *)GetFocus())->GetVariableID();
-            if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
-                (varID == SIP_SAMPLE) || (varID == SIP_PRINTFX)) {
-                viewMode_ = VM_NEW;
-			}
-        } else {
+                UIIntVarField *focusField = dynamic_cast<UIIntVarField *>((UIIntVarField *)GetFocus());
+                if (focusField) {
+                    FourCC varID = focusField->GetVariableID();
+                    // Single-press on sample opens the sample browser immediately
+                    if (varID == SIP_SAMPLE) {
+                        InstrumentType curType = getInstrumentType();
+                        if (curType != IT_SAMPLE) {
+                            MessageBox *mb = new MessageBox(*this, "Cannot import a sample when Type is 'LV2'", MBBF_OK);
+                            DoModal(mb);
+                        } else {
+                            Path sampleLib(SamplePool::GetInstance()->GetSampleLib());
+                            if (FileSystem::GetInstance()->GetFileType(sampleLib.GetPath().c_str()) != FT_DIR) {
+                                MessageBox *mb = new MessageBox(*this, "Can't access the samplelib", MBBF_OK);
+                                DoModal(mb);
+                            } else {
+                                ImportSampleDialog *isd = new ImportSampleDialog(*this);
+                                DoModal(isd);
+                            }
+                        }
+                        return;
+                    }
+
+                    if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
+                        (varID == SIP_SAMPLE) || (varID == SIP_PRINTFX)) {
+                        viewMode_ = VM_NEW;
+                    }
+                }
+            } else {
 
             // R Modifier
 
@@ -631,10 +748,10 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
     UIIntVarField *field = (UIIntVarField *)GetFocus();
     if (field) {
-	   lastFocusID_=field->GetVariableID() ;
+        lastFocusID_=field->GetVariableID() ;
     }
+}
 
-} ;
 
 void InstrumentView::DrawView() {
 
@@ -655,7 +772,7 @@ void InstrumentView::DrawView() {
 
     FieldView::Redraw();
     drawMap() ;
-} ;
+}
 
 void InstrumentView::OnFocus() { onInstrumentChange(); }
 
@@ -667,5 +784,30 @@ void InstrumentView::OnLV2PluginSelected() {
 }
 
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {
-	onInstrumentChange() ;
+    // Check for a change in the 'type' variable so we can switch instrument types on demand
+    int i = viewData_->currentInstrument_;
+    InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+    I_Instrument *instr = bank->GetInstrument(i);
+    if (instr) {
+        Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
+        if (tv) {
+            int val = tv->GetInt();
+            // val==1 => lv2 (LV2)
+            if (val == 1 && instr->GetType() != IT_LV2) {
+                // Defer changing instrument type until outside of the variable notification
+                pendingTypeInstrumentIdx_ = i;
+                pendingType_ = IT_LV2;
+                isDirty_ = true;
+                return;
+            } else if (val == 0 && instr->GetType() != IT_SAMPLE) {
+                // Defer changing instrument type until outside of the variable notification
+                pendingTypeInstrumentIdx_ = i;
+                pendingType_ = IT_SAMPLE;
+                isDirty_ = true;
+                return;
+            }
+        }
+    }
+
+    onInstrumentChange() ;
 }

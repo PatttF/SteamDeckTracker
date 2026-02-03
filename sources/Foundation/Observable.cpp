@@ -1,5 +1,6 @@
 
 #include "Observable.h"
+#include "System/Console/Trace.h"
 
 #include "T_SimpleList.h"
 

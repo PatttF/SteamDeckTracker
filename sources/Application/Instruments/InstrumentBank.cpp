@@ -9,6 +9,8 @@
 #include "Application/Model/Config.h"
 #include "Application/Persistency/PersistencyService.h"
 #include "Filters.h"
+#include "Foundation/Variables/WatchedVariable.h"
+#include <ctype.h>
 
 char *InstrumentTypeData[IT_LAST]= {
 	"Sample",
@@ -34,10 +36,21 @@ InstrumentBank::InstrumentBank():Persistent("INSTRUMENTBANK") {
         LV2Instrument *s=new LV2Instrument() ;
         instrument_[MAX_SAMPLEINSTRUMENT_COUNT+MAX_MIDIINSTRUMENT_COUNT+i]=s ;
     }
-    Status::Set("All instrument loaded") ;
-} ;
 
-//
+    // Insert a 'type' Variable into each instrument so the UI can bind to it and allow switching
+    static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
+    for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
+        I_Instrument *ins = instrument_[i];
+        // ID: ITYP
+        FourCC id = MAKE_FOURCC('I','T','Y','P');
+        int init = (ins->GetType() == IT_LV2) ? 1 : 0;
+        WatchedVariable *tv = new WatchedVariable("type", id, instrTypes, 2, init);
+        ins->Insert(tv);
+    }
+
+    Status::Set("All instrument loaded") ;
+}
+
 // Assigns default instruments value for new project
 //
 
@@ -206,6 +219,26 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 			} else {
 				it=(id<MAX_SAMPLEINSTRUMENT_COUNT)?IT_SAMPLE:IT_MIDI ;
 			} ;
+
+			// If TYPE wasn't provided in older project files, sniff through params for
+			// LV2 markers (plugin URI or p# parameter names) and convert those
+			// instruments to LV2 so they map into the new Type-based UI.
+			if (instype == NULL) {
+				TiXmlElement *guess = current->FirstChildElement();
+				while (guess) {
+					const char *gname = guess->Attribute("NAME");
+					const char *gval = guess->Attribute("VALUE");
+					if (gname) {
+						if (!strcmp(gname, "plugin")) { it = IT_LV2; break; }
+						if (gname[0] == 'p' && isdigit((unsigned char)gname[1])) { it = IT_LV2; break; }
+					}
+					if (gval) {
+						if (strstr(gval, "://") || strstr(gval, ".lv2") || strchr(gval, '/')) { it = IT_LV2; break; }
+					}
+					guess = guess->NextSiblingElement();
+				}
+			}
+
 			if (id<MAX_INSTRUMENT_COUNT) {
         I_Instrument *instr=instrument_[id] ;
 				if (instr->GetType()!=it) {
@@ -222,7 +255,16 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 							break ;
 					}
 					instrument_[id]=instr ;
-				} ;
+				// Ensure 'type' Variable exists on restored/replaced instruments so the UI binds correctly
+				Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
+				if (tv) {
+					tv->SetInt((it==IT_LV2)?1:0, false);
+				} else {
+					static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
+					WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, (it==IT_LV2)?1:0);
+					instr->Insert(wtv);
+				} 
+			}
 
         TiXmlElement *param=current->FirstChildElement() ;
 				while (param) {
@@ -280,7 +322,7 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 		}
 		current=current->NextSiblingElement() ;
 	} ;
-};
+} ;
 
 void InstrumentBank::Init() {
 	for (int i=0;i<MAX_INSTRUMENT_COUNT;i++) {
@@ -338,6 +380,48 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 	}
 	return next ;
 
+}
+
+void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
+    if (i < 0 || i >= MAX_INSTRUMENT_COUNT) return;
+    I_Instrument *old = instrument_[i];
+    if (!old) return;
+    if (old->GetType() == type) return; // no change
+
+    // create new instrument of requested type
+    I_Instrument *n = nullptr;
+    switch (type) {
+        case IT_SAMPLE: n = new SampleInstrument(); break;
+        case IT_MIDI: n = new MidiInstrument(); break;
+        case IT_LV2: n = new LV2Instrument(); break;
+        default: return;
+    }
+
+    // copy matching variables by ID
+    IteratorPtr<Variable> it(old->GetIterator());
+    for (it->Begin(); !it->IsDone(); it->Next()) {
+        Variable &srcV = it->CurrentItem();
+        Variable *dstV = n->FindVariable(srcV.GetID());
+        if (dstV) {
+            dstV->CopyFrom(srcV);
+        }
+    }
+
+    // Ensure the 'type' variable exists and is set appropriately
+    Variable *tv = n->FindVariable(MAKE_FOURCC('I','T','Y','P'));
+    if (tv) {
+        tv->SetInt((type == IT_LV2) ? 1 : 0, false);
+    } else {
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
+        WatchedVariable *ntv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, (type == IT_LV2) ? 1 : 0);
+        n->Insert(ntv);
+    }
+
+    delete old;
+    instrument_[i] = n;
+
+    // initialize new instrument
+    n->Init();
 }
 
 void InstrumentBank::OnStart() {

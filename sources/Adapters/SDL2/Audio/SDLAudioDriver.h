@@ -14,9 +14,11 @@ public:
 	virtual bool Execute() ;
 	virtual void RequestTermination() ;
 	void Notify() ;
+	int GetPlayedBufferPercentage() { return percentage_; };
 private:
 	SDLAudioDriver *driver_ ;
 	SysSemaphore *semaphore_ ;
+	int percentage_ ;
 } ;
 
 class SDLAudioDriver:public AudioDriver {

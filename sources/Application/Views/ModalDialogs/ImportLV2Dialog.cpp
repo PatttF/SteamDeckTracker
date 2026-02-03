@@ -4,6 +4,7 @@
 #include "Application/Model/Config.h"
 #include "System/Console/Trace.h"
 #include "UIFramework/BasicDatas/GUIEvent.h"
+#include "Application/Views/ModalDialogs/MessageBox.h"
 #include <cstring>
 #include <lilv/lilv.h>
 
@@ -33,7 +34,6 @@ void ImportLV2Dialog::loadPluginList() {
     // Use lilv to discover LV2 plugins
     LilvWorld* world = lilv_world_new();
     if (!world) {
-        Trace::Error("Failed to create LV2 world");
         return;
     }
     
@@ -43,6 +43,34 @@ void ImportLV2Dialog::loadPluginList() {
     LILV_FOREACH(plugins, i, plugins) {
         const LilvPlugin* plugin = lilv_plugins_get(plugins, i);
         
+        // Heuristic: only list instrument-like plugins (those with audio outputs or a MIDI atom input)
+        bool isInstrument = false;
+        uint32_t num_ports = lilv_plugin_get_num_ports(plugin);
+        // Use the existing world pointer
+        LilvNode* audio_class = lilv_new_uri(world, LILV_URI_AUDIO_PORT);
+        LilvNode* output_class = lilv_new_uri(world, LILV_URI_OUTPUT_PORT);
+        LilvNode* atom_port = lilv_new_uri(world, "http://lv2plug.in/ns/ext/atom#AtomPort");
+        LilvNode* input_class = lilv_new_uri(world, LILV_URI_INPUT_PORT);
+
+        for (uint32_t p = 0; p < num_ports; ++p) {
+            const LilvPort* port = lilv_plugin_get_port_by_index(plugin, p);
+            if (lilv_port_is_a(plugin, port, audio_class) && lilv_port_is_a(plugin, port, output_class)) {
+                isInstrument = true;
+                break;
+            }
+            if (lilv_port_is_a(plugin, port, atom_port) && lilv_port_is_a(plugin, port, input_class)) {
+                isInstrument = true; // likely a synth accepting MIDI events
+                break;
+            }
+        }
+
+        lilv_node_free(audio_class);
+        lilv_node_free(output_class);
+        lilv_node_free(atom_port);
+        lilv_node_free(input_class);
+
+        if (!isInstrument) continue; // skip non-instrument plugins
+
         // Get plugin URI
         const LilvNode* uri_node = lilv_plugin_get_uri(plugin);
         const char* uri = lilv_node_as_uri(uri_node);
@@ -72,13 +100,31 @@ void ImportLV2Dialog::OnFocus() {
 void ImportLV2Dialog::OnPlayerUpdate(PlayerEventType, unsigned int) {
 }
 
+// Callback invoked when the channel selection MessageBox completes
+void ImportLV2Dialog::ChannelSelectCallback(View &v, ModalView &dialog) {
+    ImportLV2Dialog &d = (ImportLV2Dialog &)v;
+    int rc = dialog.GetReturnCode();
+    if (rc == MBL_YES) {
+        // User chose to force stereo
+        InstrumentBank *bank = d.viewData_->project_->GetInstrumentBank();
+        I_Instrument *instr = bank->GetInstrument(d.toInstr_);
+        if (instr->GetType() == IT_LV2) {
+            LV2Instrument *lv2instr = (LV2Instrument *)instr;
+            lv2instr->SetForcedOutputChannels(2);
+            lv2instr->SetPlugin(d.pendingPluginURI_.c_str());
+        }
+    }
+    // Close the import dialog regardless
+    d.EndModal(0);
+}
+
 void ImportLV2Dialog::DrawView() {
-    SetWindow(30, 13);
+    SetWindow(20, 13);
 
     GUITextProperties props;
 
     // Draw plugin list
-    int x = 1;
+    int x = 0;
     int y = 1;
     int count = 0;
     int displayCount = 18; // Show 18 plugins at a time
@@ -144,6 +190,45 @@ void ImportLV2Dialog::selectPlugin() {
             
             if (instr->GetType() == IT_LV2) {
                 LV2Instrument *lv2instr = (LV2Instrument *)instr;
+
+                // Inspect plugin audio outputs and prompt if it supports more than stereo
+                LilvWorld* world = lilv_world_new();
+                if (world) {
+                    lilv_world_load_all(world);
+                    LilvNode* uri_node = lilv_new_uri(world, info.uri.c_str());
+                    const LilvPlugin* plugin = lilv_plugins_get_by_uri(lilv_world_get_all_plugins(world), uri_node);
+                    if (uri_node) lilv_node_free(uri_node);
+                    if (plugin) {
+                        LilvNode* audio_class = lilv_new_uri(world, LILV_URI_AUDIO_PORT);
+                        LilvNode* output_class = lilv_new_uri(world, LILV_URI_OUTPUT_PORT);
+                        uint32_t np = lilv_plugin_get_num_ports(plugin);
+                        int audioOutputs = 0;
+                        for (uint32_t p = 0; p < np; ++p) {
+                            const LilvPort* port = lilv_plugin_get_port_by_index(plugin, p);
+                            if (lilv_port_is_a(plugin, port, audio_class) && lilv_port_is_a(plugin, port, output_class)) {
+                                audioOutputs++;
+                            }
+                        }
+                        lilv_node_free(audio_class);
+                        lilv_node_free(output_class);
+
+                        if (audioOutputs > 2) {
+                            // Ask user whether to force stereo (2 channels) or cancel
+                            pendingPluginURI_ = info.uri;
+                            char msg[128];
+                            snprintf(msg, sizeof(msg), "Plugin provides %d audio outputs. Import using stereo (2)?", audioOutputs);
+                            MessageBox *mb = new MessageBox(*this, msg, MBBF_YES | MBBF_NO);
+                            DoModal(mb, ChannelSelectCallback);
+                            lilv_world_free(world);
+
+                            // Wait for callback to handle continuation
+                            return;
+                        }
+                    }
+                    lilv_world_free(world);
+                }
+
+                // Default: no channel prompt needed, proceed with setting plugin
                 lv2instr->SetPlugin(info.uri.c_str());
             }
             

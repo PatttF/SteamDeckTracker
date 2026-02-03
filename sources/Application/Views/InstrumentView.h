@@ -6,6 +6,8 @@
 #include "Foundation/Observable.h"
 #include "ViewData.h"
 
+class UIActionField; // forward declaration to avoid header dependency
+
 class InstrumentView: public FieldView, public I_Observer {
 public:
 	InstrumentView(GUIWindow &w,ViewData *data) ;
@@ -33,5 +35,14 @@ private:
 	int lv2ScrollOffset_ ;  // For scrolling LV2 parameters
 	char lv2PluginLabel_[80];  // Persistent storage for plugin label
 	char lv2ParamText_[40][40];  // Storage for parameter labels (2 cols x 20 rows)
+	// Action field for loading LV2 list (clickable)
+	UIActionField *lv2LoadField_ ;
+	// Track last selected 'type' per instrument so we can detect changes and switch types
+	int lastType_[MAX_INSTRUMENT_COUNT];
+
+	// Deferred type switch (set by Update, executed in ProcessButtonMask to avoid deleting
+	// the instrument while it's still being notified)
+	int pendingTypeInstrumentIdx_;
+	InstrumentType pendingType_;
 } ;
 #endif

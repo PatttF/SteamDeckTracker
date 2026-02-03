@@ -19,6 +19,8 @@ public:
 	void OnStart() ;
 	unsigned short GetNext() ;
 	unsigned short Clone(unsigned short i) ;
+	// Change the type of the instrument at index 'i' to 'type', preserving matching variables where possible
+	void SetInstrumentType(int i, InstrumentType type);
 private:
 	I_Instrument *instrument_[MAX_INSTRUMENT_COUNT] ;
 } ;

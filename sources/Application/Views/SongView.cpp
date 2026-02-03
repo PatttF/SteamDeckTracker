@@ -1125,7 +1125,7 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
     {
         GUIPoint infoPos = anchor;
         infoPos._x = 0; // far left corner
-        int infoLines = 4;
+        int infoLines = 2;
         infoPos._y = anchor._y + View::songRowCount_ - infoLines + 4; // push one more row down to overlap
         if (infoPos._y < 0) infoPos._y = 0;
 
@@ -1133,14 +1133,10 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
         if (player->Clipped()) {
             SetColor(CD_CLIP);
             DrawString(infoPos._x, infoPos._y, "clip", props);
-        } else {
-            SetColor(CD_NORMAL);
-            DrawString(infoPos._x, infoPos._y, "----", props);
+            infoPos._y += 1;
         }
+
         char strbuffer[32];
-        infoPos._y += 1;
-        snprintf(strbuffer, sizeof(strbuffer), "%3.3d%%", player->GetPlayedBufferPercentage());
-        DrawString(infoPos._x, infoPos._y, strbuffer, props);
 
         System *sys = System::GetInstance();
         int batt = sys->GetBatteryLevel();
