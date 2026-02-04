@@ -11,7 +11,7 @@ Key Enhancements:
 
     Professional Audio Routing: Dedicated Mixer page for real-time level management and spatial positioning.
 
-    Plugin Integration: Support for LV2 plugins, allowing for professional-grade synthesis and effects within the tracker environment. This will be a per plugin process so bear with me while I work through it.
+    Plugin Integration: Support for LV2 plugins, allowing for professional-grade synthesis and effects within the tracker environment. This will be a per plugin process so bare with me while I work through it.
 
     Automated Workspace: On first launch, the software generates a streamlined directory structure in the user's Documents/SDTracker folder for easy management. After that use the options in the Projects page to install the factory samples as well as my Mutated Instruments plugin.
 
