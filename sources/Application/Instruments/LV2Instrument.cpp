@@ -646,6 +646,17 @@ void LV2Instrument::SetPlugin(const char *uri) {
         // Load the plugin and discover parameters
         loadPlugin();
         discoverParameters();
+
+        // Initialize resource-backed parameters by sending their default via patch:Set
+        int initialized = 0;
+        for (size_t pi = 0; pi < parameters_.size(); ++pi) {
+            if (parameters_[pi].portIndex < 0 && !parameters_[pi].resourceURI.empty()) {
+                SetParameterValue((int)pi, parameters_[pi].currentValue);
+                initialized++;
+            }
+        }
+        Trace::Debug("LV2Instrument: Sent initial patch:Set for %d resource params", initialized);
+
         // Update the 'plugin' Variable so the value is saved with the project
         Variable *pv = FindVariable(LV2IP_PLUGIN);
         if (pv) pv->SetString(pluginURI_, false);
@@ -1190,6 +1201,100 @@ void LV2Instrument::discoverParameters() {
             piter = lilv_nodes_next(param_nodes, piter);
         }
         lilv_nodes_free(param_nodes);
+    }
+
+    // If no lv2:Parameter resources were found via lilv, fall back to parsing TTL files in the bundle directory
+    if (resourceParamsFound == 0) {
+        const LilvNode* lib_node = lilv_plugin_get_library_uri(plugin);
+        if (lib_node && lilv_node_is_uri(lib_node)) {
+            const char* liburi = lilv_node_as_uri(lib_node);
+            const char* prefix = "file://";
+            const char* path = liburi;
+            if (strncmp(liburi, prefix, strlen(prefix)) == 0) path = liburi + strlen(prefix);
+            // derive bundle dir by removing filename
+            std::string bundlePath(path);
+            size_t slash = bundlePath.rfind('/');
+            if (slash != std::string::npos) {
+                std::string bundleDir = bundlePath.substr(0, slash + 1);
+                // look for common ttl files
+                const char* candidates[] = {"dsp.ttl","manifest.ttl","ui.ttl",NULL};
+                for (int ci=0; candidates[ci]; ++ci) {
+                    std::string f = bundleDir + candidates[ci];
+                    I_File* fh = FS_FOPEN(f.c_str(), "r");
+                    if (!fh) continue;
+                    // read full file into a string
+                    std::string contents;
+                    const int BUF_SZ = 4096;
+                    char buf[BUF_SZ];
+                    int r = 0;
+                    while ((r = fh->Read(buf, 1, BUF_SZ)) > 0) {
+                        contents.append(buf, r);
+                    }
+                    fh->Close();
+
+                    // crude TTL parse: find 'a lv2:Parameter' blocks by splitting on blank lines
+                    size_t pos = 0;
+                    while (pos < contents.size()) {
+                        size_t next = contents.find("\n\n", pos);
+                        std::string block;
+                        if (next == std::string::npos) { block = contents.substr(pos); pos = contents.size(); }
+                        else { block = contents.substr(pos, next - pos); pos = next + 2; }
+
+                        if (block.find("a lv2:Parameter") == std::string::npos) continue;
+
+                        // find subject token at start of block (first token before whitespace)
+                        size_t first_nl = block.find('\n');
+                        std::string firstline = (first_nl == std::string::npos) ? block : block.substr(0, first_nl);
+                        std::string subject;
+                        size_t sp = firstline.find(' ');
+                        if (sp != std::string::npos) subject = firstline.substr(0, sp); else subject = firstline;
+
+                        std::string pname = subject;
+                        size_t col = pname.rfind(':'); if (col != std::string::npos) pname = pname.substr(col+1);
+
+                        // skip if already present
+                        bool exists=false; for (size_t pi=0; pi<parameters_.size(); ++pi) if (parameters_[pi].name==pname) { exists=true; break; }
+                        if (exists) continue;
+
+                        LV2PluginParameter param;
+                        param.name = pname;
+                        param.groupName = "";
+                        param.minValue = 0.0f;
+                        param.maxValue = 1.0f;
+                        param.defaultValue = 0.0f;
+
+                        // label
+                        size_t p = block.find("rdfs:label");
+                        if (p!=std::string::npos) {
+                            size_t q = block.find('"', p);
+                            if (q!=std::string::npos) {
+                                size_t r2 = block.find('"', q+1);
+                                if (r2!=std::string::npos) param.name = block.substr(q+1, r2-q-1);
+                            }
+                        }
+                        // min/max/default
+                        p = block.find("lv2:minimum"); if (p!=std::string::npos) { float v=0; sscanf(block.c_str()+p, "lv2:minimum %f", &v); param.minValue=v; }
+                        p = block.find("lv2:maximum"); if (p!=std::string::npos) { float v=1; sscanf(block.c_str()+p, "lv2:maximum %f", &v); param.maxValue=v; }
+                        p = block.find("lv2:default"); if (p!=std::string::npos) { float v=0; sscanf(block.c_str()+p, "lv2:default %f", &v); param.defaultValue=v; }
+
+                        param.currentValue = param.defaultValue;
+                        param.portIndex = -1;
+                        param.variable = nullptr;
+
+                        // create variable
+                        std::string varDisplay = (param.groupName.empty() ? param.name : (param.groupName + ":" + param.name));
+                        char varName[64]; if (varDisplay.length()>20) { std::string shortName = varDisplay.substr(0,17)+"..."; snprintf(varName,64, "%s", shortName.c_str()); } else { snprintf(varName,64, "%s", varDisplay.c_str()); }
+                        int scaledValue = (int)(((param.currentValue - param.minValue) / (param.maxValue - param.minValue) * 127.0f) + 0.5f);
+                        if (scaledValue<0) scaledValue=0; if (scaledValue>127) scaledValue=127;
+                        param.variable = new Variable(varName, MAKE_FOURCC('L','P', (int)parameters_.size()/256, (int)parameters_.size()%256), scaledValue);
+                        Insert(param.variable);
+                        parameters_.push_back(param);
+                        controlValues_.push_back(param.defaultValue);
+                        resourceParamsFound++;
+                    }
+                }
+            }
+        }
     }
     lilv_node_free(param_type);
 
