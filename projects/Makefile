@@ -4,6 +4,10 @@
 .SUFFIXES:
 #---------------------------------------------------------------------------------
 
+# Build platform. Recommended local build invocation (from projects/):
+#   make PLATFORM=X64 -j1
+# Or from repository root:
+#   make -C projects PLATFORM=X64 -j1
 PLATFORM:=  X64
 FONT := original.bmp
 include $(PWD)/Makefile.$(PLATFORM)

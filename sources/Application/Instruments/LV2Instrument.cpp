@@ -15,6 +15,7 @@
 #include <lv2/midi/midi.h>
 #include <lv2/options/options.h>
 #include <lv2/buf-size/buf-size.h>
+#include <dlfcn.h>
 
 // LV2 URI definitions
 #define LV2_ATOM__Sequence "http://lv2plug.in/ns/ext/atom#Sequence"
@@ -51,15 +52,84 @@ static LV2_Feature g_mapFeature = { LV2_URID__map, &g_uridMapFeature };
 static LV2_Feature g_unmapFeature = { LV2_URID__unmap, &g_uridUnmapFeature };
 
 // Minimal options array (zero-terminated) for LV2_OPTIONS__options feature
-// Single zeroed element = empty options list
-static LV2_Options_Option g_optionsArray[1] = {{ (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }};
+// We'll provide explicit entries for min, nominal and max block lengths plus a zero terminator.
+static uint32_t s_minBlock = 64u;
+static uint32_t s_nominalBlock = 1024u;
+static uint32_t s_maxBlock = 131072u;
+static LV2_Options_Option g_optionsArray[4] = {
+    { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // max block length (filled at runtime)
+    { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // nominal block length (filled at runtime)
+    { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // min block length (filled at runtime)
+    { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }  // zero terminator
+};
 static LV2_Feature g_optionsFeature = { LV2_OPTIONS__options, (void*)g_optionsArray };
 
+// LV2 Options interface implementation to respond to queries such as
+// "http://lv2plug.in/ns/ext/buf-size#maxBlockLength" made by plugins.
+static uint32_t lv2_options_get(LV2_Handle instance, LV2_Options_Option* options)
+{
+    if (!options) return LV2_OPTIONS_ERR_UNKNOWN;
+
+    uint32_t status = LV2_OPTIONS_SUCCESS;
+
+    for (LV2_Options_Option* opt = options; opt && (opt->context || opt->subject || opt->key || opt->size || opt->type || opt->value); ++opt) {
+        // Keys are URIDs; map known keys to values
+        if (opt->key == urid_map(nullptr, LV2_BUF_SIZE__maxBlockLength)) {
+            opt->size = sizeof(uint32_t);
+            opt->type = urid_map(nullptr, LV2_ATOM__Int);
+            opt->value = &s_maxBlock;
+        } else if (opt->key == urid_map(nullptr, LV2_BUF_SIZE__minBlockLength)) {
+            opt->size = sizeof(uint32_t);
+            opt->type = urid_map(nullptr, LV2_ATOM__Int);
+            opt->value = &s_minBlock;
+        } else if (opt->key == urid_map(nullptr, LV2_BUF_SIZE__nominalBlockLength)) {
+            opt->size = sizeof(uint32_t);
+            opt->type = urid_map(nullptr, LV2_ATOM__Int);
+            opt->value = &s_nominalBlock;
+        } else {
+            // Unknown key
+            status |= LV2_OPTIONS_ERR_BAD_KEY;
+        }
+    }
+
+    return status;
+}
+
+static uint32_t lv2_options_set(LV2_Handle instance, const LV2_Options_Option* options)
+{
+    // We don't support setting options at runtime; return BAD_KEY for unhandled
+    (void)instance; (void)options;
+    return LV2_OPTIONS_ERR_BAD_KEY;
+}
+
+static LV2_Options_Interface g_optionsInterface = { lv2_options_get, lv2_options_set };
+static LV2_Feature g_optionsInterfaceFeature = { LV2_OPTIONS__interface, &g_optionsInterface };
+
+// Fill the options array keys and types using the URID map. Call this before instantiating any plugin.
+static void init_options_array()
+{
+    g_optionsArray[0].key   = urid_map(nullptr, LV2_BUF_SIZE__maxBlockLength);
+    g_optionsArray[0].size  = sizeof(uint32_t);
+    g_optionsArray[0].type  = urid_map(nullptr, LV2_ATOM__Int);
+    g_optionsArray[0].value = &s_maxBlock;
+
+    g_optionsArray[1].key   = urid_map(nullptr, LV2_BUF_SIZE__nominalBlockLength);
+    g_optionsArray[1].size  = sizeof(uint32_t);
+    g_optionsArray[1].type  = urid_map(nullptr, LV2_ATOM__Int);
+    g_optionsArray[1].value = &s_nominalBlock;
+
+    g_optionsArray[2].key   = urid_map(nullptr, LV2_BUF_SIZE__minBlockLength);
+    g_optionsArray[2].size  = sizeof(uint32_t);
+    g_optionsArray[2].type  = urid_map(nullptr, LV2_ATOM__Int);
+    g_optionsArray[2].value = &s_minBlock;
+
+    // g_optionsArray[3] remains the zero terminator
+}
 // Minimal bounded block length data for LV2_BUF_SIZE__boundedBlockLength feature
-static uint32_t g_boundedBlockLength[2] = {64, 4096};
+static uint32_t g_boundedBlockLength[2] = {64, 131072};
 static LV2_Feature g_boundedFeature = { LV2_BUF_SIZE__boundedBlockLength, &g_boundedBlockLength };
 
-static const LV2_Feature* g_features[] = { &g_mapFeature, &g_unmapFeature, &g_optionsFeature, &g_boundedFeature, nullptr };
+static const LV2_Feature* g_features[] = { &g_mapFeature, &g_unmapFeature, &g_optionsFeature, &g_optionsInterfaceFeature, &g_boundedFeature, nullptr };
 
 // Cached URIDs for performance
 static LV2_URID g_midiEventUrid = 0;
@@ -85,6 +155,9 @@ LV2Instrument::LV2Instrument() {
     midiBufferSize_ = 0;
     isActivated_ = false;
     forcedOutputChannels_ = 0; // default to automatic
+
+    // Initialize options array entries so plugins can read block-size options
+    init_options_array();
 
     // Initialize channel state
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
@@ -510,13 +583,23 @@ void LV2Instrument::cleanupPlugin() {
         midiBuffer_ = nullptr;
         midiBufferSize_ = 0;
     }
+
+    // Free any allocated atom output buffers
+    for (size_t i = 0; i < atomOutputBuffers_.size(); ++i) {
+        if (atomOutputBuffers_[i]) {
+            delete[] atomOutputBuffers_[i];
+        }
+    }
+    atomOutputBuffers_.clear();
+    atomOutputBufferSizes_.clear();
+
     if (world_) {
         lilv_world_free((LilvWorld*)world_);
         world_ = nullptr;
     }
     plugin_ = nullptr;
     bufferSize_ = 0;
-}
+} 
 
 int LV2Instrument::GetTable() {
     Variable *v = FindVariable(LV2IP_TABLE);
@@ -557,6 +640,8 @@ void LV2Instrument::SetPlugin(const char *uri) {
             strncpy(name_, uri, 79);
             name_[79] = '\0';
         }
+
+        Trace::Debug("LV2Instrument: Setting plugin URI=%s name=%s", pluginURI_, name_);
         
         // Load the plugin and discover parameters
         loadPlugin();
@@ -599,11 +684,13 @@ void LV2Instrument::loadPlugin() {
     lilv_node_free(uri_node);
     
     if (!plugin) {
+        Trace::Error("LV2Instrument: Plugin not found: %s", pluginURI_);
         cleanupPlugin();
         return;
     }
     
     plugin_ = (void*)plugin;
+    Trace::Debug("LV2Instrument: Found plugin: %s", pluginURI_);
     
     // Diagnostic: list plugin info before instantiation
     {
@@ -612,12 +699,18 @@ void LV2Instrument::loadPlugin() {
         if (req) {
             LILV_FOREACH(nodes, it, req) {
                 const LilvNode* n = lilv_nodes_get(req, it);
+                if (n && lilv_node_is_uri(n)) {
+                    Trace::Debug("LV2Instrument: plugin %s requires feature %s", pluginURI_, lilv_node_as_uri(n));
+                }
             }
             lilv_nodes_free((LilvNodes*)req);
         }
         if (opt) {
             LILV_FOREACH(nodes, it2, opt) {
                 const LilvNode* n = lilv_nodes_get(opt, it2);
+                if (n && lilv_node_is_uri(n)) {
+                    Trace::Debug("LV2Instrument: plugin %s optional feature %s", pluginURI_, lilv_node_as_uri(n));
+                }
             }
             lilv_nodes_free((LilvNodes*)opt);
         }
@@ -654,11 +747,41 @@ void LV2Instrument::loadPlugin() {
         g_atomSequenceUrid = urid_map(nullptr, LV2_ATOM__Sequence);
     }
     
+    // Ensure options array is initialized with URIDs/values
+    init_options_array();
+
     // Instantiate the plugin with 44100 Hz sample rate and our features
 
 
     LilvInstance* instance = lilv_plugin_instantiate(plugin, 44100.0, g_features);
     if (!instance) {
+        Trace::Error("LV2Instrument: Failed to instantiate plugin with full features: %s", pluginURI_);
+
+        // Diagnostic: check plugin library URI and attempt a direct dlopen to capture dlerror
+        const LilvNode* lib_node = lilv_plugin_get_library_uri(plugin);
+        const char* lib_uri = lib_node ? lilv_node_as_uri(lib_node) : nullptr;
+        if (lib_uri) {
+            Trace::Debug("LV2Instrument: plugin %s library uri=%s", pluginURI_, lib_uri);
+            // Simple file:// -> path conversion
+            const char *path = lib_uri;
+            const char *prefix = "file://";
+            if (strncmp(lib_uri, prefix, strlen(prefix)) == 0) {
+                path = lib_uri + strlen(prefix);
+            }
+
+            // Try dlopen to get a clearer error
+            void *h = dlopen(path, RTLD_NOW);
+            if (!h) {
+                const char *err = dlerror();
+                Trace::Error("LV2Instrument: dlopen failed for %s: %s", path, err ? err : "<no error>");
+            } else {
+                Trace::Debug("LV2Instrument: dlopen succeeded for %s (closing)", path);
+                dlclose(h);
+            }
+        } else {
+            Trace::Debug("LV2Instrument: plugin %s has no library URI", pluginURI_);
+        }
+
         // Try again with only URID map/unmap to see if extra features are causing the failure
         const LV2_Feature* minimal_features[] = { &g_mapFeature, &g_unmapFeature, nullptr };
 
@@ -667,17 +790,20 @@ void LV2Instrument::loadPlugin() {
             // Also dump plugin manifest path hint if available (bundle path)
             const LilvNode* uri_node = lilv_plugin_get_uri(plugin);
             const char *bundle = uri_node ? lilv_node_as_uri(uri_node) : nullptr;
+            Trace::Error("LV2Instrument: Failed to instantiate plugin %s even with minimal features; bundle=%s", pluginURI_, bundle ? bundle : "<none>");
 
             cleanupPlugin();
             return;
         } else {
 
             pluginInstance_ = inst2;
+            Trace::Debug("LV2Instrument: Instantiated plugin (minimal features): %s", pluginURI_);
             return;
         }
     }
 
     pluginInstance_ = instance;
+    Trace::Debug("LV2Instrument: Successfully instantiated plugin: %s", pluginURI_);
 }
 
 void LV2Instrument::discoverParameters() {
@@ -751,7 +877,22 @@ void LV2Instrument::discoverParameters() {
         }
         
         // Check if this is a control port (accept input or output directions)
-        if (lilv_port_is_a(plugin, port, control_class)) {
+        bool isControlPort = lilv_port_is_a(plugin, port, control_class);
+        // Also treat atom ports with lv2:designation == lv2:control as control ports
+        if (!isControlPort && lilv_port_is_a(plugin, port, atom_port)) {
+            LilvNode* des_uri = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#designation");
+            const LilvNodes* des_nodes = lilv_port_get_value(plugin, port, des_uri);
+            if (des_nodes && lilv_nodes_size(des_nodes) > 0) {
+                const LilvNode* dn = lilv_nodes_get_first(des_nodes);
+                if (dn && lilv_node_is_uri(dn) && strcmp(lilv_node_as_uri(dn), "http://lv2plug.in/ns/lv2core#control") == 0) {
+                    isControlPort = true;
+                }
+                lilv_nodes_free((LilvNodes*)des_nodes);
+            }
+            lilv_node_free(des_uri);
+        }
+
+        if (isControlPort) {
             
             LV2PluginParameter param;
             param.variable = nullptr;  // Initialize to null
@@ -932,11 +1073,13 @@ void LV2Instrument::discoverParameters() {
     
     // Allocate MIDI buffer if we have a MIDI port (16KB should be enough)
     if (midiInputPort_ >= 0 && !midiBuffer_) {
-        midiBufferSize_ = 16384;
+        // Allocate a larger MIDI/Atom buffer to satisfy plugins that request large
+        // minimum atom buffer sizes (some plugins require >8KB or tens of KB).
+        midiBufferSize_ = 65536;
         midiBuffer_ = new uint8_t[midiBufferSize_];
     }
 
-    // Fallback: If no control ports were discovered, check for lv2:Parameter resources in the plugin's RDF
+    // Also scan for lv2:Parameter resources in the plugin's RDF (always perform this - avoids missing patch-based params)
     LilvNode* param_type = lilv_new_uri(world, "http://lv2plug.in/ns/lv2core#Parameter");
     LilvNodes* param_nodes = lilv_plugin_get_related(plugin, param_type);
     if (param_nodes && lilv_nodes_size(param_nodes) > 0) {
@@ -1050,7 +1193,8 @@ void LV2Instrument::discoverParameters() {
     }
     lilv_node_free(param_type);
 
-    // Discovery summary logging removed
+    // Discovery summary logging
+    Trace::Debug("LV2Instrument: Discovered control params=%d resource params=%d total params=%d", controlParamsFound, resourceParamsFound, (int)parameters_.size());
 }
 
 
@@ -1118,6 +1262,45 @@ void LV2Instrument::connectPorts(int bufferSize) {
         } else {
             // No buffer available for extra channels, skip connection
         }
+    }
+
+    // Allocate and connect buffers for atom output ports (atom:AtomPort and OutputPort)
+    // Some plugins expect the host to provide a writable atom:Sequence buffer for output ports.
+    if (plugin_ && world_) {
+        const LilvPlugin* p = (const LilvPlugin*)plugin_;
+        LilvNode* atom_port = lilv_new_uri((LilvWorld*)world_, "http://lv2plug.in/ns/ext/atom#AtomPort");
+        LilvNode* output_class = lilv_new_uri((LilvWorld*)world_, LILV_URI_OUTPUT_PORT);
+        uint32_t np = lilv_plugin_get_num_ports(p);
+        for (uint32_t i = 0; i < np; ++i) {
+            const LilvPort* port = lilv_plugin_get_port_by_index(p, i);
+            if (lilv_port_is_a(p, port, atom_port) && lilv_port_is_a(p, port, output_class)) {
+                // Ensure our vectors are large enough
+                if ((int)atomOutputBuffers_.size() <= (int)i) {
+                    atomOutputBuffers_.resize(i + 1, nullptr);
+                    atomOutputBufferSizes_.resize(i + 1, 0);
+                }
+                if (!atomOutputBuffers_[i]) {
+                    // Allocate a reasonably large buffer (use midiBufferSize_ if set, otherwise 16KB)
+                    size_t cap = midiBufferSize_ > 0 ? midiBufferSize_ : 16384;
+                    atomOutputBuffers_[i] = new uint8_t[cap];
+                    memset(atomOutputBuffers_[i], 0, cap);
+                    atomOutputBufferSizes_[i] = cap;
+
+                    // Initialize as an LV2_Atom_Sequence header
+                    struct LV2_Atom_Sequence_Header { uint32_t atom_size; uint32_t atom_type; uint32_t body_size; uint32_t body_pad; };
+                    LV2_Atom_Sequence_Header* seq = (LV2_Atom_Sequence_Header*)atomOutputBuffers_[i];
+                    seq->atom_size = (uint32_t)cap;
+                    seq->atom_type = g_atomSequenceUrid ? g_atomSequenceUrid : urid_map(nullptr, LV2_ATOM__Sequence);
+                    seq->body_size = 0;
+                    seq->body_pad = 0;
+                }
+
+                // Connect the allocated atom output buffer
+                lilv_instance_connect_port(instance, i, atomOutputBuffers_[i]);
+            }
+        }
+        lilv_node_free(atom_port);
+        lilv_node_free(output_class);
     }
     
     // Connect control parameters

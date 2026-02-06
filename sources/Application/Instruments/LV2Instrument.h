@@ -126,6 +126,10 @@ private:
     // MIDI event buffer
     uint8_t *midiBuffer_;
     size_t midiBufferSize_;
+
+    // Atom output buffers (for atom:Sequence output ports). Indexed by port index.
+    std::vector<uint8_t*> atomOutputBuffers_;
+    std::vector<size_t> atomOutputBufferSizes_;
     
     // Pending MIDI events to write to buffer
     struct MidiEvent {

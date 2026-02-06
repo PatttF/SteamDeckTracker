@@ -16,6 +16,19 @@ Key Enhancements:
     Automated Workspace: On first launch, the software generates a streamlined directory structure in the user's Documents/SDTracker folder for easy management. After that use the options in the Projects page to install the factory samples as well as my Mutated Instruments plugin.
 
 
+Building (local) ⚙️
+
+To build the project on Linux (x86_64) run this from the `projects` directory:
+
+    make PLATFORM=X64 -j1
+
+Or from the repository root you can run:
+
+    make -C projects PLATFORM=X64 -j1
+
+This is the recommended invocation for local builds.
+
+
 In Steam search for SDTracker control layout in community to correctly map your controls.
 
 
