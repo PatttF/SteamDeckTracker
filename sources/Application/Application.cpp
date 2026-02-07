@@ -28,17 +28,7 @@ static void CrashHandler(int signum) {
     // write to stderr
     write(2, header, hlen);
 
-    // Also write to a file for easier retrieval
-    char fname[128];
-    int flen = snprintf(fname, sizeof(fname), "/tmp/lgpt-crash-%d.log", (int)getpid());
-    int fd = open(fname, O_CREAT | O_WRONLY | O_APPEND, 0644);
-    if (fd >= 0) {
-        write(fd, header, hlen);
-        backtrace_symbols_fd(bt, n, fd);
-        close(fd);
-    }
-
-    // Also emit to stderr for immediate visibility
+    // Emit to stderr for immediate visibility
     backtrace_symbols_fd(bt, n, 2);
 
     // Ensure we don't return

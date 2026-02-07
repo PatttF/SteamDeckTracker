@@ -64,12 +64,7 @@ void Trace::Log(const char* category, const char *fmt, ...)
 
 void Trace::Debug(const char *fmt, ...) 
 {
-#ifndef NDEBUG
-  va_list args;
-  va_start(args,fmt);
-  VLog("-D-",fmt, args);
-  va_end(args);
-#endif  
+  // Debug logging disabled: no-op
 }
 
 

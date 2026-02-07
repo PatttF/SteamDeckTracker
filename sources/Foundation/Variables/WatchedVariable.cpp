@@ -21,7 +21,7 @@ WatchedVariable::WatchedVariable(const char *name,FourCC id,char **list,int size
 
 
 void WatchedVariable::onChange() {
-	Trace::Log("WatchedVariable","onChange id=%u name=%s", id_, name_.c_str());
+	Trace::Debug("WatchedVariable: onChange id=%u name=%s", id_, name_.c_str());
 	if (!updating_&&enabled_) {
 		updating_=true ;
 		SetChanged() ;

@@ -116,6 +116,7 @@ private:
     float *audioBufferR_;               // Right audio buffer (output)
     float *audioInputL_;                // Left input buffer
     float *audioInputR_;                // Right input buffer
+    float *audioDummyBuffer_;           // Dummy buffer for extra audio output ports
     int bufferSize_;                    // Current buffer size
     
     // Port indices for audio connections
@@ -153,7 +154,6 @@ private:
     std::vector<float> controlValues_; // Storage for control port values
     std::vector<float> portControlStorage_; // Per-port storage indexed by port index to safely connect to LV2
     bool isActivated_;  // Track if plugin is activated
-    bool testNoteSent_; // Debug: send single note once after activation to verify output
 
     // Pending atom events to write to plugin atom input ports (patch/midi messages etc.)
     struct PendingAtomEvent {
@@ -162,6 +162,7 @@ private:
         int destPortIndex; // destination port index this atom event should be written to
     };
     std::vector<PendingAtomEvent> pendingAtomEvents_;    
+    int diagRenderCounter_; // Per-instance render counter for diagnostics
     // Helper methods
     void discoverParameters();
     void loadPlugin();

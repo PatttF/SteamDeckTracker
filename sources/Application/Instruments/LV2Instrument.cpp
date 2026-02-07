@@ -156,6 +156,7 @@ LV2Instrument::LV2Instrument() {
     audioBufferR_ = nullptr;
     audioInputL_ = nullptr;
     audioInputR_ = nullptr;
+    audioDummyBuffer_ = nullptr;
     bufferSize_ = 0;
     audioInputPortL_ = -1;
     audioInputPortR_ = -1;
@@ -166,6 +167,7 @@ LV2Instrument::LV2Instrument() {
     midiBufferSize_ = 0;
     isActivated_ = false;
     forcedOutputChannels_ = 0; // default to automatic
+    diagRenderCounter_ = 0;
 
     // Initialize options array entries so plugins can read block-size options
     init_options_array();
@@ -272,6 +274,8 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
     noteOn.size = 3;
     pendingMidiEvents_.push_back(noteOn);
 
+    Trace::Error("LV2Instrument: Start() queued note-on ch=%d note=%d vel=100 pending=%zu", channel, (int)note, pendingMidiEvents_.size());
+
     return true;
 }
 
@@ -318,40 +322,36 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         audioBufferR_ = new float[BUFFER_SIZE];
         audioInputL_ = new float[BUFFER_SIZE];
         audioInputR_ = new float[BUFFER_SIZE];
+        audioDummyBuffer_ = new float[BUFFER_SIZE];
         bufferSize_ = BUFFER_SIZE;
         connectPorts(BUFFER_SIZE);
+        // Pre-allocate pending atom events to avoid realtime allocations during fast param changes
+        pendingAtomEvents_.reserve(128);
     }
 
-    // Temporary diagnostic injection: once per run, call SetParameterValue for the first parameter to exercise write path
-    static bool debugInjected = false;
-    if (!debugInjected && !parameters_.empty()) {
-        // Bump the first parameter slightly to trigger patch/set or port write and observe behavior
-        int pi = 0;
-        float newVal = parameters_[pi].currentValue + (parameters_[pi].maxValue - parameters_[pi].minValue) * 0.1f;
-        if (newVal > parameters_[pi].maxValue) newVal = parameters_[pi].maxValue;
-        Trace::Debug("LV2Instrument: debug injection - forcing SetParameterValue for paramIndex=%d name=%s old=%g new=%g portIndex=%d isAtom=%d resourceURI=%s", pi, parameters_[pi].name.c_str(), parameters_[pi].currentValue, newVal, parameters_[pi].portIndex, parameters_[pi].isAtomPort ? 1 : 0, parameters_[pi].resourceURI.c_str());
-        SetParameterValue(pi, newVal);
-        debugInjected = true;
-    }
-    
     // Activate plugin once after first connection
     if (!isActivated_ && pluginInstance_) {
         LilvInstance* instance = (LilvInstance*)pluginInstance_;
         lilv_instance_activate(instance);
         isActivated_ = true;
-        // Debug: initialize test note flag
-        testNoteSent_ = false;
 
-        // One-time debug injection after activation to exercise parameter update path
-        static bool debugInjectedActivation = false;
-        if (!debugInjectedActivation && !parameters_.empty()) {
-            int pi = 0;
-            float newVal = parameters_[pi].currentValue + (parameters_[pi].maxValue - parameters_[pi].minValue) * 0.1f;
-            if (newVal > parameters_[pi].maxValue) newVal = parameters_[pi].maxValue;
-            Trace::Debug("LV2Instrument: debug injection (post-activate) - forcing SetParameterValue for paramIndex=%d name=%s old=%g new=%g portIndex=%d isAtom=%d resourceURI=%s", pi, parameters_[pi].name.c_str(), parameters_[pi].currentValue, newVal, parameters_[pi].portIndex, parameters_[pi].isAtomPort ? 1 : 0, parameters_[pi].resourceURI.c_str());
-            SetParameterValue(pi, newVal);
-            debugInjectedActivation = true;
+        // Send default values for ALL parameters to the now-active plugin.
+        // For control ports: write defaults into portControlStorage_ (the plugin
+        // reads these directly). For resource-backed params: queue patch:Set atoms
+        // so the plugin receives initial values on this render pass.
+        for (size_t pi = 0; pi < parameters_.size(); ++pi) {
+            int pidx = parameters_[pi].portIndex;
+            if (pidx >= 0 && !parameters_[pi].isAtomPort) {
+                // Direct control port: ensure storage has the default
+                if (pidx < (int)portControlStorage_.size()) {
+                    portControlStorage_[pidx] = parameters_[pi].currentValue;
+                }
+            } else if (!parameters_[pi].resourceURI.empty()) {
+                // Resource-backed parameter: queue a patch:Set with the default value
+                SetParameterValue((int)pi, parameters_[pi].currentValue);
+            }
         }
+        Trace::Debug("LV2Instrument: Activated plugin and sent %zu parameter defaults", parameters_.size());
     }
 
     // Clear input buffers (no audio input for synths)
@@ -389,10 +389,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
                 realValue = rounded;
             }
 
-            // Extra logging for braids shape crashes
-            if (parameters_[i].groupName == "braids" && parameters_[i].name.find("Shape") != std::string::npos) {
-            }
-
             // If value changed, propagate it using SetParameterValue which will update port storage
             // or queue a patch:Set for resource-backed parameters.
             if (std::fabs(realValue - parameters_[i].currentValue) > 1e-6f) {
@@ -423,14 +419,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         size_t offset = 0;
         size_t capacity = midiBufferSize_ - sizeof(LV2_Atom_Sequence);
 
-        // Debug: if activation just happened and we haven't sent a test note yet, queue one
-        if (isActivated_ && !testNoteSent_) {
-            MidiEvent noteOn;
-            noteOn.data[0] = 0x90; noteOn.data[1] = 60; noteOn.data[2] = 100; noteOn.size = 3;
-            pendingMidiEvents_.push_back(noteOn);
-            Trace::Debug("LV2Instrument: queued debug NoteOn (60) to verify output");
-            testNoteSent_ = true;
-        }
+
         
         // Write pending MIDI events (as before)
         for (size_t i = 0; i < pendingMidiEvents_.size() && offset + 32 < capacity; i++) {
@@ -447,80 +436,72 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             // Calculate padded size (atoms must be 64-bit aligned)
             size_t padded_size = sizeof(LV2_Atom_Event) + ((evt.size + 7) & ~7);
             offset += padded_size;
+            
+            Trace::Error("LV2Instrument: Wrote MIDI evt[%zu] status=0x%02X data1=%d data2=%d to midiBuffer_ offset=%zu midiEventUrid=%u",
+                i, evt.data[0], evt.data[1], evt.data[2], offset, g_midiEventUrid);
         }
         pendingMidiEvents_.clear();
+
+        // Commit sequence size after MIDI events so appendEventsToBuffer knows where to append
+        seq->atom.size = sizeof(LV2_Atom_Sequence_Body) + offset;
 
         // Write pending atom events (grouped by destination port)
         if (!pendingAtomEvents_.empty()) {
             // Group events by dest port
             std::map<int, std::vector<PendingAtomEvent>> groups;
             for (auto &ae : pendingAtomEvents_) {
-                groups[ae.destPortIndex].push_back(ae);
+                auto &vec = groups[ae.destPortIndex];
+                if (vec.empty()) vec.reserve(4); // small reserve to avoid frequent reallocations under bursts
+                vec.push_back(ae);
             }
 
-            // Helper to write a vector of events into a buffer
-            auto writeEventsToBuffer = [&](uint8_t* buffer, size_t bufCap, const std::vector<PendingAtomEvent> &events) {
+            // Helper to append events to an existing atom sequence buffer (preserves any prior events)
+            auto appendEventsToBuffer = [&](uint8_t* buffer, size_t bufCap, const std::vector<PendingAtomEvent> &events) {
                 if (!buffer) return;
                 LV2_Atom_Sequence* seq = (LV2_Atom_Sequence*)buffer;
-                seq->atom.size = sizeof(LV2_Atom_Sequence_Body); // reset
-                seq->atom.type = g_atomSequenceUrid ? g_atomSequenceUrid : urid_map(nullptr, LV2_ATOM__Sequence);
-                seq->body.unit = 0;
-                seq->body.pad = 0;
 
+                // If buffer is not yet initialised as a sequence, initialise it now
+                LV2_URID seqType = g_atomSequenceUrid ? g_atomSequenceUrid : urid_map(nullptr, LV2_ATOM__Sequence);
+                if (seq->atom.type != seqType) {
+                    seq->atom.size = sizeof(LV2_Atom_Sequence_Body);
+                    seq->atom.type = seqType;
+                    seq->body.unit = 0;
+                    seq->body.pad = 0;
+                }
+
+                // Compute where existing data ends so we append after it
+                size_t existingDataSize = seq->atom.size - sizeof(LV2_Atom_Sequence_Body);
                 uint8_t* b = (uint8_t*)LV2_ATOM_CONTENTS(LV2_Atom_Sequence, seq);
-                size_t off = 0;
+                size_t off = existingDataSize;
                 size_t cap = bufCap - sizeof(LV2_Atom_Sequence);
 
                 for (const auto &e : events) {
-                    size_t required = sizeof(LV2_Atom_Event) + ((e.data.size() + 7) & ~7);
-                    if (off + required > cap) break;
+                    size_t padded_size = sizeof(LV2_Atom_Event) + ((e.data.size() + 7) & ~7);
+                    if (off + padded_size > cap) break;
                     LV2_Atom_Event* event = (LV2_Atom_Event*)(b + off);
                     event->time.frames = 0;
                     event->body.size = (uint32_t)e.data.size();
                     event->body.type = e.type;
                     memcpy(LV2_ATOM_BODY(&event->body), e.data.data(), e.data.size());
-
-                    // Diagnostic: dump the first few bytes and the event type
-                    {
-                        unsigned int show = (unsigned int)std::min<size_t>(e.data.size(), 16);
-                        char dump[128]; int dp=0;
-                        uint8_t *bd = (uint8_t*)LV2_ATOM_BODY(&event->body);
-                        for (unsigned int xi=0; xi<show; ++xi) { dp += snprintf(dump+dp, sizeof(dump)-dp, "%02X", bd[xi]); if (xi<show-1) dump[dp++]=','; }
-                        Trace::Debug("LV2Instrument: wrote atom event type=%u size=%u firstBytes=%s", (unsigned)e.type, (unsigned)e.data.size(), dump);
-                    }
-
-                    // Append full binary payload for offline inspection
-                    {
-                        static int writtenCounter = 0;
-                        ++writtenCounter;
-                        std::string wpath = std::string("/tmp/lv2_written_event_port_") + std::to_string(getpid()) + "_" + std::to_string(writtenCounter) + ".bin";
-                        std::ofstream wofs(wpath, std::ios::binary);
-                        if (wofs) {
-                            wofs.write((char*)LV2_ATOM_BODY(&event->body), event->body.size);
-                            Trace::Debug("LV2Instrument: dumped written event to %s (size=%u) for port write", wpath.c_str(), (unsigned)event->body.size);
-                        }
-                    }
-
-                    size_t padded_size = sizeof(LV2_Atom_Event) + ((e.data.size() + 7) & ~7);
                     off += padded_size;
                 }
                 seq->atom.size = sizeof(LV2_Atom_Sequence_Body) + off;
             };
 
-            // Write to MIDI/primary atom input if present
+            // Append to MIDI/primary atom input if present (preserves MIDI events already in buffer)
             auto it = groups.find(midiInputPort_);
             if (it != groups.end() && midiBuffer_) {
-                writeEventsToBuffer(midiBuffer_, midiBufferSize_, it->second);
-                Trace::Debug("LV2Instrument: wrote %u atom events to midiInputPort=%d", (unsigned)it->second.size(), midiInputPort_);
+                appendEventsToBuffer(midiBuffer_, midiBufferSize_, it->second);
+                Trace::Debug("LV2Instrument: appended %u atom events to midiInputPort=%d", (unsigned)it->second.size(), midiInputPort_);
             }
 
-            // Write to other atom input ports
+            // Append to other atom input ports
             for (auto &g : groups) {
                 int dest = g.first;
                 if (dest == midiInputPort_) continue;
                 if (dest >= 0 && dest < (int)atomInputBuffers_.size() && atomInputBuffers_[dest]) {
-                    writeEventsToBuffer(atomInputBuffers_[dest], atomInputBufferSizes_[dest], g.second);
-                    Trace::Debug("LV2Instrument: wrote %u atom events to atom input port=%d", (unsigned)g.second.size(), dest);
+                    appendEventsToBuffer(atomInputBuffers_[dest], atomInputBufferSizes_[dest], g.second);
+                    Trace::Debug("LV2Instrument: appended %u atom events to atom input port=%d", (unsigned)g.second.size(), dest);
                 } else {
                     Trace::Debug("LV2Instrument: dropping %u atom events for unconnected port=%d", (unsigned)g.second.size(), dest);
                 }
@@ -543,74 +524,73 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
 
             if (!broadcastEvents.empty()) {
                 if (midiBuffer_) {
-                    writeEventsToBuffer(midiBuffer_, midiBufferSize_, broadcastEvents);
-                    Trace::Debug("LV2Instrument: broadcast wrote %u atom events to midiInputPort=%d", (unsigned)broadcastEvents.size(), midiInputPort_);
+                    appendEventsToBuffer(midiBuffer_, midiBufferSize_, broadcastEvents);
                 }
                 for (int port = 0; port < (int)atomInputBuffers_.size(); ++port) {
                     if (atomInputBuffers_[port]) {
-                        writeEventsToBuffer(atomInputBuffers_[port], atomInputBufferSizes_[port], broadcastEvents);
-                        Trace::Debug("LV2Instrument: broadcast wrote %u atom events to atom input port=%d", (unsigned)broadcastEvents.size(), port);
+                        appendEventsToBuffer(atomInputBuffers_[port], atomInputBufferSizes_[port], broadcastEvents);
                     }
                 }
             }
         }
         pendingAtomEvents_.clear();
-        
-        // Update final sequence size
-        seq->atom.size = sizeof(LV2_Atom_Sequence_Body) + offset;
+    }
 
-        // Diagnostic: print MIDI sequence summary
-        Trace::Debug("LV2Instrument: midi seq size=%u offset=%u", seq->atom.size, (unsigned)offset);
-        // Walk events and print their types/sizes for debugging
-        size_t scan = 0;
-        while (scan + sizeof(LV2_Atom_Event) <= offset) {
-            LV2_Atom_Event* ev = (LV2_Atom_Event*)(buf + scan);
-            uint32_t bsz = ev->body.size;
-            LV2_URID btype = ev->body.type;
-            Trace::Debug("LV2Instrument: midi event at %u type=%u size=%u", (unsigned)scan, (unsigned)btype, (unsigned)bsz);
-            // Print up to first 8 bytes
-            uint8_t *bd = (uint8_t*)LV2_ATOM_BODY(&ev->body);
-            char dump[64]; int dp=0; for (uint32_t xi=0; xi<bsz && xi<8; ++xi) { dp += snprintf(dump+dp, sizeof(dump)-dp, "%02X", bd[xi]); if (xi<bsz-1 && xi<7) dump[dp++]=','; }
-            Trace::Debug("LV2Instrument: midi event data: %s", dump);
-            size_t padded_size = sizeof(LV2_Atom_Event) + ((bsz + 7) & ~7);
-            scan += padded_size;
+    // Re-initialize atom OUTPUT buffers as empty sequences before each run,
+    // so the plugin has space to write notification/output atoms.
+    for (size_t oi = 0; oi < atomOutputBuffers_.size(); ++oi) {
+        if (atomOutputBuffers_[oi]) {
+            LV2_Atom_Sequence* seq = (LV2_Atom_Sequence*)atomOutputBuffers_[oi];
+            seq->atom.type = g_atomSequenceUrid;
+            seq->atom.size = atomOutputBufferSizes_[oi] - sizeof(LV2_Atom);
+            seq->body.unit = 0;
+            seq->body.pad = 0;
         }
     }
 
     // Run the plugin to generate output
     LilvInstance* instance = (LilvInstance*)pluginInstance_;
 
-    // Debug: log braids shape parameter(s) before calling into the plugin
-    for (size_t i = 0; i < parameters_.size() && i < controlValues_.size(); ++i) {
-        if (parameters_[i].groupName == "braids" && parameters_[i].name.find("Shape") != std::string::npos) {
-        }
-    }
-
-    // Diagnostic: dump buffer headers and pointers before running plugin
-    if (midiBuffer_) {
-        LV2_Atom_Sequence* seq = (LV2_Atom_Sequence*)midiBuffer_;
-        Trace::Debug("LV2Instrument: MIDI buffer seq size=%u type=%u", seq->atom.size, seq->atom.type);
-    } else {
-        Trace::Debug("LV2Instrument: MIDI buffer is NULL");
-    }
-    for (size_t pi = 0; pi < atomInputBuffers_.size(); ++pi) {
-        if (atomInputBuffers_[pi]) {
-            LV2_Atom_Sequence* s = (LV2_Atom_Sequence*)atomInputBuffers_[pi];
-            Trace::Debug("LV2Instrument: atom buffer[%zu]=%p size=%u type=%u cap=%zu", pi, atomInputBuffers_[pi], s->atom.size, s->atom.type, atomInputBufferSizes_[pi]);
-        }
-    }
-    Trace::Debug("LV2Instrument: audioBufferL=%p audioBufferR=%p audioInputL=%p audioInputR=%p portControlStorage_ptr=%p", audioBufferL_, audioBufferR_, audioInputL_, audioInputR_, portControlStorage_.empty() ? nullptr : (void*)&portControlStorage_[0]);
-
     lilv_instance_run(instance, size);
 
-    // Diagnostic: check if plugin wrote any non-zero samples into output buffers
-    bool anyNonZero = false;
-    if (audioBufferL_ && audioBufferR_) {
-        for (int ii = 0; ii < size; ++ii) {
-            if (fabsf(audioBufferL_[ii]) > 1e-10f || fabsf(audioBufferR_[ii]) > 1e-10f) { anyNonZero = true; break; }
+    // DIAGNOSTIC: check if plugin produced non-zero audio
+    {
+        // Use instance counter, not static (avoid sharing across instruments)
+        diagRenderCounter_++;
+        int diagCounter = diagRenderCounter_;
+        if (diagCounter <= 50) { // only log first 50 render calls per instrument
+            float maxL = 0.0f, maxR = 0.0f;
+            for (int di = 0; di < size; ++di) {
+                float al = audioBufferL_[di] < 0 ? -audioBufferL_[di] : audioBufferL_[di];
+                float ar = audioBufferR_[di] < 0 ? -audioBufferR_[di] : audioBufferR_[di];
+                if (al > maxL) maxL = al;
+                if (ar > maxR) maxR = ar;
+            }
+            // Also check the actual portControlStorage values for Enabled
+            float enabledVal = -1.0f;
+            if (portControlStorage_.size() > 12) enabledVal = portControlStorage_[12];
+            float latencyVal = -1.0f;
+            if (portControlStorage_.size() > 10) latencyVal = portControlStorage_[10];
+            Trace::Error("LV2Instrument: Render[%d] uri=%s size=%d maxL=%.6f maxR=%.6f vol=%.2f pendMidi=%zu enabled=%.1f latency=%.0f",
+                diagCounter, pluginURI_, size, maxL, maxR,
+                FindVariable(LV2IP_VOLUME) ? (FindVariable(LV2IP_VOLUME)->GetInt() / 255.0f) : 1.0f,
+                pendingMidiEvents_.size(), enabledVal, latencyVal);
+            // Also log the audio dummy buffer to see if extra outputs wrote there
+            if (audioDummyBuffer_) {
+                float maxD = 0.0f;
+                for (int di = 0; di < size; ++di) {
+                    float ad = audioDummyBuffer_[di] < 0 ? -audioDummyBuffer_[di] : audioDummyBuffer_[di];
+                    if (ad > maxD) maxD = ad;
+                }
+                Trace::Error("LV2Instrument: Render[%d] dummyMax=%.6f", diagCounter, maxD);
+            }
+            // Check raw samples at start
+            Trace::Error("LV2Instrument: Render[%d] L[0..3]=%.8f %.8f %.8f %.8f R[0..3]=%.8f %.8f %.8f %.8f",
+                diagCounter,
+                audioBufferL_[0], audioBufferL_[1], audioBufferL_[2], audioBufferL_[3],
+                audioBufferR_[0], audioBufferR_[1], audioBufferR_[2], audioBufferR_[3]);
         }
     }
-    Trace::Debug("LV2Instrument: render post-run anyNonZero=%d firstSamples L0=%g R0=%g", anyNonZero ? 1 : 0, audioBufferL_ ? audioBufferL_[0] : 0.0f, audioBufferR_ ? audioBufferR_[0] : 0.0f);
 
     // Convert float output to fixed point stereo interleaved
     // Apply volume control
@@ -697,7 +677,7 @@ void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
         reverbDecay_[channel] = fl2fp((decayVal / 255.0f) * 0.9f);
         reverbSend_[channel] = fl2fp(sendAmount / 255.0f);
         
-        Trace::Log("REVERB", "LV2 Channel %d: decay=%d send=%d", channel, decayVal, sendAmount);
+        Trace::Debug("REVERB: LV2 Channel %d: decay=%d send=%d", channel, decayVal, sendAmount);
     }
     // TODO: Handle other commands like volume, pan, etc.
 }
@@ -773,6 +753,10 @@ void LV2Instrument::cleanupPlugin() {
         delete[] audioInputR_;
         audioInputR_ = nullptr;
     }
+    if (audioDummyBuffer_) {
+        delete[] audioDummyBuffer_;
+        audioDummyBuffer_ = nullptr;
+    }
     if (midiBuffer_) {
         delete[] midiBuffer_;
         midiBuffer_ = nullptr;
@@ -787,6 +771,15 @@ void LV2Instrument::cleanupPlugin() {
     }
     atomOutputBuffers_.clear();
     atomOutputBufferSizes_.clear();
+
+    // Free allocated atom input buffers
+    for (size_t i = 0; i < atomInputBuffers_.size(); ++i) {
+        if (atomInputBuffers_[i]) {
+            delete[] atomInputBuffers_[i];
+        }
+    }
+    atomInputBuffers_.clear();
+    atomInputBufferSizes_.clear();
 
     if (world_) {
         lilv_world_free((LilvWorld*)world_);
@@ -904,6 +897,14 @@ void LV2Instrument::loadPlugin() {
     
     plugin_ = (void*)plugin;
     Trace::Debug("LV2Instrument: Found plugin: %s", pluginURI_);
+
+    // Load the plugin's bundle and resource data so all triples (including
+    // patch:writable parameters) are available for queries.
+    const LilvNode* bundle_uri = lilv_plugin_get_bundle_uri(plugin);
+    if (bundle_uri) {
+        lilv_world_load_bundle(world, bundle_uri);
+        lilv_world_load_resource(world, lilv_plugin_get_uri(plugin));
+    }
     
     // Diagnostic: list plugin info before instantiation
     {
@@ -930,12 +931,12 @@ void LV2Instrument::loadPlugin() {
 
         // Log audio ports and resize info
         uint32_t np = lilv_plugin_get_num_ports(plugin);
-        int audioOutputs = 0;
+        LilvNode* audio_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), LILV_URI_AUDIO_PORT);
+        LilvNode* output_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), LILV_URI_OUTPUT_PORT);
         for (uint32_t i = 0; i < np; ++i) {
             const LilvPort* port = lilv_plugin_get_port_by_index(plugin, i);
-            if (lilv_port_is_a(plugin, port, lilv_new_uri(static_cast<LilvWorld*>(world_), LILV_URI_AUDIO_PORT))) {
-                bool isOutput = lilv_port_is_a(plugin, port, lilv_new_uri(static_cast<LilvWorld*>(world_), LILV_URI_OUTPUT_PORT));
-                if (isOutput) audioOutputs++;
+            if (lilv_port_is_a(plugin, port, audio_uri)) {
+                bool isOutput = lilv_port_is_a(plugin, port, output_uri);
                 // Check for resize properties
                 LilvNode* rsz_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/ext/resize-port#minimumSize");
                 const LilvNodes* rsz_nodes = lilv_port_get_value(plugin, port, rsz_uri);
@@ -943,12 +944,11 @@ void LV2Instrument::loadPlugin() {
                     lilv_nodes_free((LilvNodes*)rsz_nodes);
                 }
                 lilv_node_free(rsz_uri);
+                (void)isOutput;
             }
         }
-
-        if (audioOutputs > 2 && forcedOutputChannels_ == 0) {
-            forcedOutputChannels_ = 2;
-        }
+        lilv_node_free(audio_uri);
+        lilv_node_free(output_uri);
     }
 
     // Initialize URIDs if not already done
@@ -1012,13 +1012,13 @@ void LV2Instrument::loadPlugin() {
         } else {
 
             pluginInstance_ = inst2;
-            Trace::Debug("LV2Instrument: Instantiated plugin (minimal features): %s", pluginURI_);
+            Trace::Error("LV2Instrument: WARNING - Instantiated plugin with MINIMAL features only (no options/bufsize): %s", pluginURI_);
             return;
         }
     }
 
     pluginInstance_ = instance;
-    Trace::Debug("LV2Instrument: Successfully instantiated plugin: %s", pluginURI_);
+    Trace::Error("LV2Instrument: Successfully instantiated plugin with FULL features: %s", pluginURI_);
 }
 
 void LV2Instrument::discoverParameters() {
@@ -1030,7 +1030,6 @@ void LV2Instrument::discoverParameters() {
     audioOutputPortR_ = -1;
     midiInputPort_ = -1;
     audioOutputPorts_.clear();
-    forcedOutputChannels_ = 0;
     
     if (!plugin_ || !world_) {
         return;
@@ -1095,20 +1094,9 @@ void LV2Instrument::discoverParameters() {
         }
         
         // Check if this is a control port (accept input or output directions)
+        // Note: atom ports with lv2:designation lv2:control are transport/MIDI ports,
+        // NOT user-controllable parameters — do not add them as parameters.
         bool isControlPort = lilv_port_is_a(plugin, port, control_class);
-        // Also treat atom ports with lv2:designation == lv2:control as control ports
-        if (!isControlPort && lilv_port_is_a(plugin, port, atom_port)) {
-            LilvNode* des_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/lv2core#designation");
-            const LilvNodes* des_nodes = lilv_port_get_value(plugin, port, des_uri);
-            if (des_nodes && lilv_nodes_size(des_nodes) > 0) {
-                const LilvNode* dn = lilv_nodes_get_first(des_nodes);
-                if (dn && lilv_node_is_uri(dn) && strcmp(lilv_node_as_uri(dn), "http://lv2plug.in/ns/lv2core#control") == 0) {
-                    isControlPort = true;
-                }
-                lilv_nodes_free((LilvNodes*)des_nodes);
-            }
-            lilv_node_free(des_uri);
-        }
 
         if (isControlPort) {
             
@@ -1317,44 +1305,51 @@ void LV2Instrument::discoverParameters() {
         midiBuffer_ = new uint8_t[midiBufferSize_];
     }
 
-    // Also scan for lv2:Parameter resources in the plugin's RDF (always perform this - avoids missing patch-based params)
-    LilvNode* param_type = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/lv2core#Parameter");
-    LilvNodes* param_nodes = lilv_plugin_get_related(plugin, param_type);
-    if (param_nodes && lilv_nodes_size(param_nodes) > 0) {
+    // Discover patch:writable parameters — these are resource-backed params controlled
+    // via patch:Set atom messages (used by JUCE-based plugins like JC303, ChowKick, Surge XT, etc.)
+    LilvNode* pw_pred = lilv_new_uri(static_cast<LilvWorld*>(world_), LV2_PATCH__writable);
+    const LilvNodes* writable_nodes = lilv_world_find_nodes(static_cast<LilvWorld*>(world_),
+        lilv_plugin_get_uri(plugin), pw_pred, NULL);
+    if (writable_nodes && lilv_nodes_size(writable_nodes) > 0) {
+        Trace::Debug("LV2Instrument: Found %u patch:writable parameters", lilv_nodes_size(writable_nodes));
+        LILV_FOREACH(nodes, wit, writable_nodes) {
+            const LilvNode* pnode = lilv_nodes_get(writable_nodes, wit);
+            if (!lilv_node_is_uri(pnode)) continue;
 
-        LilvIter *piter = lilv_nodes_begin(param_nodes);
-        while (!lilv_nodes_is_end(param_nodes, piter)) {
-            const LilvNode* pnode = lilv_nodes_get(param_nodes, piter);
+            const char* paramResourceURI = lilv_node_as_uri(pnode);
 
             // Get label
             LilvNode* label_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://www.w3.org/2000/01/rdf-schema#label");
             const LilvNodes* label_nodes = lilv_world_find_nodes(static_cast<LilvWorld*>(world_), pnode, label_uri, NULL);
             std::string pname;
             if (label_nodes && lilv_nodes_size(label_nodes) > 0) {
-                const LilvNode* ln = lilv_nodes_get_first(label_nodes);
-                pname = lilv_node_as_string(ln);
+                pname = lilv_node_as_string(lilv_nodes_get_first(label_nodes));
                 lilv_nodes_free((LilvNodes*)label_nodes);
             } else {
-                // Fallback to URI fragment or node string
-                if (lilv_node_is_uri(pnode)) {
-                    const char* uri = lilv_node_as_uri(pnode);
-                    const char* slash = strrchr(uri, '/');
-                    pname = (slash ? slash + 1 : uri);
-                } else {
-                    pname = lilv_node_as_string(pnode);
-                }
+                // Fallback to URI fragment
+                const char* colon = strrchr(paramResourceURI, ':');
+                const char* hash = strrchr(paramResourceURI, '#');
+                const char* slash = strrchr(paramResourceURI, '/');
+                if (hash) pname = hash + 1;
+                else if (colon) pname = colon + 1;
+                else if (slash) pname = slash + 1;
+                else pname = paramResourceURI;
             }
+            lilv_node_free(label_uri);
 
-            // Skip if we already discovered a parameter with the same name
+            // Skip if we already discovered a parameter with the same name or URI
             bool exists = false;
             for (size_t pi = 0; pi < parameters_.size(); ++pi) {
-                if (parameters_[pi].name == pname) { exists = true; break; }
+                if (parameters_[pi].name == pname || parameters_[pi].resourceURI == paramResourceURI) {
+                    exists = true; break;
+                }
             }
-            if (exists) { piter = lilv_nodes_next(param_nodes, piter); continue; }
+            if (exists) continue;
 
             LV2PluginParameter param;
             param.name = pname;
             param.groupName = "";
+            param.resourceURI = paramResourceURI;
 
             // Group
             LilvNode* group_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/ext/port-groups#group");
@@ -1363,10 +1358,10 @@ void LV2Instrument::discoverParameters() {
                 const LilvNode* gn = lilv_nodes_get_first(group_nodes);
                 if (lilv_node_is_uri(gn)) {
                     const char* guri = lilv_node_as_uri(gn);
-                    const char* hash = strrchr(guri, '#');
-                    const char* colon = strrchr(guri, ':');
-                    if (hash) param.groupName = std::string(hash + 1);
-                    else if (colon) param.groupName = std::string(colon + 1);
+                    const char* gh = strrchr(guri, '#');
+                    const char* gc = strrchr(guri, ':');
+                    if (gh) param.groupName = std::string(gh + 1);
+                    else if (gc) param.groupName = std::string(gc + 1);
                     else param.groupName = std::string(guri);
                 }
                 lilv_nodes_free((LilvNodes*)group_nodes);
@@ -1388,148 +1383,41 @@ void LV2Instrument::discoverParameters() {
 
             LilvNode* def_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/lv2core#default");
             const LilvNodes* def_nodes = lilv_world_find_nodes(static_cast<LilvWorld*>(world_), pnode, def_uri, NULL);
-            param.defaultValue = (def_nodes && lilv_nodes_size(def_nodes) > 0) ? lilv_node_as_float(lilv_nodes_get_first(def_nodes)) : ((param.minValue >= 0.0f && param.maxValue <= 1.0f) ? 0.5f : (param.minValue < 0.0f && param.maxValue > 0.0f ? 0.0f : param.minValue));
+            param.defaultValue = (def_nodes && lilv_nodes_size(def_nodes) > 0) ? lilv_node_as_float(lilv_nodes_get_first(def_nodes)) :
+                ((param.minValue >= 0.0f && param.maxValue <= 1.0f) ? 0.5f :
+                 (param.minValue < 0.0f && param.maxValue > 0.0f ? 0.0f : param.minValue));
             if (def_nodes) lilv_nodes_free((LilvNodes*)def_nodes);
             lilv_node_free(def_uri);
 
             param.currentValue = param.defaultValue;
-            param.portIndex = -1; // no direct control port
+            param.portIndex = -1; // no direct control port — uses patch:Set
             param.variable = nullptr;
 
-            // If this is a discovered lv2:Parameter resource, record its URI so we can send patch:set messages later
-            if (lilv_node_is_uri(pnode)) {
-                const char *puri = lilv_node_as_uri(pnode);
-                if (puri) {
-                    param.resourceURI = puri;
-                }
-            }
-
-            // Create UI Variable for this parameter so it appears in the UI
+            // Create UI Variable
             std::string varDisplay = (param.groupName.empty() ? param.name : (param.groupName + ":" + param.name));
-            char varName[64]; if (varDisplay.length()>20) { std::string shortName = varDisplay.substr(0,17)+"..."; snprintf(varName,64, "%s", shortName.c_str()); } else { snprintf(varName,64, "%s", varDisplay.c_str()); }
+            char varName[64];
+            if (varDisplay.length() > 20) {
+                std::string shortName = varDisplay.substr(0, 17) + "...";
+                snprintf(varName, 64, "%s", shortName.c_str());
+            } else {
+                snprintf(varName, 64, "%s", varDisplay.c_str());
+            }
             int scaledValue = (int)(((param.currentValue - param.minValue) / (param.maxValue - param.minValue) * 127.0f) + 0.5f);
-            if (scaledValue<0) {
-                scaledValue = 0;
-            }
-            if (scaledValue > 127) {
-                scaledValue = 127;
-            }
+            if (scaledValue < 0) scaledValue = 0;
+            if (scaledValue > 127) scaledValue = 127;
+
             WatchedVariable *wv2 = new WatchedVariable(varName, MAKE_FOURCC('L','P', (int)parameters_.size()/256, (int)parameters_.size()%256), scaledValue);
             Insert(wv2);
             param.variable = (Variable*)wv2;
             wv2->AddObserver(*this);
             parameters_.push_back(param);
             controlValues_.push_back(param.defaultValue);
-            Trace::Debug("LV2Instrument: resource param discovered name=%s resourceURI=%s portIndex=%d", param.name.c_str(), param.resourceURI.c_str(), param.portIndex);
+            Trace::Debug("LV2Instrument: patch:writable param name=%s resourceURI=%s", param.name.c_str(), param.resourceURI.c_str());
             resourceParamsFound++;
-
-
-            piter = lilv_nodes_next(param_nodes, piter);
         }
-        lilv_nodes_free(param_nodes);
+        lilv_nodes_free((LilvNodes*)writable_nodes);
     }
-
-    // If no lv2:Parameter resources were found via lilv, fall back to parsing TTL files in the bundle directory
-    if (resourceParamsFound == 0) {
-        const LilvNode* lib_node = lilv_plugin_get_library_uri(plugin);
-        if (lib_node && lilv_node_is_uri(lib_node)) {
-            const char* liburi = lilv_node_as_uri(lib_node);
-            const char* prefix = "file://";
-            const char* path = liburi;
-            if (strncmp(liburi, prefix, strlen(prefix)) == 0) path = liburi + strlen(prefix);
-            // derive bundle dir by removing filename
-            std::string bundlePath(path);
-            size_t slash = bundlePath.rfind('/');
-            if (slash != std::string::npos) {
-                std::string bundleDir = bundlePath.substr(0, slash + 1);
-                // look for common ttl files
-                const char* candidates[] = {"dsp.ttl","manifest.ttl","ui.ttl",NULL};
-                for (int ci=0; candidates[ci]; ++ci) {
-                    std::string f = bundleDir + candidates[ci];
-                    I_File* fh = FS_FOPEN(const_cast<char*>(f.c_str()), const_cast<char*>("r"));
-                    if (!fh) continue;
-                    // read full file into a string
-                    std::string contents;
-                    const int BUF_SZ = 4096;
-                    char buf[BUF_SZ];
-                    int r = 0;
-                    while ((r = fh->Read(buf, 1, BUF_SZ)) > 0) {
-                        contents.append(buf, r);
-                    }
-                    fh->Close();
-
-                    // crude TTL parse: find 'a lv2:Parameter' blocks by splitting on blank lines
-                    size_t pos = 0;
-                    while (pos < contents.size()) {
-                        size_t next = contents.find("\n\n", pos);
-                        std::string block;
-                        if (next == std::string::npos) { block = contents.substr(pos); pos = contents.size(); }
-                        else { block = contents.substr(pos, next - pos); pos = next + 2; }
-
-                        if (block.find("a lv2:Parameter") == std::string::npos) continue;
-
-                        // find subject token at start of block (first token before whitespace)
-                        size_t first_nl = block.find('\n');
-                        std::string firstline = (first_nl == std::string::npos) ? block : block.substr(0, first_nl);
-                        std::string subject;
-                        size_t sp = firstline.find(' ');
-                        if (sp != std::string::npos) subject = firstline.substr(0, sp); else subject = firstline;
-
-                        std::string pname = subject;
-                        size_t col = pname.rfind(':'); if (col != std::string::npos) pname = pname.substr(col+1);
-
-                        // skip if already present
-                        bool exists=false; for (size_t pi=0; pi<parameters_.size(); ++pi) if (parameters_[pi].name==pname) { exists=true; break; }
-                        if (exists) continue;
-
-                        LV2PluginParameter param;
-                        param.name = pname;
-                        param.groupName = "";
-                        param.minValue = 0.0f;
-                        param.maxValue = 1.0f;
-                        param.defaultValue = 0.0f;
-
-                        // label
-                        size_t p = block.find("rdfs:label");
-                        if (p!=std::string::npos) {
-                            size_t q = block.find('"', p);
-                            if (q!=std::string::npos) {
-                                size_t r2 = block.find('"', q+1);
-                                if (r2!=std::string::npos) param.name = block.substr(q+1, r2-q-1);
-                            }
-                        }
-                        // min/max/default
-                        p = block.find("lv2:minimum"); if (p!=std::string::npos) { float v=0; sscanf(block.c_str()+p, "lv2:minimum %f", &v); param.minValue=v; }
-                        p = block.find("lv2:maximum"); if (p!=std::string::npos) { float v=1; sscanf(block.c_str()+p, "lv2:maximum %f", &v); param.maxValue=v; }
-                        p = block.find("lv2:default"); if (p!=std::string::npos) { float v=0; sscanf(block.c_str()+p, "lv2:default %f", &v); param.defaultValue=v; }
-
-                        param.currentValue = param.defaultValue;
-                        param.portIndex = -1;
-                        param.variable = nullptr;
-
-                        // create variable
-                        std::string varDisplay = (param.groupName.empty() ? param.name : (param.groupName + ":" + param.name));
-                        char varName[64]; if (varDisplay.length()>20) { std::string shortName = varDisplay.substr(0,17)+"..."; snprintf(varName,64, "%s", shortName.c_str()); } else { snprintf(varName,64, "%s", varDisplay.c_str()); }
-                        int scaledValue = (int)(((param.currentValue - param.minValue) / (param.maxValue - param.minValue) * 127.0f) + 0.5f);
-                        if (scaledValue<0) {
-                            scaledValue = 0;
-                        }
-                        if (scaledValue > 127) {
-                            scaledValue = 127;
-                        }
-                        WatchedVariable *wv2 = new WatchedVariable(varName, MAKE_FOURCC('L','P', (int)parameters_.size()/256, (int)parameters_.size()%256), scaledValue);
-                        Insert(wv2);
-                        param.variable = (Variable*)wv2;
-                        wv2->AddObserver(*this);
-                        parameters_.push_back(param);
-                        controlValues_.push_back(param.defaultValue);
-                        resourceParamsFound++;
-                    }
-                }
-            }
-        }
-    }
-    lilv_node_free(param_type);
+    lilv_node_free(pw_pred);
 
     // Discovery summary logging
     Trace::Debug("LV2Instrument: Discovered control params=%d resource params=%d total params=%d", controlParamsFound, resourceParamsFound, (int)parameters_.size());
@@ -1607,14 +1495,15 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 // Connect plugin audio output ports to our audio output buffers
                 if ((int)i == audioOutputPortL_ && audioBufferL_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferL_);
-                    Trace::Debug("LV2Instrument: Connected audio output L port %u", i);
+                    Trace::Error("LV2Instrument: Connected audio output L port %u -> audioBufferL_=%p", i, (void*)audioBufferL_);
                 } else if ((int)i == audioOutputPortR_ && audioBufferR_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferR_);
-                    Trace::Debug("LV2Instrument: Connected audio output R port %u", i);
+                    Trace::Error("LV2Instrument: Connected audio output R port %u -> audioBufferR_=%p", i, (void*)audioBufferR_);
                 } else {
-                    // Connect to audioBufferL_ by default for additional channels
-                    lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferL_ ? audioBufferL_ : (void*)nullptr);
-                    Trace::Debug("LV2Instrument: Connected audio output (fallback) port %u", i);
+                    // Connect extra audio outputs to a separate dummy buffer so they
+                    // don't overwrite the real L/R output data.
+                    lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioDummyBuffer_ ? audioDummyBuffer_ : (void*)nullptr);
+                    Trace::Error("LV2Instrument: Connected audio output (DUMMY) port %u -> audioDummyBuffer_=%p", i, (void*)audioDummyBuffer_);
                 }
             }
             continue;
@@ -1631,31 +1520,75 @@ void LV2Instrument::connectPorts(int bufferSize) {
 
         // Atom ports (MIDI / Atom sequences)
         if (lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, atom_class)) {
-            Trace::Debug("LV2Instrument: Connecting atom port %u", i);
+            bool isAtomInput = lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, input_class);
+            bool isAtomOutput = lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, output_class);
+            Trace::Error("LV2Instrument: Connecting atom port %u (input=%d output=%d)", i, isAtomInput, isAtomOutput);
 
             // MIDI input port uses preallocated midiBuffer_
             if ((int)i == midiInputPort_ && midiBuffer_) {
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, midiBuffer_);
-                Trace::Debug("LV2Instrument: Connected MIDI input port %u", i);
+                Trace::Error("LV2Instrument: Connected MIDI input port %u", i);
                 continue;
             }
 
-            // Allocate an atom input buffer sized to midiBufferSize_ (safe upper bound)
             size_t bufSize = (midiBufferSize_ > 0) ? midiBufferSize_ : 8192;
-            if (atomInputBuffers_[i]) {
-                delete[] atomInputBuffers_[i];
-                atomInputBuffers_[i] = nullptr;
-                atomInputBufferSizes_[i] = 0;
+
+            if (isAtomOutput) {
+                // Atom OUTPUT port: use atomOutputBuffers_ so we can re-init them each render cycle
+                if (atomOutputBuffers_.size() <= i) {
+                    atomOutputBuffers_.resize(i + 1, nullptr);
+                    atomOutputBufferSizes_.resize(i + 1, 0);
+                }
+                if (atomOutputBuffers_[i]) {
+                    delete[] atomOutputBuffers_[i];
+                }
+                atomOutputBuffers_[i] = new uint8_t[bufSize];
+                atomOutputBufferSizes_[i] = bufSize;
+                // Initialize as empty sequence with full capacity
+                LV2_Atom_Sequence* seq = (LV2_Atom_Sequence*)atomOutputBuffers_[i];
+                seq->atom.type = g_atomSequenceUrid;
+                seq->atom.size = bufSize - sizeof(LV2_Atom);  // capacity for plugin to write into
+                seq->body.unit = 0;
+                seq->body.pad = 0;
+                lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomOutputBuffers_[i]);
+                Trace::Error("LV2Instrument: Connected atom OUTPUT port %u size=%zu", i, bufSize);
+            } else {
+                // Atom INPUT port (non-MIDI): allocate and connect
+                if (atomInputBuffers_[i]) {
+                    delete[] atomInputBuffers_[i];
+                    atomInputBuffers_[i] = nullptr;
+                    atomInputBufferSizes_[i] = 0;
+                }
+                atomInputBuffers_[i] = new uint8_t[bufSize];
+                memset(atomInputBuffers_[i], 0, bufSize);
+                atomInputBufferSizes_[i] = bufSize;
+                lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomInputBuffers_[i]);
+                Trace::Error("LV2Instrument: Connected atom INPUT port %u size=%zu", i, bufSize);
             }
-            atomInputBuffers_[i] = new uint8_t[bufSize];
-            memset(atomInputBuffers_[i], 0, bufSize);
-            atomInputBufferSizes_[i] = bufSize;
-            lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomInputBuffers_[i]);
-            Trace::Debug("LV2Instrument: Allocated and connected atom buffer for port %u size=%zu", i, bufSize);
-            continue;
+            continue; 
         }
 
-        Trace::Debug("LV2Instrument: Port %u is unclassified; no connection made", i);
+
+    }
+
+    // Write parameter default values into port control storage so the plugin
+    // sees correct initial values instead of 0.0f on every port.
+    for (size_t pi = 0; pi < parameters_.size(); ++pi) {
+        int pidx = parameters_[pi].portIndex;
+        if (pidx >= 0 && pidx < (int)portControlStorage_.size() && !parameters_[pi].isAtomPort) {
+            portControlStorage_[pidx] = parameters_[pi].currentValue;
+            Trace::Error("LV2Instrument: connectPorts default param[%zu] port=%d name=%s value=%.4f", pi, pidx, parameters_[pi].name.c_str(), parameters_[pi].currentValue);
+        }
+    }
+
+    // DIAGNOSTIC: dump port connection summary
+    Trace::Error("LV2Instrument: connectPorts summary: audioOutL=%d audioOutR=%d audioInL=%d audioInR=%d midiIn=%d",
+        audioOutputPortL_, audioOutputPortR_, audioInputPortL_, audioInputPortR_, midiInputPort_);
+    Trace::Error("LV2Instrument: connectPorts buffers: audioBufferL_=%p audioBufferR_=%p audioDummy=%p",
+        (void*)audioBufferL_, (void*)audioBufferR_, (void*)audioDummyBuffer_);
+    Trace::Error("LV2Instrument: portControlStorage size=%zu", portControlStorage_.size());
+    for (size_t i = 0; i < portControlStorage_.size(); ++i) {
+        Trace::Error("LV2Instrument: portControlStorage_[%zu] = %.4f", i, portControlStorage_[i]);
     }
 
     // Free temporary nodes
@@ -1668,7 +1601,6 @@ void LV2Instrument::connectPorts(int bufferSize) {
 }
 
 void LV2Instrument::SetParameterValue(int paramIndex, float value) {
-    Trace::Debug("LV2Instrument: SetParameterValue called paramIndex=%d value=%g", paramIndex, value);
     if (paramIndex >= 0 && paramIndex < (int)parameters_.size()) {
         parameters_[paramIndex].currentValue = value;
         if (paramIndex < (int)controlValues_.size()) {
@@ -1689,11 +1621,7 @@ void LV2Instrument::SetParameterValue(int paramIndex, float value) {
             uintptr_t audR = (uintptr_t)audioBufferR_;
             uintptr_t inL = (uintptr_t)audioInputL_;
             uintptr_t inR = (uintptr_t)audioInputR_;
-            size_t bsz = (size_t)bufferSize_;
-
-            Trace::Debug("LV2Instrument: SetParameterValue paramIndex=%d name=%s portIndex=%d isAtom=%d isOutput=%d target=%p audioL=%p audioR=%p audioInL=%p audioInR=%p",
-                         paramIndex, parameters_[paramIndex].name.c_str(), pidx, parameters_[paramIndex].isAtomPort ? 1 : 0, parameters_[paramIndex].isOutput ? 1 : 0,
-                         (void*)target, (void*)audioBufferL_, (void*)audioBufferR_, (void*)audioInputL_, (void*)audioInputR_, bsz);
+            size_t bsz = (size_t)bufferSize_; 
 
             // Check if target falls into any known audio buffer range; if so, skip the write to prevent corruption
             bool overlap = false;
@@ -1712,25 +1640,8 @@ void LV2Instrument::SetParameterValue(int paramIndex, float value) {
 
             if (overlap) {
                 Trace::Error("LV2Instrument: SetParameterValue SKIPPING write: target overlaps audio buffer or is audio port! paramIndex=%d portIndex=%d name=%s", paramIndex, pidx, parameters_[paramIndex].name.c_str());
-                // Persistent diagnostic: write to /tmp for post-mortem inspection
-                {
-                    std::ofstream ofs("/tmp/lv2_setparam.log", std::ios::app);
-                    if (ofs) {
-                        ofs << "SKIP param=" << paramIndex << " name=" << parameters_[paramIndex].name << " port=" << pidx << " value=" << value
-                            << " target=" << (void*)target << " audioL=" << (void*)audioBufferL_ << " audioR=" << (void*)audioBufferR_
-                            << " inL=" << (void*)audioInputL_ << " inR=" << (void*)audioInputR_ << " bufSize=" << bsz << "\n";
-                    }
-                }
             } else {
-                portControlStorage_[pidx] = value;
-                Trace::Debug("LV2Instrument: SetParameterValue wrote float %g to portIndex=%d (isAtom=%d) storage=%p", value, pidx, parameters_[paramIndex].isAtomPort ? 1 : 0, (void*)&portControlStorage_[pidx]);
-                // Persistent diagnostic: write successful writes to /tmp
-                {
-                    std::ofstream ofs("/tmp/lv2_setparam.log", std::ios::app);
-                    if (ofs) {
-                        ofs << "WRITE param=" << paramIndex << " name=" << parameters_[paramIndex].name << " port=" << pidx << " value=" << value << " storage=" << (void*)&portControlStorage_[pidx] << "\n";
-                    }
-                }
+                portControlStorage_[pidx] = value; 
             }
 
             // Handle atom ports
@@ -1760,12 +1671,10 @@ void LV2Instrument::SetParameterValue(int paramIndex, float value) {
                     }
                 }
             } else {
-                Trace::Debug("LV2Instrument: cannot send atom patch for atom-control paramIndex=%d - no resource URI", (int)paramIndex);
             }
         } else {
-            // No direct control port - try to send a patch:Set message if we have a resource URI and an atom input port
+            // No direct control port - send a patch:Set message if we have a resource URI and an atom input port
             if (!parameters_[paramIndex].resourceURI.empty() && midiInputPort_ >= 0 && midiBuffer_) {
-                // Best-effort: send a patch:Set message describing subject + value using LV2_Atom_Forge
                 LV2_Atom_Forge forge;
                 lv2_atom_forge_init(&forge, &g_uridMapFeature);
 
@@ -1774,142 +1683,33 @@ void LV2Instrument::SetParameterValue(int paramIndex, float value) {
                 lv2_atom_forge_set_buffer(&forge, tmp, TMP_SIZE);
 
                 LV2_Atom_Forge_Frame frame;
-                // Create a typed object of type patch:Set
+                // Create a patch:Set object per LV2 Patch specification
                 lv2_atom_forge_object(&forge, &frame, 0, urid_map(nullptr, LV2_PATCH__Set));
-                // subject
-                lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__subject));
-                lv2_atom_forge_uri(&forge, parameters_[paramIndex].resourceURI.c_str(), (uint32_t)parameters_[paramIndex].resourceURI.length());
-                // value
+                // patch:property — identifies WHICH parameter to set (the parameter's resource URI)
+                lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__property));
+                lv2_atom_forge_urid(&forge, urid_map(nullptr, parameters_[paramIndex].resourceURI.c_str()));
+                // patch:value — the new value
                 lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__value));
                 lv2_atom_forge_float(&forge, value);
                 lv2_atom_forge_pop(&forge, &frame);
 
-                // The forge wrote a full atom (header + body) into tmp with total length forge.offset
                 if (forge.offset >= sizeof(LV2_Atom)) {
                     LV2_Atom* atom = (LV2_Atom*)tmp;
-                    uint32_t bodySize = atom->size; // size of inner atom body
-                    uint32_t atomType = atom->type; // URID
+                    uint32_t bodySize = atom->size;
+                    uint32_t atomType = atom->type;
 
-                    // Dump the forged atom bytes for offline analysis (helpful when plugins don't accept our format)
-                    {
-                        static int dumpCounter = 0;
-                        ++dumpCounter;
-                        std::string dumpPath = std::string("/tmp/lv2_patchset_forge_") + std::to_string(getpid()) + "_" + std::to_string(dumpCounter) + ".bin";
-                        std::ofstream ofs(dumpPath, std::ios::binary);
-                        if (ofs) {
-                            ofs.write((char*)tmp, forge.offset);
-                            Trace::Debug("LV2Instrument: dumped forged patch:Set atom to %s (size=%u)", dumpPath.c_str(), (unsigned)forge.offset);
-                        }
-                    }
-
-                    // Primary variant: use the forged object's body with its typed atom type (likely LV2_PATCH__Set)
                     PendingAtomEvent ae;
-                    ae.type = atomType; // use the typed atom type (should be LV2_PATCH__Set)
+                    ae.type = atomType;
                     ae.data.resize(bodySize);
                     memcpy(ae.data.data(), LV2_ATOM_BODY(atom), bodySize);
-                    // Default destination: MIDI atom input port
                     ae.destPortIndex = midiInputPort_ >= 0 ? midiInputPort_ : -1;
-                    // If this parameter is associated with an atom-designated control port, target that port instead
                     if (parameters_[paramIndex].portIndex >= 0 && parameters_[paramIndex].isAtomPort) {
                         ae.destPortIndex = parameters_[paramIndex].portIndex;
                     }
-
-                    Trace::Debug("LV2Instrument: queued patch:Set atom type=%u bodySize=%u for paramIndex=%d paramURI=%s destPort=%d", ae.type, (unsigned)ae.data.size(), (int)paramIndex, parameters_[paramIndex].resourceURI.c_str(), ae.destPortIndex);
                     pendingAtomEvents_.push_back(std::move(ae));
-
-                    // Fallback variant 1: some plugins expect the event body typed as LV2_ATOM__Object rather than the patch:Set URID.
-                    PendingAtomEvent aeObj;
-                    aeObj.type = urid_map(nullptr, LV2_ATOM__Object);
-                    aeObj.data.resize(bodySize);
-                    memcpy(aeObj.data.data(), LV2_ATOM_BODY(atom), bodySize);
-                    aeObj.destPortIndex = midiInputPort_ >= 0 ? midiInputPort_ : -1;
-                    if (parameters_[paramIndex].portIndex >= 0 && parameters_[paramIndex].isAtomPort) {
-                        aeObj.destPortIndex = parameters_[paramIndex].portIndex;
-                    }
-                    Trace::Debug("LV2Instrument: queued fallback object-typed patch:Set for paramIndex=%d destPort=%d", (int)paramIndex, aeObj.destPortIndex);
-                    pendingAtomEvents_.push_back(std::move(aeObj));
-
-                    // Fallback variant 2: forge an LV2_ATOM__Object that contains an explicit rdf:type = LV2_PATCH__Set,
-                    // plus subject & value keys — some plugins expect rdf:type-based objects rather than typed atoms.
-                    {
-                        LV2_Atom_Forge of;
-                        lv2_atom_forge_init(&of, &g_uridMapFeature);
-                        uint8_t otmp[256]; lv2_atom_forge_set_buffer(&of, otmp, sizeof(otmp));
-
-                        LV2_Atom_Forge_Frame oframe;
-                        lv2_atom_forge_object(&of, &oframe, 0, urid_map(nullptr, LV2_ATOM__Object));
-                        // rdf:type => LV2_PATCH__Set
-                        lv2_atom_forge_key(&of, urid_map(nullptr, LV2_RDF__type));
-                        lv2_atom_forge_urid(&of, urid_map(nullptr, LV2_PATCH__Set));
-                        // subject
-                        lv2_atom_forge_key(&of, urid_map(nullptr, LV2_PATCH__subject));
-                        lv2_atom_forge_uri(&of, parameters_[paramIndex].resourceURI.c_str(), (uint32_t)parameters_[paramIndex].resourceURI.length());
-                        // value
-                        lv2_atom_forge_key(&of, urid_map(nullptr, LV2_PATCH__value));
-                        lv2_atom_forge_float(&of, value);
-                        lv2_atom_forge_pop(&of, &oframe);
-
-                        if (of.offset >= sizeof(LV2_Atom)) {
-                            // Queue the URI-subject object as before
-
-                            LV2_Atom* oatom = (LV2_Atom*)otmp;
-                            uint32_t obody = oatom->size;
-                            PendingAtomEvent aeObj2;
-                            aeObj2.type = urid_map(nullptr, LV2_ATOM__Object);
-                            aeObj2.data.resize(obody);
-                            memcpy(aeObj2.data.data(), LV2_ATOM_BODY(oatom), obody);
-                            aeObj2.destPortIndex = midiInputPort_ >= 0 ? midiInputPort_ : -1;
-                            if (parameters_[paramIndex].portIndex >= 0 && parameters_[paramIndex].isAtomPort) {
-                                aeObj2.destPortIndex = parameters_[paramIndex].portIndex;
-                            }
-                            Trace::Debug("LV2Instrument: queued rdf-typed object patch:Set (subject=URI) for paramIndex=%d destPort=%d", (int)paramIndex, aeObj2.destPortIndex);
-                            pendingAtomEvents_.push_back(std::move(aeObj2));
-
-                            // Additional fallback: encode subject as URID instead of URI
-                            LV2_Atom_Forge of2;
-                            lv2_atom_forge_init(&of2, &g_uridMapFeature);
-                            uint8_t otmp2[256]; lv2_atom_forge_set_buffer(&of2, otmp2, sizeof(otmp2));
-                            LV2_Atom_Forge_Frame of2frame;
-                            lv2_atom_forge_object(&of2, &of2frame, 0, urid_map(nullptr, LV2_ATOM__Object));
-                            lv2_atom_forge_key(&of2, urid_map(nullptr, LV2_RDF__type));
-                            lv2_atom_forge_urid(&of2, urid_map(nullptr, LV2_PATCH__Set));
-                            lv2_atom_forge_key(&of2, urid_map(nullptr, LV2_PATCH__subject));
-                            // Encode subject as URID now
-                            lv2_atom_forge_urid(&of2, urid_map(nullptr, parameters_[paramIndex].resourceURI.c_str()));
-                            lv2_atom_forge_key(&of2, urid_map(nullptr, LV2_PATCH__value));
-                            lv2_atom_forge_float(&of2, value);
-                            lv2_atom_forge_pop(&of2, &of2frame);
-
-                            if (of2.offset >= sizeof(LV2_Atom)) {
-                                LV2_Atom* oatom2 = (LV2_Atom*)otmp2;
-                                uint32_t obody2 = oatom2->size;
-                                PendingAtomEvent aeObj3;
-                                aeObj3.type = urid_map(nullptr, LV2_ATOM__Object);
-                                aeObj3.data.resize(obody2);
-                                memcpy(aeObj3.data.data(), LV2_ATOM_BODY(oatom2), obody2);
-                                aeObj3.destPortIndex = midiInputPort_ >= 0 ? midiInputPort_ : -1;
-                                if (parameters_[paramIndex].portIndex >= 0 && parameters_[paramIndex].isAtomPort) {
-                                    aeObj3.destPortIndex = parameters_[paramIndex].portIndex;
-                                }
-                                Trace::Debug("LV2Instrument: queued rdf-typed object patch:Set (subject=URID) for paramIndex=%d destPort=%d", (int)paramIndex, aeObj3.destPortIndex);
-                                pendingAtomEvents_.push_back(std::move(aeObj3));
-                            }
-                        }
-
-                        // Fallback variant 3: wrap the forged LV2_Atom as an LV2_ATOM__Atom payload (some hosts nest atoms)
-                        PendingAtomEvent aeWrapped;
-                        aeWrapped.type = urid_map(nullptr, LV2_ATOM__Atom);
-                        aeWrapped.data.resize(forge.offset);
-                        memcpy(aeWrapped.data.data(), tmp, forge.offset);
-                        aeWrapped.destPortIndex = midiInputPort_ >= 0 ? midiInputPort_ : -1;
-                        if (parameters_[paramIndex].portIndex >= 0 && parameters_[paramIndex].isAtomPort) {
-                            aeWrapped.destPortIndex = parameters_[paramIndex].portIndex;
-                        }
-                        Trace::Debug("LV2Instrument: queued wrapped-atom patch:Set (type=Atom) for paramIndex=%d destPort=%d", (int)paramIndex, aeWrapped.destPortIndex);
-                        pendingAtomEvents_.push_back(std::move(aeWrapped));
-
-                    }
-                } else {
+                    Trace::Debug("LV2Instrument: Queued patch:Set for param=%s uri=%s value=%f",
+                                 parameters_[paramIndex].name.c_str(),
+                                 parameters_[paramIndex].resourceURI.c_str(), value);
                 }
             }
         }

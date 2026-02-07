@@ -1,5 +1,6 @@
 #include "FieldView.h"
 #include "System/Console/Trace.h"
+#include <cstdlib>
 
 FieldView::FieldView(GUIWindow &w,ViewData *data):View(w,data),T_SimpleList<UIField>(true) {
 	focus_=0 ;	
@@ -115,6 +116,7 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					UIField *first=0 ;
 
 					GUIPoint focusPos=focus_->GetPosition() ;
+					int focusX=focusPos._x ;
 
 					IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator()) ;
 					for (it->Begin();!it->IsDone();it->Next()) {
@@ -123,7 +125,11 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 							if (first) {
 								if (current.GetPosition()._y<first->GetPosition()._y) {
 									first=&current ;
-								} ;
+								} else if (current.GetPosition()._y==first->GetPosition()._y) {
+									int dCur=abs(current.GetPosition()._x-focusX) ;
+									int dFirst=abs(first->GetPosition()._x-focusX) ;
+									if (dCur<dFirst) first=&current ;
+								}
 							} else {
 								first=&current ;
 							}
@@ -131,9 +137,12 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 								if (next) {
 									if (current.GetPosition()._y<next->GetPosition()._y) {
 										next=&current ;
-									} else {
-										// if both target at same height
-									} ;
+									} else if (current.GetPosition()._y==next->GetPosition()._y) {
+										// Same row: prefer closest X to current focus
+										int dCur=abs(current.GetPosition()._x-focusX) ;
+										int dNext=abs(next->GetPosition()._x-focusX) ;
+										if (dCur<dNext) next=&current ;
+									}
 								} else {
 									next=&current ;
 								};
@@ -157,6 +166,8 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					UIField *prev=0 ;
 					UIField *last=0 ;
 
+					int focusX=focus_->GetPosition()._x ;
+
 					IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator()) ;
 					for (it->Begin();!it->IsDone();it->Next()) {
 						UIField &current=it->CurrentItem() ;
@@ -164,7 +175,11 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 							if (last) {
 								if (current.GetPosition()._y>last->GetPosition()._y) {
 									last=&current ;
-								} ;
+								} else if (current.GetPosition()._y==last->GetPosition()._y) {
+									int dCur=abs(current.GetPosition()._x-focusX) ;
+									int dLast=abs(last->GetPosition()._x-focusX) ;
+									if (dCur<dLast) last=&current ;
+								}
 							} else {
 								last=&current ;
 							}
@@ -172,9 +187,12 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 								if (prev) {
 									if (current.GetPosition()._y>prev->GetPosition()._y) {
 										prev=&current ;
-									} else {
-										// if both target at same height
-									} ;
+									} else if (current.GetPosition()._y==prev->GetPosition()._y) {
+										// Same row: prefer closest X to current focus
+										int dCur=abs(current.GetPosition()._x-focusX) ;
+										int dPrev=abs(prev->GetPosition()._x-focusX) ;
+										if (dCur<dPrev) prev=&current ;
+									}
 								} else {
 									prev=&current ;
 								};
