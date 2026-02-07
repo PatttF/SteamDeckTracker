@@ -10,6 +10,7 @@
 #include "Application/Utils/fixed.h"
 #include <string>
 #include <vector>
+#include <map>
 #include <cmath>
 
 // Instrument parameter FourCC IDs
@@ -155,6 +156,7 @@ private:
     Variable *pan_;
     Variable *table_;
     Variable *tableAuto_;
+    WatchedVariable *presetVar_;
 
     TableSaveState tableState_;
 

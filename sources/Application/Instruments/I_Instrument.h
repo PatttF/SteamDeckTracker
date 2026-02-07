@@ -11,6 +11,7 @@ enum InstrumentType {
 	IT_SAMPLE=0,
 	IT_MIDI,
 	IT_LV2,
+	IT_SOUNDFONT,
 	IT_LAST
 } ;
 

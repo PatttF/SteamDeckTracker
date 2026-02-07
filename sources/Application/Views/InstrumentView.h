@@ -17,7 +17,6 @@ public:
 	virtual void DrawView() ;
 	virtual void OnPlayerUpdate(PlayerEventType,unsigned int) {} ;
 	virtual void OnFocus() ;
-	void OnLV2PluginSelected() ;  // Callback when LV2 plugin is selected
 
 protected:
 	void warpToNext(int offset) ;
@@ -25,8 +24,13 @@ protected:
 	void fillSampleParameters() ;
 	void fillMidiParameters() ;
 	void fillLV2Parameters() ;
+	void fillSoundFontParameters() ;
 	InstrumentType getInstrumentType() ;
 	void Update(Observable &o,I_ObservableData *d) ;
+
+public:
+	void OnLV2PluginSelected() ;  // Callback when LV2 plugin is selected
+	void OnSF2Selected() ;        // Callback when SF2 file/preset is selected
 
 private:
 	Project *project_ ;
@@ -37,6 +41,10 @@ private:
 	char lv2ParamText_[40][40];  // Storage for parameter labels (2 cols x 20 rows)
 	// Action field for loading LV2 list (clickable)
 	UIActionField *lv2LoadField_ ;
+	// Action field for loading SF2 browser (clickable)
+	UIActionField *sf2LoadField_ ;
+	char sf2Label_[80];  // Storage for SF2 display label
+	char sf2PresetLabel_[80];  // Storage for SF2 preset display label
 	// Track last selected 'type' per instrument so we can detect changes and switch types
 	int lastType_[MAX_INSTRUMENT_COUNT];
 

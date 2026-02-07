@@ -2,6 +2,7 @@
 #include "Application/Instruments/MidiInstrument.h"
 #include "Application/Instruments/SampleInstrument.h"
 #include "Application/Instruments/LV2Instrument.h"
+#include "Application/Instruments/SoundFontInstrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Config.h"
 #include "BaseClasses/UIBigHexVarField.h"
@@ -14,18 +15,27 @@
 #include "Foundation/Variables/WatchedVariable.h"
 #include "ModalDialogs/ImportSampleDialog.h"
 #include "ModalDialogs/ImportLV2Dialog.h"
+#include "ModalDialogs/ImportSoundFontDialog.h"
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
+#include "System/Console/Trace.h"
 #include <map>
 #include <vector>
 #include <string>
 
 #define ACTION_LOAD_LV2 MAKE_FOURCC('L','V','2','L')
+#define ACTION_LOAD_SF2 MAKE_FOURCC('S','F','2','L')
 
 // Callback for LV2 plugin selection dialog
 static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
 	InstrumentView &iv = (InstrumentView &)v;
 	iv.OnLV2PluginSelected();
+}
+
+// Callback for SF2 selection dialog
+static void SF2SelectCallback(View &v, ModalView &dialog) {
+	InstrumentView &iv = (InstrumentView &)v;
+	iv.OnSF2Selected();
 }
 
 InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
@@ -37,13 +47,17 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	pendingTypeInstrumentIdx_ = -1;
 	pendingType_ = IT_SAMPLE;
 	lv2LoadField_ = nullptr;
+	sf2LoadField_ = nullptr;
 	// Initialize lastType_ to mirror instrument types
 	for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
 		I_Instrument* instr = data->project_->GetInstrumentBank()->GetInstrument(i);
 		if (instr && instr->FindVariable(MAKE_FOURCC('I','T','Y','P')))
 			lastType_[i] = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'))->GetInt();
-		else
-			lastType_[i] = (instr && instr->GetType() == IT_LV2) ? 1 : 0;
+		else {
+			if (instr && instr->GetType() == IT_LV2) lastType_[i] = 1;
+			else if (instr && instr->GetType() == IT_SOUNDFONT) lastType_[i] = 2;
+			else lastType_[i] = 0;
+		}
 	}
 	// Delay onInstrumentChange to avoid notifications during construction
 
@@ -86,6 +100,9 @@ void InstrumentView::onInstrumentChange() {
 		case IT_LV2:
 			fillLV2Parameters() ;
 			break ;
+		case IT_SOUNDFONT:
+			fillSoundFontParameters() ;
+			break ;
 	} ;
 
 	SetFocus(T_SimpleList<UIField>::GetFirst()) ;
@@ -113,15 +130,15 @@ void InstrumentView::fillSampleParameters() {
     // Local variables used to create fields
     Variable *v = nullptr;
     UIIntVarField *f1 = nullptr;
-// Type selector: Sample vs LV2 instrument
+// Type selector: Sample vs LV2 vs SF2 instrument
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, 0);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, 0);
         instrument->Insert(wtv);
         tv = wtv;
     }
-    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 1, 1, 7);
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 2, 1, 7);
     T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
 
@@ -329,15 +346,15 @@ void InstrumentView::fillLV2Parameters() {
 	const int MAX_ROWS = 17;       // Max rows for parameters (leaving room for header + footer)
 	const int PARAMS_PER_PAGE = MAX_ROWS * 2;  // Two columns
 
-    // Type selector: Sample vs LV2 instrument (keep accessible to switch back)
+    // Type selector: Sample vs LV2 vs SF2 instrument (keep accessible to switch back)
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, 1);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, 1);
         instrument->Insert(wtv);
         tv = wtv;
     }
-    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 1, 1, 7);
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 2, 1, 7);
     T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
 
@@ -505,6 +522,107 @@ void InstrumentView::fillLV2Parameters() {
 
 } ;
 
+void InstrumentView::fillSoundFontParameters() {
+
+	int i=viewData_->currentInstrument_ ;
+	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
+	I_Instrument *instr=bank->GetInstrument(i) ;
+	SoundFontInstrument *instrument=(SoundFontInstrument *)instr  ;
+	GUIPoint position=GetAnchor() ;
+
+	// Local variables used to create fields
+	Variable *v = nullptr;
+	UIIntVarField *f1 = nullptr;
+
+	// Type selector: Sample vs LV2 vs SF2
+	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
+	if (!tv) {
+		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, 2);
+		instrument->Insert(wtv);
+		tv = wtv;
+	}
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 2, 1, 7);
+	T_SimpleList<UIField>::Insert(typeField);
+	position._y += 1;
+
+	// Ensure this view observes changes to the 'type' variable
+	if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+		wtv->RemoveObserver(*this);
+		wtv->AddObserver(*this);
+	}
+
+	// Display the SF2 loader as a clickable action field
+	if (instrument->IsEmpty()) {
+		strcpy(sf2Label_, "load sf2...");
+	} else {
+		snprintf(sf2Label_, sizeof(sf2Label_), "sf2: %s", instrument->GetName());
+	}
+	UIActionField *af = new UIActionField(sf2Label_, ACTION_LOAD_SF2, position);
+	T_SimpleList<UIField>::Insert(af);
+	af->AddObserver(*this);
+	sf2LoadField_ = af;
+
+	position._y += 1;
+
+	// Show preset selector (interactive)
+	if (!instrument->IsEmpty() && instrument->GetPresetCount() > 0) {
+		Variable *pv = instrument->FindVariable(SFIP_PRESET);
+		if (pv) {
+			// Observe changes to the preset variable
+			if (WatchedVariable *wpv = dynamic_cast<WatchedVariable *>(pv)) {
+				wpv->RemoveObserver(*this);
+				wpv->AddObserver(*this);
+			}
+			// Sync variable to actual preset in case it's out of date
+			if (pv->GetInt() != instrument->GetCurrentPreset()) {
+				pv->SetInt(instrument->GetCurrentPreset());
+			}
+			int maxPreset = instrument->GetPresetCount() - 1;
+			if (maxPreset < 0) maxPreset = 0;
+			UIIntVarField *pf = new UIIntVarField(position, *pv, "preset: %2.2X", 0, maxPreset, 1, 0x10);
+			T_SimpleList<UIField>::Insert(pf);
+			position._y += 1;
+
+			// Show preset name as static label below
+			int presetIdx = instrument->GetCurrentPreset();
+			const char *presetName = instrument->GetPresetName(presetIdx);
+			snprintf(sf2PresetLabel_, sizeof(sf2PresetLabel_), "  [%s]", presetName);
+			UIStaticField *sf = new UIStaticField(position, sf2PresetLabel_);
+			T_SimpleList<UIField>::Insert(sf);
+			position._y += 1;
+		}
+	}
+
+	position._y += 1;
+
+	// Volume
+	v = instrument->FindVariable(SFIP_VOLUME);
+	f1 = new UIIntVarField(position, *v, "volume: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+
+	// Pan
+	v = instrument->FindVariable(SFIP_PAN);
+	f1 = new UIIntVarField(position, *v, "pan: %2.2X", 0, 0xFE, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 2;
+
+	// Table automation
+	v = instrument->FindVariable(SFIP_TABLEAUTO);
+	UIIntVarField *f2 = new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
+	T_SimpleList<UIField>::Insert(f2);
+
+	position._y += 1;
+
+	// Table
+	v = instrument->FindVariable(SFIP_TABLE);
+	f1 = new UIIntVarOffField(position, *v, "table: %2.2X", 0x00, 0x7F, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+}
+
 
 void InstrumentView::warpToNext(int offset) {
 	int instrument=viewData_->currentInstrument_+offset ;
@@ -550,6 +668,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 				if (it == IT_LV2) {
 					ImportLV2Dialog *dialog = new ImportLV2Dialog(*this);
 					DoModal(dialog, LV2PluginSelectCallback);
+				}
+				return;
+			}
+			if (focusField == sf2LoadField_) {
+				InstrumentType it = getInstrumentType();
+				if (it == IT_SOUNDFONT) {
+					ImportSoundFontDialog *dialog = new ImportSoundFontDialog(*this);
+					DoModal(dialog, SF2SelectCallback);
 				}
 				return;
 			}
@@ -802,6 +928,11 @@ void InstrumentView::OnLV2PluginSelected() {
 	isDirty_ = true;
 }
 
+void InstrumentView::OnSF2Selected() {
+	onInstrumentChange();
+	isDirty_ = true;
+}
+
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle action field clicks (e.g. LV2 load action)
     UIActionField *action = dynamic_cast<UIActionField *>(&o);
     if (action) {
@@ -819,6 +950,14 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 }
                 return;
             }
+            if (fourcc == ACTION_LOAD_SF2) {
+                InstrumentType it = getInstrumentType();
+                if (it == IT_SOUNDFONT) {
+                    ImportSoundFontDialog *dialog = new ImportSoundFontDialog(*this);
+                    DoModal(dialog, SF2SelectCallback);
+                }
+                return;
+            }
         }
     }
     // Check for a change in the 'type' variable so we can switch instrument types on demand
@@ -826,20 +965,31 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
     InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
     I_Instrument *instr = bank->GetInstrument(i);
     if (instr) {
+        // Handle SF2 preset changes
+        if (instr->GetType() == IT_SOUNDFONT) {
+            SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
+            Variable *pv = sfi->FindVariable(SFIP_PRESET);
+            if (pv && sfi->GetCurrentPreset() != pv->GetInt()) {
+                Trace::Log("SF2", "Preset change detected: var=%d current=%d", pv->GetInt(), sfi->GetCurrentPreset());
+                sfi->SelectPreset(pv->GetInt());
+                onInstrumentChange();
+                isDirty_ = true;
+                return;
+            }
+        }
+
         Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
         if (tv) {
             int val = tv->GetInt();
-            // val==1 => lv2 (LV2)
-            if (val == 1 && instr->GetType() != IT_LV2) {
+            // val==0 => Sample, val==1 => LV2, val==2 => SF2
+            InstrumentType targetType = IT_SAMPLE;
+            if (val == 1) targetType = IT_LV2;
+            else if (val == 2) targetType = IT_SOUNDFONT;
+
+            if (instr->GetType() != targetType) {
                 // Defer changing instrument type until outside of the variable notification
                 pendingTypeInstrumentIdx_ = i;
-                pendingType_ = IT_LV2;
-                isDirty_ = true;
-                return;
-            } else if (val == 0 && instr->GetType() != IT_SAMPLE) {
-                // Defer changing instrument type until outside of the variable notification
-                pendingTypeInstrumentIdx_ = i;
-                pendingType_ = IT_SAMPLE;
+                pendingType_ = targetType;
                 isDirty_ = true;
                 return;
             }

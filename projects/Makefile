@@ -250,7 +250,7 @@ COMMONFILES := \
 	I_GUIWindowImp.o \
 	Application.o AppWindow.o SelectProjectDialog.o \
 	NewProjectDialog.o \
-	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o \
+	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o ImportSoundFontDialog.o \
 	MixerView.o NullView.o \
 	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o EffectView.o UIController.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
@@ -263,7 +263,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o LV2Instrument.o LV2Effect.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o LV2Instrument.o LV2Effect.o SoundFontInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \

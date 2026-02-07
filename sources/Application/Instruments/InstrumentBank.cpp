@@ -4,6 +4,7 @@
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Instruments/MidiInstrument.h"
 #include "Application/Instruments/LV2Instrument.h"
+#include "Application/Instruments/SoundFontInstrument.h"
 #include "Application/Player/PlayerMixer.h"
 #include "System/io/Status.h"
 #include "Application/Utils/char.h"
@@ -16,7 +17,8 @@
 char *InstrumentTypeData[IT_LAST]= {
 	"Sample",
 	"Midi",
-	"LV2"
+	"LV2",
+	"SF2"
 } ;
 
 
@@ -37,15 +39,21 @@ InstrumentBank::InstrumentBank():Persistent("INSTRUMENTBANK") {
         LV2Instrument *s=new LV2Instrument() ;
         instrument_[MAX_SAMPLEINSTRUMENT_COUNT+MAX_MIDIINSTRUMENT_COUNT+i]=s ;
     }
+	for (int i=0;i<MAX_SOUNDFONTINSTRUMENT_COUNT;i++) {
+        SoundFontInstrument *s=new SoundFontInstrument() ;
+        instrument_[MAX_SAMPLEINSTRUMENT_COUNT+MAX_MIDIINSTRUMENT_COUNT+MAX_LV2INSTRUMENT_COUNT+i]=s ;
+    }
 
     // Insert a 'type' Variable into each instrument so the UI can bind to it and allow switching
-    static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
+    static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
     for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
         I_Instrument *ins = instrument_[i];
         // ID: ITYP
         FourCC id = MAKE_FOURCC('I','T','Y','P');
-        int init = (ins->GetType() == IT_LV2) ? 1 : 0;
-        WatchedVariable *tv = new WatchedVariable("type", id, instrTypes, 2, init);
+        int init = 0;
+        if (ins->GetType() == IT_LV2) init = 1;
+        else if (ins->GetType() == IT_SOUNDFONT) init = 2;
+        WatchedVariable *tv = new WatchedVariable("type", id, instrTypes, 3, init);
         ins->Insert(tv);
     }
 
@@ -131,6 +139,27 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 				count++ ;
 			}
 
+			// For SoundFont instruments, save the sf2 file path and preset index
+			if (instr->GetType() == IT_SOUNDFONT) {
+				SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
+				const char *sf2path = sfi->GetSF2Path();
+				if (sf2path && sf2path[0]) {
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", "sf2file");
+					paramp.SetAttribute("VALUE", sf2path);
+					data.InsertEndChild(paramp);
+					count++;
+				}
+				int pi = sfi->GetCurrentPreset();
+				if (pi >= 0) {
+					char buf[16]; snprintf(buf, sizeof(buf), "%d", pi);
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", "preset");
+					paramp.SetAttribute("VALUE", buf);
+					data.InsertEndChild(paramp);
+					count++;
+				}
+			}
 			// Ensure LV2 plugin URI and parameter values are recorded even if
 			// Variables weren't present for some reason (fallback persistence).
 			if (instr->GetType() == IT_LV2) {
@@ -222,14 +251,15 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 			} ;
 
 			// If TYPE wasn't provided in older project files, sniff through params for
-			// LV2 markers (plugin URI or p# parameter names) and convert those
-			// instruments to LV2 so they map into the new Type-based UI.
+			// LV2 markers (plugin URI or p# parameter names) or SF2 markers and convert
+			// those instruments to the right type.
 			if (instype == NULL) {
 				TiXmlElement *guess = current->FirstChildElement();
 				while (guess) {
 					const char *gname = guess->Attribute("NAME");
 					const char *gval = guess->Attribute("VALUE");
 					if (gname) {
+						if (!strcmp(gname, "sf2file")) { it = IT_SOUNDFONT; break; }
 						if (!strcmp(gname, "plugin")) { it = IT_LV2; break; }
 						if (gname[0] == 'p' && isdigit((unsigned char)gname[1])) { it = IT_LV2; break; }
 					}
@@ -254,15 +284,21 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						case IT_LV2:
 							instr=new LV2Instrument() ;
 							break ;
+						case IT_SOUNDFONT:
+							instr=new SoundFontInstrument() ;
+							break ;
 					}
 					instrument_[id]=instr ;
 				// Ensure 'type' Variable exists on restored/replaced instruments so the UI binds correctly
+				int typeInit = 0;
+				if (it==IT_LV2) typeInit = 1;
+				else if (it==IT_SOUNDFONT) typeInit = 2;
 				Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
 				if (tv) {
-					tv->SetInt((it==IT_LV2)?1:0, false);
+					tv->SetInt(typeInit, false);
 				} else {
-					static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
-					WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, (it==IT_LV2)?1:0);
+					static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
+					WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, typeInit);
 					instr->Insert(wtv);
 				} 
 			}
@@ -303,6 +339,11 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						if (instr->GetType()==IT_LV2) {
 							LV2Instrument *lin = (LV2Instrument *)instr;
 							lin->StorePendingVariable(name,value);
+						}
+						// SoundFont instruments store sf2file and preset for Init()
+						if (instr->GetType()==IT_SOUNDFONT) {
+							SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
+							sfi->StorePendingVariable(name,value);
 						}
 					}
 					param=param->NextSiblingElement() ;
@@ -371,6 +412,8 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 		instrument_[next]=new SampleInstrument() ;
 	} else if (src->GetType()==IT_MIDI) {
 		instrument_[next]=new MidiInstrument() ;
+	} else if (src->GetType()==IT_SOUNDFONT) {
+		instrument_[next]=new SoundFontInstrument() ;
 	} else {
 		instrument_[next]=new LV2Instrument() ;
 	}
@@ -400,6 +443,7 @@ void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
         case IT_SAMPLE: n = new SampleInstrument(); break;
         case IT_MIDI: n = new MidiInstrument(); break;
         case IT_LV2: n = new LV2Instrument(); break;
+        case IT_SOUNDFONT: n = new SoundFontInstrument(); break;
         default: return;
     }
 
@@ -414,12 +458,15 @@ void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
     }
 
     // Ensure the 'type' variable exists and is set appropriately
+    int typeInit = 0;
+    if (type == IT_LV2) typeInit = 1;
+    else if (type == IT_SOUNDFONT) typeInit = 2;
     Variable *tv = n->FindVariable(MAKE_FOURCC('I','T','Y','P'));
     if (tv) {
-        tv->SetInt((type == IT_LV2) ? 1 : 0, false);
+        tv->SetInt(typeInit, false);
     } else {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2" } ;
-        WatchedVariable *ntv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 2, (type == IT_LV2) ? 1 : 0);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
+        WatchedVariable *ntv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, typeInit);
         n->Insert(ntv);
     }
 

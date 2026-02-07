@@ -9,11 +9,13 @@ SoundFontManager::~SoundFontManager() {
 } ;
 
 void SoundFontManager::Reset() {
-	std::vector<void *>::iterator it=sampleData_.begin() ;
-	while (it!=sampleData_.end()) {
-		SAFE_FREE(*it) ;
-		it=sampleData_.erase(it) ;
-	} ;
+	// Free all sample data for all banks
+	for (auto &pair : bankSampleData_) {
+		for (void *p : pair.second) {
+			SAFE_FREE(p) ;
+		}
+	}
+	bankSampleData_.clear() ;
 } ;
 
 sfBankID SoundFontManager::LoadBank(const char *path) {
@@ -26,7 +28,7 @@ sfBankID SoundFontManager::LoadBank(const char *path) {
 
 	I_File *fin=FileSystem::GetInstance()->Open(path,"r") ;
 	if (!fin) {
-		return false;
+		return -1;
 	}
 
 	// Grab the sample offset
@@ -37,6 +39,9 @@ sfBankID SoundFontManager::LoadBank(const char *path) {
 
 	WORD headerCount=0 ;
 	SFSAMPLEHDRPTR  &headers=sfGetSampHdrs(id,&headerCount ); 
+
+	// Track sample allocations for this bank
+	std::vector<void *> &bankSamples = bankSampleData_[id] ;
 
 	// Loop on every sample, load them and adapt the pointers
 
@@ -65,10 +70,26 @@ sfBankID SoundFontManager::LoadBank(const char *path) {
         // ADDR is pointer-sized, works on both 32-bit and 64-bit
         current.dwStart = (ADDR)buffer;
 
-        sampleData_.push_back(buffer);
+        bankSamples.push_back(buffer);
     }
 	fin->Close() ;
 	SAFE_DELETE(fin) ;
 
 	return id ;
+} ;
+
+void SoundFontManager::UnloadBank(sfBankID id) {
+	if (id < 0) return ;
+
+	// Free sample data for this bank
+	auto it = bankSampleData_.find(id) ;
+	if (it != bankSampleData_.end()) {
+		for (void *p : it->second) {
+			SAFE_FREE(p) ;
+		}
+		bankSampleData_.erase(it) ;
+	}
+
+	// Unload the bank from the ENAB layer (frees hydra + bank slot)
+	sfUnloadSFBank(id) ;
 } ;
