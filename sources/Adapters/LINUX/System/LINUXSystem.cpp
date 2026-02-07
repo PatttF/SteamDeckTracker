@@ -78,6 +78,25 @@ void LINUXSystem::Boot(int argc,char **argv) {
 
     SDL_setenv((char *)"SDL_VIDEO_X11_WMCLASS",(char *)"SDTracker",1) ;
 
+	// Set LV2_PATH to include all common plugin directories so lilv finds everything
+	{
+		std::string lv2Path;
+		const char *existing = getenv("LV2_PATH");
+		if (existing && existing[0]) {
+			lv2Path = existing;
+			lv2Path += ":";
+		}
+		const char *h = getenv("HOME");
+		if (h) {
+			lv2Path += std::string(h) + "/.lv2:";
+		}
+		lv2Path += "/usr/lib/lv2";
+		lv2Path += ":/usr/local/lib/lv2";
+		lv2Path += ":/usr/lib/x86_64-linux-gnu/lv2";
+		lv2Path += ":/usr/lib64/lv2";
+		setenv("LV2_PATH", lv2Path.c_str(), 1);
+	}
+
 	// Install System
 	System::Install(new LINUXSystem());
 
@@ -139,8 +158,8 @@ void LINUXSystem::Boot(int argc,char **argv) {
 #ifdef SDLAUDIO
 	Trace::Log("System","Installing SDL audio") ;
 	AudioSettings hint;
-	hint.bufferSize_ = 1024;
-	hint.preBufferCount_ = 8;
+	hint.bufferSize_ = 512;
+	hint.preBufferCount_ = 2;
 	Audio::Install(new SDLAudio(hint));
 #endif
 

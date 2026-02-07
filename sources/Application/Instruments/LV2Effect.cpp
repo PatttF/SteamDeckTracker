@@ -257,8 +257,9 @@ void LV2Effect::loadPlugin() {
     // Discover parameters
     discoverParameters();
 
-    // Allocate buffers and connect ports (use a reasonable default size)
-    bufferSize_ = 1024;
+    // Allocate buffers and connect ports (use 2048 to match LV2Instrument and
+    // cover typical block sizes, avoiding reallocation in the audio callback)
+    bufferSize_ = 2048;
     audioBufferL_ = new float[bufferSize_];
     audioBufferR_ = new float[bufferSize_];
     audioInputL_ = new float[bufferSize_];
@@ -526,10 +527,9 @@ void LV2Effect::discoverParameters() {
             lilv_scale_points_free(sps);
         }
 
-        // Skip output ports
+        // Skip output control ports entirely — they are for the plugin to
+        // write to (e.g. level meters) and should not be stored as parameters
         if (isOutput) {
-            param.variable = nullptr;
-            parameters_.push_back(param);
             continue;
         }
 
@@ -655,8 +655,10 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
         return false;
     }
 
-    // Reallocate buffers if needed
+    // Grow buffers if needed (keep existing allocation to avoid RT realloc)
     if (sampleCount > bufferSize_) {
+        // Reallocation unavoidable — log warning as this is a real-time violation
+        Trace::Log("LV2Effect", "WARNING: buffer realloc in audio path %d -> %d", bufferSize_, sampleCount);
         delete[] audioBufferL_;
         delete[] audioBufferR_;
         delete[] audioInputL_;
@@ -676,6 +678,10 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
         audioInputL_[i] = fp2fl(buffer[i * 2]);
         audioInputR_[i] = fp2fl(buffer[i * 2 + 1]);
     }
+
+    // Clear output buffers before running plugin to prevent stale data artifacts
+    memset(audioBufferL_, 0, sampleCount * sizeof(float));
+    memset(audioBufferR_, 0, sampleCount * sizeof(float));
 
     // Set up MIDI buffer as empty sequence (no MIDI events for effects)
     if (midiBuffer_) {
@@ -706,6 +712,17 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
         }
     }
 
+    // Re-initialize non-MIDI atom INPUT buffers as empty sequences
+    for (size_t ai = 0; ai < atomInputBuffers_.size(); ai++) {
+        if (atomInputBuffers_[ai] && (int)ai != midiInputPort_) {
+            LV2_Atom_Sequence *seq = (LV2_Atom_Sequence *)atomInputBuffers_[ai];
+            seq->atom.size = sizeof(LV2_Atom_Sequence_Body);
+            seq->atom.type = g_atomSequenceUrid;
+            seq->body.unit = 0;
+            seq->body.pad = 0;
+        }
+    }
+
     // Re-initialize atom output buffers
     for (size_t oi = 0; oi < atomOutputBuffers_.size(); oi++) {
         if (atomOutputBuffers_[oi]) {
@@ -715,6 +732,11 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
             seq->body.unit = 0;
             seq->body.pad = 0;
         }
+    }
+
+    // Clear dummy buffer before plugin run
+    if (audioDummyBuffer_) {
+        memset(audioDummyBuffer_, 0, sampleCount * sizeof(float));
     }
 
     // Run the plugin

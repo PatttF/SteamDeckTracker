@@ -529,6 +529,9 @@ void SampleInstrument::updateFeedback(renderParams *rp) {
 		if (rp->feedbackOut_>=FB_BUFFER_LENGTH) {
 			rp->feedbackOut_-=FB_BUFFER_LENGTH ;
 		}
+		if (rp->feedbackOut_<0) {
+			rp->feedbackOut_+=FB_BUFFER_LENGTH ;
+		}
 	} ;
 }
 
@@ -658,6 +661,8 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 		fixed fpattenuate=fp_mul(rp->attenuate_,volscale) ;
 
 	  int pan=fp2i(rp->pan_) ;
+		if (pan < 0) pan = 0;
+		if (pan > 254) pan = 254;
 		fixed fixedpanl=panlaw[pan] ;
 		fixed fixedpanr=panlaw[254-pan] ;
 
@@ -864,6 +869,15 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 						rp->fbMix_=rp->baseFbMix_+rup.fbMixOffset_ ;
 						rp->fbTun_=rp->baseFbTun_+rup.fbTunOffset_ ;
 
+						// Clamp parameters to safe ranges to prevent out-of-bounds and instability
+						if (rp->volume_ < 0) rp->volume_ = 0;
+						if (rp->pan_ < 0) rp->pan_ = 0;
+						if (rp->pan_ > i2fp(254)) rp->pan_ = i2fp(254);
+						if (rp->cutoff_ < 0) rp->cutoff_ = 0;
+						if (rp->cutoff_ > i2fp(1)) rp->cutoff_ = i2fp(1);
+						if (rp->reso_ < 0) rp->reso_ = 0;
+						if (rp->reso_ > i2fp(1)) rp->reso_ = i2fp(1);
+
 						set_filter(channel,FLT_LOWPASS,rp->cutoff_,rp->reso_,filterMix,bassyFilter);
 						filtering=(rp->cutoff_<i2fp(1))||(rp->reso_>i2fp(0)) ;
 
@@ -876,6 +890,8 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 						volfactor=fp_mul(rp->volume_,volscale) ;
 						fpattenuate=fp_mul(rp->attenuate_,volscale) ;
 						pan=fp2i(rp->pan_) ;
+						if (pan < 0) pan = 0;
+						if (pan > 254) pan = 254;
 						fixed fixedpanl=panlaw[pan] ;
 						fixed fixedpanr=panlaw[254-pan] ;
 
@@ -1106,9 +1122,15 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 				reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
 				reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
 				
-				// Mix wet with dry output
-				*outPtr = fp_add(dryL, wetL);
-				*(outPtr + 1) = fp_add(dryR, wetR);
+				// Mix wet with dry output (clamp to prevent fixed-point overflow)
+				fixed mixL = fp_add(dryL, wetL);
+				fixed mixR = fp_add(dryR, wetR);
+				if (mixL > i2fp(32767)) mixL = i2fp(32767);
+				if (mixL < i2fp(-32768)) mixL = i2fp(-32768);
+				if (mixR > i2fp(32767)) mixR = i2fp(32767);
+				if (mixR < i2fp(-32768)) mixR = i2fp(-32768);
+				*outPtr = mixL;
+				*(outPtr + 1) = mixR;
 				
 				outPtr += 2;
 				reverbPos++;

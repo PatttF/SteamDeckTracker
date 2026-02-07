@@ -13,6 +13,22 @@
 #include <sys/stat.h>
 #endif
 
+// Valve/Steam system plugins that should be hidden from the browser
+static bool isFilteredPlugin(const char *name, const char *uri) {
+    if (!name) return false;
+    const char *filtered[] = {
+        "ValveBinaural",
+        "SteampalMicChain_HardCoded",
+        "Valve Speakers",
+        "RNNoise",
+        nullptr
+    };
+    for (const char **f = filtered; *f; f++) {
+        if (strstr(name, *f) || (uri && strstr(uri, *f))) return true;
+    }
+    return false;
+}
+
 ImportLV2Dialog::ImportLV2Dialog(View &view) : ModalView(view) {
     currentPlugin_ = 0;
     topIndex_ = 0;
@@ -58,6 +74,12 @@ void ImportLV2Dialog::loadPluginList() {
         // Get plugin name
         LilvNode* name_node = lilv_plugin_get_name(plugin);
         const char* name = lilv_node_as_string(name_node);
+
+        // Skip Valve/Steam system plugins
+        if (isFilteredPlugin(name, uri)) {
+            lilv_node_free(name_node);
+            continue;
+        }
         
         // Add to list
         LV2PluginInfo *info = new LV2PluginInfo();

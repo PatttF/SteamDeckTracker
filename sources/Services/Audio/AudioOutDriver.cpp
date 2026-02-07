@@ -6,6 +6,26 @@
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
 #include <math.h>
+#include <string.h>
+
+// Denormal protection: flush denormals to zero to prevent CPU spikes
+// in IIR filters, reverbs, and plugin processing
+#if defined(__SSE__) || defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#include <pmmintrin.h>
+static inline void enableDenormalProtection() {
+    _mm_setcsr(_mm_getcsr() | 0x8040); // FTZ + DAZ
+}
+#elif defined(__aarch64__) || defined(__ARM_NEON)
+static inline void enableDenormalProtection() {
+    uint64_t fpcr;
+    __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+    fpcr |= (1 << 24); // FZ bit
+    __asm__ __volatile__("msr fpcr, %0" :: "r"(fpcr));
+}
+#else
+static inline void enableDenormalProtection() { /* no-op */ }
+#endif
 
 AudioOutDriver::AudioOutDriver(AudioDriver &driver) {
     // Initialize member variables to safe defaults
@@ -15,6 +35,8 @@ AudioOutDriver::AudioOutDriver(AudioDriver &driver) {
     softclipGain_ = 0;
     masterVolume_ = 100;
     sampleCount_ = 0;
+    cachedVolume_ = -1;
+    cachedDamp_ = 1.0f;
 
     // Precalculate constant values for softclipping algorithm
     softClipData_[0].alpha = 1.45f; // -1.5db (approx.)
@@ -84,7 +106,14 @@ void AudioOutDriver::Trigger() {
 
 	if (shuttingDown_) return;
 
+    // Prevent denormal CPU spikes in plugin/filter processing
+    enableDenormalProtection();
+
     prepareMixBuffers();
+
+    // Zero the primary buffer before rendering to prevent stale data artifacts
+    memset(primarySoundBuffer_, 0, sampleCount_ * 2 * sizeof(fixed));
+
     hasSound_=AudioMixer::Render(primarySoundBuffer_,sampleCount_) ;
     
     // NOTE: Per-channel reverb is now applied in SampleInstrument::Render()
@@ -104,6 +133,10 @@ void AudioOutDriver::Update(Observable &o,I_ObservableData *d)
 
 void AudioOutDriver::prepareMixBuffers() {
 	sampleCount_=getPlaySampleCount() ; 
+	// Clamp to max buffer capacity: primarySoundBuffer_ holds MIX_BUFFER_SIZE/2 bytes
+	// = MIX_BUFFER_SIZE/(2*sizeof(fixed)) fixed elements = MIX_BUFFER_SIZE/8 stereo samples
+	int maxSamples = MIX_BUFFER_SIZE / (2 * (int)sizeof(fixed));
+	if (sampleCount_ > maxSamples) sampleCount_ = maxSamples;
 	clipped_=false ;  
 	finalLastPeak_ = 0.0f;  
 } ;
@@ -141,7 +174,7 @@ fixed AudioOutDriver::softClip(fixed sample) {
 
     x = data->alphaInv * (sampleFloat / maxFloat);
     if (x > -1.0f && x < 1.0f) {
-        sampleFloat = maxFloat * (data->alpha * (x - (pow(x, 3.0f) / 3.0f)));
+        sampleFloat = maxFloat * (data->alpha * (x - (x * x * x / 3.0f)));
     } else {
         sampleFloat = maxFloat * data->alpha23;
     }
@@ -155,7 +188,13 @@ fixed AudioOutDriver::softClip(fixed sample) {
 
 void AudioOutDriver::clipToMix() {
 
-    float damp = pow((float)masterVolume_ / 100, 4.0f);
+    // Cache damp calculation - recompute only when volume changes
+    if (masterVolume_ != cachedVolume_) {
+        cachedVolume_ = masterVolume_;
+        float v = (float)masterVolume_ / 100.0f;
+        cachedDamp_ = v * v * v * v; // x^4 without pow()
+    }
+    float damp = cachedDamp_;
     bool interlaced = driver_->Interlaced();
 
     if (!hasSound_) {

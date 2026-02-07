@@ -30,10 +30,8 @@ FFMPEG_LIBS := $(FFMPEG_PREFIX)/lib/libavformat.a \
                $(FFMPEG_PREFIX)/lib/libavutil.a \
                -lm -lpthread -lz
 
-# optimization
-OPT_FLAGS := -O3
-#For debugging
-OPT_FLAGS := -g
+# optimization (with debug symbols for profiling)
+OPT_FLAGS := -O3 -g -ffast-math
 INCLUDES := $(ALSA_CFLAGS) $(JACK_CFLAGS) $(SDL_CFLAGS) $(LV2_CFLAGS) $(FFMPEG_CFLAGS) -I$(PWD)/../sources
 CFLAGS := $(OPT_FLAGS) $(DEFINES) $(INCLUDES) -Wall
 CXXFLAGS := $(CFLAGS) -std=gnu++11

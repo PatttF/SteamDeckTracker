@@ -60,13 +60,17 @@ void AudioDriver::AddBuffer(short *buffer,int samplecount) {
   }
 
   if (pool_[poolQueuePosition_].buffer_!=0) {
-  NInvalid ;
   Trace::Error("Audio overrun, please report") ;
-  SAFE_FREE(pool_[poolQueuePosition_].buffer_) ;
+  // Buffer still has unconsumed data — skip this write to prevent stuck loop.
+  // Advance position so subsequent writes don't keep hitting the same slot.
+  poolQueuePosition_=(poolQueuePosition_+1)%SOUND_BUFFER_COUNT ;
   return ;
-  }	
+  }
 
-  pool_[poolQueuePosition_].buffer_=(char*) ((short *)SYS_MALLOC(len)) ;
+  // Pre-allocate buffer on first use, reuse thereafter (avoid malloc/free in audio path)
+  if (pool_[poolQueuePosition_].buffer_==0) {
+      pool_[poolQueuePosition_].buffer_=(char*)SYS_MALLOC(SOUND_BUFFER_MAX) ;
+  }
 
   SYS_MEMCPY(pool_[poolQueuePosition_].buffer_,(char *)buffer,len) ;
   pool_[poolQueuePosition_].size_=len ;

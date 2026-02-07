@@ -74,6 +74,8 @@ class AudioOutDriver: public AudioOut,protected I_Observer {
 
     fixed *primarySoundBuffer_ ;
     short *mixBuffer_ ;
-    int sampleCount_ ;       
+    int sampleCount_ ;
+    int cachedVolume_ ;       // Cached master volume for damp calculation
+    float cachedDamp_ ;       // Cached damp factor (masterVolume^4)
 } ;
 #endif

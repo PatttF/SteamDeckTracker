@@ -34,7 +34,7 @@ public:
 private:
 	int index_ ;
 	I_Instrument *instr_ ;
-	bool muted_ ;
+	std::atomic<bool> muted_ ;
 	int busIndex_ ;
 	MixBus *mixBus_ ;
 

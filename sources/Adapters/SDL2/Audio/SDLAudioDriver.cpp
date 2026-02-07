@@ -166,7 +166,7 @@ void SDLAudioDriver::OnChunkDone(Uint8 *stream,int len) {
        while (bufferSize_-bufferPos_<len) {
 
           // First move remaining bytes at the front
-          memcpy(mainBuffer_,mainBuffer_+bufferPos_,bufferSize_-bufferPos_) ;
+          memmove(mainBuffer_,mainBuffer_+bufferPos_,bufferSize_-bufferPos_) ;
 
          // then get next queued buffer and copy data from it
 
@@ -185,8 +185,7 @@ void SDLAudioDriver::OnChunkDone(Uint8 *stream,int len) {
     	     bufferSize_=bufferSize_-bufferPos_+pool_[poolPlayPosition_].size_ ;
              bufferPos_=0 ;
            
-             SYS_FREE( pool_[poolPlayPosition_].buffer_) ;
-    
+             // Mark buffer as consumed (don't free - pre-allocated for reuse)
              pool_[poolPlayPosition_].buffer_=0 ;
              poolPlayPosition_=(poolPlayPosition_+1)%SOUND_BUFFER_COUNT ;
 	     	 if (thread_) thread_->Notify() ;

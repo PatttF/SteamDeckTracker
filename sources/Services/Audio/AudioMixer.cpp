@@ -7,12 +7,16 @@ AudioMixer::AudioMixer(const char *name):
 	enableRendering_(0),
 	writer_(0),
 	name_(name),
-	lastPeak_(0.0f)
+	lastPeak_(0.0f),
+	mixBuffer_(0),
+	mixBufferSize_(0)
 {
 	volume_=(i2fp(1)) ;
 } ;
 
 AudioMixer::~AudioMixer() {
+	SAFE_FREE(mixBuffer_) ;
+	mixBufferSize_ = 0 ;
 }
 
 void AudioMixer::SetFileRenderer(const char *path) {
@@ -38,7 +42,14 @@ void AudioMixer::EnableRendering(bool enable) {
 
 bool AudioMixer::Render(fixed *buffer,int samplecount) {
 
-     fixed *mixBuffer=0 ;
+     // Ensure pre-allocated mix buffer is large enough
+     int requiredSize = samplecount * 2 ;
+     if (requiredSize > mixBufferSize_) {
+         SAFE_FREE(mixBuffer_) ;
+         mixBuffer_ = (fixed *)SYS_MALLOC(requiredSize * sizeof(fixed)) ;
+         mixBufferSize_ = requiredSize ;
+     }
+
      bool gotData=false ;
      int moduleCount = 0;
      IteratorPtr<AudioModule>it(GetIterator()) ;
@@ -48,15 +59,18 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
          if (!gotData) {
             gotData=current.Render(buffer,samplecount) ;           
          } else {
-            if (!mixBuffer) {
-               mixBuffer=(fixed *)malloc(samplecount*2*sizeof(fixed)) ;
-            } 
-            if (current.Render(mixBuffer,samplecount)) {
+            // Zero the mix buffer before rendering to prevent uninitialized data artifacts
+            memset(mixBuffer_, 0, requiredSize * sizeof(fixed)) ;
+            if (current.Render(mixBuffer_,samplecount)) {
                fixed *dst=buffer ;
-               fixed *src=mixBuffer ;
+               fixed *src=mixBuffer_ ;
                int count=samplecount*2 ;
                while (count--) {
-                 *dst+=*src ;
+                 // Saturating add to prevent signed overflow (UB)
+                 long long sum = (long long)*dst + (long long)*src ;
+                 if (sum > 0x7FFFFFFF) sum = 0x7FFFFFFF ;
+                 else if (sum < (long long)(int)0x80000000) sum = (int)0x80000000 ;
+                 *dst = (fixed)sum ;
                  dst++ ;
                  src++ ;
                }
@@ -64,10 +78,7 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
          }
      }
      
-     static int debugCount = 0;
-     if (gotData && debugCount++ % 200 == 0) {
-         Trace::Log("AudioMixer", "%s: modules=%d gotData=%d buf[0]=%d", name_.c_str(), moduleCount, gotData, buffer[0]);
-     }
+
 
      //  Apply volume
 
@@ -99,14 +110,6 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 		} ;
 		writer_->AddBuffer(buffer,samplecount) ;
 	}
-     SAFE_FREE(mixBuffer) ;
-     
-     // Debug: Always log for AudioOut to trace the exact buffer content at return
-     if (gotData && name_ == "AudioOut") {
-         Trace::Debug("[AudioMixer] %s RETURNING: gotData=%d buf[0]=%d buf[1]=%d", 
-                      name_.c_str(), gotData, buffer[0], buffer[1]);
-     }
-     
      return gotData ;
 } ;
 

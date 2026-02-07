@@ -3,6 +3,7 @@
 
 #include "I_Instrument.h"
 #include "Application/Model/Song.h"
+#include "System/Process/SysMutex.h"
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -140,6 +141,11 @@ private:
     std::vector<uint8_t*> atomInputBuffers_;
     std::vector<size_t> atomInputBufferSizes_;
     
+    // Mutex protecting pendingMidiEvents_ and pendingAtomEvents_ which are
+    // written from the player thread (Start/Stop/SetParameterValue) and read
+    // from the audio thread (Render).
+    SysMutex pendingEventsMutex_;
+
     // Pending MIDI events to write to buffer
     struct MidiEvent {
         uint8_t data[3];
@@ -154,6 +160,14 @@ private:
     std::vector<float> controlValues_; // Storage for control port values
     std::vector<float> portControlStorage_; // Per-port storage indexed by port index to safely connect to LV2
     bool isActivated_;  // Track if plugin is activated
+    bool portsConnected_; // Track if ports have been connected
+
+    // Render-once-per-cycle: cache the plugin output so multiple channels
+    // sharing this instrument don't call lilv_instance_run() multiple times
+    fixed *cachedOutputBuffer_;   // Cached fixed-point stereo interleaved output
+    int cachedOutputSize_;        // Number of samples in cached output
+    uint32_t renderChannelMask_;  // Bitmask of channels rendered this cycle
+    Variable *cachedVolVar_;      // Cached pointer to volume variable
 
     // Pending atom events to write to plugin atom input ports (patch/midi messages etc.)
     struct PendingAtomEvent {
