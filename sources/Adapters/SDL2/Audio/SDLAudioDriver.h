@@ -32,7 +32,8 @@ public:
 	virtual bool StartDriver() ; 
 	virtual void StopDriver();
 	virtual int GetPlayedBufferPercentage() ;
-	virtual int GetSampleRate() { return 44100 ; } ;
+	virtual int GetSampleRate() { return sampleRate_ ; } ;
+	virtual int GetChannelCount() { return channelCount_ ; } ;
 	virtual bool Interlaced() { return true ; } ;	
 	virtual double GetStreamTime() ;
 	// Additional
@@ -45,6 +46,8 @@ private:
   char *miniBlank_ ;
   int bufferPos_ ;
   int bufferSize_ ;
+  int sampleRate_ ;   // Actual obtained sample rate from audio device
+  int channelCount_ ; // Actual obtained channel count from audio device
   SDLAudioDriverThread *thread_ ;
 	Uint32 startTime_ ;
 } ;

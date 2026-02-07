@@ -51,11 +51,10 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
      }
 
      bool gotData=false ;
-     int moduleCount = 0;
-     IteratorPtr<AudioModule>it(GetIterator()) ;
-     for (it->Begin();!it->IsDone();it->Next()) {
-         moduleCount++;
-         AudioModule &current=it->CurrentItem() ;
+     // Traverse the linked list directly to avoid heap-allocating an
+     // iterator on every audio callback (new/delete = priority inversion).
+     for (Node<AudioModule> *node = GetFirstNode(); node != NULL; node = node->next) {
+         AudioModule &current = node->data ;
          if (!gotData) {
             gotData=current.Render(buffer,samplecount) ;           
          } else {
@@ -77,31 +76,24 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
             }
          }
      }
-     
 
-
-     //  Apply volume
+     //  Apply volume and compute peak in a single fused loop
 
      if (gotData) {
-         fixed *c = buffer;
-         if (volume_ != i2fp(1)) {
-             for (int i = 0; i < samplecount * 2; i++) {
-                 fixed v = fp_mul(*c, volume_);
-                 *c++ = v;
-             }
-         }
-
-         // Update lastPeak_ (0.0 .. 1.0) based on absolute sample values
          float peak = 0.0f;
-         c = buffer;
+         fixed *c = buffer;
+         bool applyVol = (volume_ != i2fp(1));
          for (int i = 0; i < samplecount * 2; i++) {
-             float f = fabsf(fp2fl(*c++));
+             fixed v = applyVol ? fp_mul(*c, volume_) : *c;
+             if (applyVol) *c = v;
+             float f = fabsf(fp2fl(v));
              if (f > peak) peak = f;
+             c++;
          }
          if (peak > 1.0f) peak = 1.0f;
-         lastPeak_ = peak;
+         lastPeak_.store(peak, std::memory_order_relaxed);
      } else {
-         lastPeak_ = 0.0f;
+         lastPeak_.store(0.0f, std::memory_order_relaxed);
      }
 
     if (enableRendering_&&writer_) {

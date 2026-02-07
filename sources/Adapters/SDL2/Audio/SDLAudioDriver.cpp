@@ -18,7 +18,8 @@ SDLAudioDriverThread::SDLAudioDriverThread(SDLAudioDriver *driver) {
 
 bool SDLAudioDriverThread::Execute() {
   int bufferFrames = Audio::GetInstance()->GetAudioBufferSize();
-  float cycleTime = bufferFrames/44100.0f;
+  int driverRate = Audio::GetInstance()->GetSampleRate();
+  float cycleTime = bufferFrames/float(driverRate);
   TimeService *ts = TimeService::GetInstance();
   while (!shouldTerminate()) {
     semaphore_->Wait() ;
@@ -56,6 +57,8 @@ SDLAudioDriver::SDLAudioDriver(AudioSettings &settings):AudioDriver(settings),
 {
 	isPlaying_=false ;
 	thread_=0 ;
+	sampleRate_=AUDIO_DEFAULT_SAMPLE_RATE ;
+	channelCount_=2 ;
 }
 
 SDLAudioDriver::~SDLAudioDriver() {
@@ -66,17 +69,16 @@ struct SDL_AudioSpec returned ;
 
 bool SDLAudioDriver::InitDriver() {
 
-  //set sound
-  input.freq=44100 ;
+  //set sound — request the configured sample rate, allow SDL to negotiate
+  int requestedRate = settings_.sampleRate_ > 0 ? settings_.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ;
+  input.freq=requestedRate ;
   input.format=AUDIO_S16SYS ;
   input.channels=2 ;
   input.callback=sdl_callback ;
   input.samples=settings_.bufferSize_ ;
   input.userdata=this ;
 
-  // On my machine this wasn't working.
-  // SDL_AudioDeviceID deviceId = SDL_OpenAudioDevice(NULL,0,&input,&returned,0);
-  // The above may return 0 meaning an error or success.
+  // Allow SDL to return a different sample rate if needed
   int ret = SDL_OpenAudio(&input,&returned);
   if ( ret != 0 )
   {
@@ -84,6 +86,16 @@ bool SDLAudioDriver::InitDriver() {
   	return false ;
   } 
   const char * driverName = SDL_GetCurrentAudioDriver() ;
+
+  // Capture the actual obtained sample rate, channels, and fragment size
+  sampleRate_ = returned.freq ;
+  channelCount_ = returned.channels ;
+  // Propagate back to settings so rest of the system can query it
+  settings_.sampleRate_ = sampleRate_ ;
+  settings_.channelCount_ = channelCount_ ;
+
+  Trace::Log("AUDIO","Requested rate: %d Hz, obtained: %d Hz, channels: %d",
+    requestedRate, sampleRate_, channelCount_) ;
 
   fragSize_=returned.size ;
   // Allocates a rotating sound buffer

@@ -25,7 +25,8 @@ RTAudioDriverThread::RTAudioDriverThread(RTAudioDriver *driver) {
 bool RTAudioDriverThread::Execute() {
 
 	int bufferSize=Audio::GetInstance()->GetAudioBufferSize() ;
-	float cycleTime=bufferSize/44100.0f ;
+	int driverRate=Audio::GetInstance()->GetSampleRate() ;
+	float cycleTime=bufferSize/float(driverRate) ;
 	TimeService *ts=TimeService::GetInstance();
 	while (!shouldTerminate()) {
 		semaphore_->Wait() ;
@@ -56,6 +57,7 @@ RTAudioDriver::RTAudioDriver(RtAudio::Api api,AudioSettings &settings):AudioDriv
 {
 	isPlaying_=false ;
 	thread_=0 ;
+	sampleRate_=settings.sampleRate_ > 0 ? settings.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ;
 } ;
 
 bool RTAudioDriver::InitDriver() {
@@ -82,7 +84,7 @@ bool RTAudioDriver::InitDriver() {
 	params.nChannels=2 ;
 	params.firstChannel=0 ;
 
-	unsigned int sampleRate = 44100;
+	unsigned int sampleRate = sampleRate_;
 	unsigned int bufferFrames = settings_.bufferSize_ ; // in samples
 
 	try 
@@ -95,6 +97,10 @@ bool RTAudioDriver::InitDriver() {
 		Trace::Error("Error opening audio output stream: %s",e.getMessage().c_str()) ;
 		return false ;
 	};
+
+	// Store the actual sample rate (RTAudio may have negotiated differently)
+	sampleRate_ = sampleRate ;
+	settings_.sampleRate_ = sampleRate_ ;
 
 	fragSize_=bufferFrames*4 ;
 	Trace::Log("AUDIO","RTAudio device %s successfully open - buffer=%d",deviceName.c_str(),bufferFrames) ;

@@ -8,7 +8,7 @@
 // Uses a circular buffer with multiple taps at different delay times
 // Much simpler than Freeverb but more stable
 
-#define REVERB_BUFFER_SIZE 8820  // 200ms at 44100Hz
+#define REVERB_BUFFER_SIZE 19200  // 200ms at up to 96kHz
 
 class Reverb {
 public:

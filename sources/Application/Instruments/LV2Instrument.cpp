@@ -2,6 +2,7 @@
 #include "CommandList.h"
 #include "System/Console/Trace.h"
 #include "Application/Mixer/MixerService.h"
+#include "Services/Audio/Audio.h"
 #include <string.h>
 #include <cmath>
 #include <map>
@@ -62,9 +63,10 @@ LV2_Feature g_unmapFeature = { LV2_URID__unmap, &g_uridUnmapFeature };
 
 // Minimal options array (zero-terminated) for LV2_OPTIONS__options feature
 // We'll provide explicit entries for min, nominal and max block lengths plus a zero terminator.
-static uint32_t s_minBlock = 64u;
-static uint32_t s_nominalBlock = 1024u;
-static uint32_t s_maxBlock = 131072u;
+// Actual render size is tempo-dependent (typically ~460–920 samples at 120 BPM / 44100 Hz).
+static uint32_t s_minBlock = 1u;
+static uint32_t s_nominalBlock = 512u;
+static uint32_t s_maxBlock = 8192u;
 LV2_Options_Option g_optionsArray[4] = {
     { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // max block length (filled at runtime)
     { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // nominal block length (filled at runtime)
@@ -177,14 +179,35 @@ LV2Instrument::LV2Instrument() {
     init_options_array();
 
     // Initialize channel state
+    // Compute reverb buffer length based on actual sample rate (~100ms)
+    int sampleRate = Audio::GetInstance() ? Audio::GetInstance()->GetSampleRate() : 44100;
+    if (sampleRate <= 0) sampleRate = 44100;
+    reverbBufferLength_ = (sampleRate / 10); // ~100ms worth of samples
+    if (reverbBufferLength_ < 1024) reverbBufferLength_ = 1024;
+
+    // Scale tap offsets to actual sample rate (original values tuned for 44100 Hz)
+    // Original taps: {1557, 2801, 4409, 4000} at 44100 Hz
+    float rateRatio = (float)sampleRate / 44100.0f;
+    reverbTapOffsets_[0] = (int)(1557.0f * rateRatio);
+    reverbTapOffsets_[1] = (int)(2801.0f * rateRatio);
+    reverbTapOffsets_[2] = (int)(4409.0f * rateRatio);
+    reverbTapOffsets_[3] = (int)(4000.0f * rateRatio);
+    // Clamp tap offsets to buffer length
+    for (int t = 0; t < 4; t++) {
+        if (reverbTapOffsets_[t] >= reverbBufferLength_) {
+            reverbTapOffsets_[t] = reverbBufferLength_ - 1;
+        }
+    }
+
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
         lastNote_[i] = -1;
         playing_[i] = false;
-        // Initialize reverb state
-        memset(reverbBuffer_[i], 0, sizeof(reverbBuffer_[i]));
+        // Allocate and initialize reverb state
+        reverbBuffer_[i] = new fixed[reverbBufferLength_ * 2];
+        memset(reverbBuffer_[i], 0, reverbBufferLength_ * 2 * sizeof(fixed));
         reverbDecay_[i] = 0;
         reverbSend_[i] = 0;
-        reverbPos_[i] = 0; // Initialize reverb state
+        reverbPos_[i] = 0;
     }
 
     // Setup variables
@@ -203,6 +226,13 @@ LV2Instrument::LV2Instrument() {
 
 LV2Instrument::~LV2Instrument() {
     Purge();
+    // Free dynamically allocated reverb buffers
+    for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+        if (reverbBuffer_[i]) {
+            delete[] reverbBuffer_[i];
+            reverbBuffer_[i] = nullptr;
+        }
+    }
 }
 
 bool LV2Instrument::Init() {
@@ -257,10 +287,13 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
         return false;
     }
 
-    // Use per-tracker-channel MIDI channels so multiple tracker channels
-    // sharing this instrument don't steal each other's notes.
-    // Clamp to 0-15 for valid MIDI channel range.
-    int midiCh = channel & 0x0F;
+    // Always use MIDI channel 0 for all tracker channels.  Many LV2 synths
+    // (e.g. Mutated) are monophonic and ignore the MIDI channel byte
+    // (lv2_midi_message_type does msg[0]&0xF0).  Using different channels
+    // per tracker channel causes note-off mismatches: the plugin only
+    // releases when msg[1]==current_note, and a second channel's note-on
+    // overwrites current_note, making the first channel's note-off fail.
+    // The result is stuck notes / unreleased envelopes → static.
 
     {
         SysMutexLocker lock(pendingEventsMutex_);
@@ -268,7 +301,7 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
         // Stop any existing note on this channel first
         if (playing_[channel] && lastNote_[channel] >= 0) {
             MidiEvent noteOff;
-            noteOff.data[0] = 0x80 | midiCh;  // Note Off on per-channel MIDI ch
+            noteOff.data[0] = 0x80;  // Note Off on MIDI ch 0
             noteOff.data[1] = lastNote_[channel];
             noteOff.data[2] = 0;
             noteOff.size = 3;
@@ -277,7 +310,7 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
 
         // Queue MIDI note-on event
         MidiEvent noteOn;
-        noteOn.data[0] = 0x90 | midiCh;  // Note On on per-channel MIDI ch
+        noteOn.data[0] = 0x90;  // Note On on MIDI ch 0
         noteOn.data[1] = note;
         noteOn.data[2] = 100;   // Velocity
         noteOn.size = 3;
@@ -297,13 +330,11 @@ void LV2Instrument::Stop(int channel) {
 
     playing_[channel] = false;
 
-    int midiCh = channel & 0x0F;
-
-    // Queue MIDI note-off event
+    // Queue MIDI note-off event (always MIDI channel 0 — see Start() comment)
     if (lastNote_[channel] >= 0) {
         SysMutexLocker lock(pendingEventsMutex_);
         MidiEvent noteOff;
-        noteOff.data[0] = 0x80 | midiCh;  // Note Off on per-channel MIDI ch
+        noteOff.data[0] = 0x80;  // Note Off on MIDI ch 0
         noteOff.data[1] = lastNote_[channel];
         noteOff.data[2] = 0;
         noteOff.size = 3;
@@ -353,6 +384,9 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             memset(audioInputR_, 0, BUFFER_SIZE * sizeof(float));
             memset(audioDummyBuffer_, 0, BUFFER_SIZE * sizeof(float));
             pendingAtomEvents_.reserve(128);
+            renderLocalMidi_.reserve(32);
+            renderLocalAtom_.reserve(128);
+            renderPatchEvents_.reserve(64);
         }
 
         // Grow buffers if needed
@@ -404,38 +438,86 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         memset(audioInputL_, 0, size * sizeof(float));
         memset(audioInputR_, 0, size * sizeof(float));
 
-        // Update parameter values from Variables
+        // Update parameter values from Variables.
+        // We write directly to portControlStorage_ here (audio thread only)
+        // instead of calling SetParameterValue() to avoid its overhead and
+        // ensure the audio thread is the sole writer to port storage.
+        renderPatchEvents_.clear();
         for (size_t i = 0; i < parameters_.size() && i < controlValues_.size(); i++) {
-            if (parameters_[i].isOutput) continue; // skip output ports
-            if (parameters_[i].variable) {
-                int scaledValue = parameters_[i].variable->GetInt();
-                float realValue = parameters_[i].minValue +
-                    (scaledValue / 127.0f) * (parameters_[i].maxValue - parameters_[i].minValue);
+            if (parameters_[i].isOutput) continue;
+            if (!parameters_[i].variable) continue;
 
-                if (!parameters_[i].scalePoints.empty()) {
-                    float closest = parameters_[i].scalePoints[0].value;
-                    float bestDiff = std::fabs(realValue - closest);
-                    for (size_t sp = 1; sp < parameters_[i].scalePoints.size(); ++sp) {
-                        float v = parameters_[i].scalePoints[sp].value;
-                        float d = std::fabs(realValue - v);
-                        if (d < bestDiff) {
-                            bestDiff = d;
-                            closest = v;
-                        }
+            int scaledValue = parameters_[i].variable->GetInt();
+            float realValue = parameters_[i].minValue +
+                (scaledValue / 127.0f) * (parameters_[i].maxValue - parameters_[i].minValue);
+
+            // Snap to nearest scale point if available
+            if (!parameters_[i].scalePoints.empty()) {
+                float closest = parameters_[i].scalePoints[0].value;
+                float bestDiff = std::fabs(realValue - closest);
+                for (size_t sp = 1; sp < parameters_[i].scalePoints.size(); ++sp) {
+                    float v = parameters_[i].scalePoints[sp].value;
+                    float d = std::fabs(realValue - v);
+                    if (d < bestDiff) {
+                        bestDiff = d;
+                        closest = v;
                     }
-                    realValue = closest;
-                } else if (parameters_[i].isEnumeration) {
-                    float rounded = std::round(realValue);
-                    if (rounded < parameters_[i].minValue) rounded = parameters_[i].minValue;
-                    if (rounded > parameters_[i].maxValue) rounded = parameters_[i].maxValue;
-                    realValue = rounded;
                 }
+                realValue = closest;
+            } else if (parameters_[i].isEnumeration) {
+                float rounded = std::round(realValue);
+                if (rounded < parameters_[i].minValue) rounded = parameters_[i].minValue;
+                if (rounded > parameters_[i].maxValue) rounded = parameters_[i].maxValue;
+                realValue = rounded;
+            }
 
-                if (std::fabs(realValue - parameters_[i].currentValue) > 1e-6f) {
-                    controlValues_[i] = realValue;
-                    SetParameterValue((int)i, realValue);
-                } else {
-                    controlValues_[i] = parameters_[i].currentValue;
+            // Only update if value actually changed
+            if (std::fabs(realValue - parameters_[i].currentValue) < 1e-6f) {
+                continue;
+            }
+
+            parameters_[i].currentValue = realValue;
+            controlValues_[i] = realValue;
+
+            int pidx = parameters_[i].portIndex;
+            if (pidx >= 0 && !parameters_[i].isAtomPort) {
+                // Standard control port: write directly to port storage
+                if (pidx < (int)portControlStorage_.size()) {
+                    portControlStorage_[pidx] = realValue;
+                }
+            } else if (pidx < 0 && !parameters_[i].resourceURI.empty()
+                       && midiInputPort_ >= 0 && midiBuffer_) {
+                // Resource-backed param: queue a patch:Set atom event.
+                // These will be written to the atom buffer below alongside
+                // any pending events from Start/Stop.
+                LV2_Atom_Forge forge;
+                lv2_atom_forge_init(&forge, &g_uridMapFeature);
+                const size_t TMP_SIZE = 1024;
+                uint8_t tmp[TMP_SIZE];
+                lv2_atom_forge_set_buffer(&forge, tmp, TMP_SIZE);
+                LV2_Atom_Forge_Frame frame;
+                lv2_atom_forge_object(&forge, &frame, 0,
+                    urid_map(nullptr, LV2_PATCH__Set));
+                lv2_atom_forge_key(&forge,
+                    urid_map(nullptr, LV2_PATCH__property));
+                lv2_atom_forge_urid(&forge,
+                    urid_map(nullptr, parameters_[i].resourceURI.c_str()));
+                lv2_atom_forge_key(&forge,
+                    urid_map(nullptr, LV2_PATCH__value));
+                lv2_atom_forge_float(&forge, realValue);
+                lv2_atom_forge_pop(&forge, &frame);
+
+                if (forge.offset >= sizeof(LV2_Atom)) {
+                    LV2_Atom* atom = (LV2_Atom*)tmp;
+                    PendingAtomEvent ae;
+                    ae.type = atom->type;
+                    ae.data.resize(atom->size);
+                    memcpy(ae.data.data(), LV2_ATOM_BODY(atom), atom->size);
+                    ae.destPortIndex = midiInputPort_;
+                    // These go directly into the local list that will be
+                    // written to the atom buffer below — no mutex needed
+                    // since we are on the audio thread.
+                    renderPatchEvents_.push_back(std::move(ae));
                 }
             }
         }
@@ -461,12 +543,20 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         }
 
         // ---- Drain pending events under lock (TryLock to avoid blocking audio) ----
-        std::vector<MidiEvent> localMidi;
-        std::vector<PendingAtomEvent> localAtom;
+        renderLocalMidi_.clear();
+        renderLocalAtom_.clear();
         if (pendingEventsMutex_.TryLock()) {
-            localMidi.swap(pendingMidiEvents_);
-            localAtom.swap(pendingAtomEvents_);
+            renderLocalMidi_.swap(pendingMidiEvents_);
+            renderLocalAtom_.swap(pendingAtomEvents_);
             pendingEventsMutex_.Unlock();
+        }
+
+        // Append any patch:Set events generated by the param update loop above
+        if (!renderPatchEvents_.empty()) {
+            renderLocalAtom_.insert(renderLocalAtom_.end(),
+                std::make_move_iterator(renderPatchEvents_.begin()),
+                std::make_move_iterator(renderPatchEvents_.end()));
+            renderPatchEvents_.clear();
         }
 
         // Write MIDI events to the atom/MIDI buffer
@@ -476,8 +566,8 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             size_t offset = 0;
             size_t capacity = midiBufferSize_ - sizeof(LV2_Atom_Sequence);
 
-            for (size_t i = 0; i < localMidi.size() && offset + 32 < capacity; i++) {
-                MidiEvent& evt = localMidi[i];
+            for (size_t i = 0; i < renderLocalMidi_.size() && offset + 32 < capacity; i++) {
+                MidiEvent& evt = renderLocalMidi_[i];
                 LV2_Atom_Event* event = (LV2_Atom_Event*)(buf + offset);
                 event->time.frames = 0;
                 event->body.size = evt.size;
@@ -490,7 +580,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         }
 
         // Write pending atom events (patch:Set etc) to appropriate buffers
-        if (!localAtom.empty()) {
+        if (!renderLocalAtom_.empty()) {
             auto appendEventsToBuffer = [&](uint8_t* buffer, size_t bufCap, const PendingAtomEvent &event) {
                 if (!buffer) return;
                 LV2_Atom_Sequence* seq = (LV2_Atom_Sequence*)buffer;
@@ -509,7 +599,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
                 seq->atom.size = sizeof(LV2_Atom_Sequence_Body) + off;
             };
 
-            for (auto &ae : localAtom) {
+            for (auto &ae : renderLocalAtom_) {
                 int dest = ae.destPortIndex;
                 if (dest < 0) {
                     if (midiBuffer_) {
@@ -544,20 +634,69 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         memset(audioBufferL_, 0, size * sizeof(float));
         memset(audioBufferR_, 0, size * sizeof(float));
         memset(audioDummyBuffer_, 0, size * sizeof(float));
-        lilv_instance_run(instance, size);
+
+        // Some LV2 plugins (e.g. Mutated Instruments) process in even-sized
+        // blocks internally (block_size &= ~1u).  When the host passes an odd
+        // n_samples, the plugin's inner loop skips the last sample, leaving it
+        // at 0 and creating a periodic 1-sample discontinuity that manifests
+        // as high-frequency static/noise.  We run the plugin with an even
+        // sample count and then fill the trailing sample by duplication.
+        int runSize = size & ~1;  // round down to even
+        if (runSize < 2) runSize = 2;  // minimum 2 samples
+        if (runSize > size) runSize = size;  // safety: don't exceed buffer
+        lilv_instance_run(instance, runSize);
+
+        // Fill trailing sample if we rounded down
+        if (runSize < size) {
+            audioBufferL_[runSize] = audioBufferL_[runSize - 1];
+            audioBufferR_[runSize] = audioBufferR_[runSize - 1];
+        }
+
+        // Sanitise plugin output: zero any NaN/Inf samples.
+        // LV2 plugins with feedback networks (reverb, delay, resonant
+        // filters) can produce NaN/Inf which would poison all downstream
+        // processing.  We use a bitwise check that survives -ffast-math.
+        {
+            union { float f; uint32_t u; } chk;
+            for (int i = 0; i < size; i++) {
+                chk.f = audioBufferL_[i];
+                if ((chk.u & 0x7F800000u) == 0x7F800000u) audioBufferL_[i] = 0.0f;
+                chk.f = audioBufferR_[i];
+                if ((chk.u & 0x7F800000u) == 0x7F800000u) audioBufferR_[i] = 0.0f;
+            }
+        }
 
         // If mono plugin (no right output port), duplicate left to right
         if (audioOutputPortR_ == -1 && audioBufferL_ && audioBufferR_) {
             memcpy(audioBufferR_, audioBufferL_, size * sizeof(float));
         }
 
-        // Convert float output to fixed point stereo interleaved and cache
+        // Convert float output to fixed point stereo interleaved and cache.
+        //
+        // IMPORTANT: The host is compiled with -ffast-math which implies
+        // -ffinite-math-only.  This means the compiler may assume NaN/Inf
+        // never occur and can optimise away comparisons like (x > 1.0f)
+        // when x is NaN (since NaN > 1.0f is false by IEEE 754, the
+        // compiler removes the branch entirely).  LV2 plugins with
+        // feedback networks (reverb, delay, resonant filters) CAN produce
+        // NaN or Inf, so we must sanitise plugin output with a method the
+        // compiler cannot remove.
         if (!cachedVolVar_) cachedVolVar_ = FindVariable(LV2IP_VOLUME);
         float volume = cachedVolVar_ ? (cachedVolVar_->GetInt() / 255.0f) : 1.0f;
 
         for (int i = 0; i < size; i++) {
             float l = audioBufferL_[i] * volume;
             float r = audioBufferR_[i] * volume;
+
+            // Bitwise NaN/Inf check that survives -ffast-math.
+            // IEEE 754: NaN/Inf have all exponent bits set (0x7F800000).
+            union { float f; uint32_t u; } ul, ur;
+            ul.f = l;
+            ur.f = r;
+            if ((ul.u & 0x7F800000u) == 0x7F800000u) l = 0.0f;
+            if ((ur.u & 0x7F800000u) == 0x7F800000u) r = 0.0f;
+
+            // Clamp to [-1, 1]
             if (l > 1.0f) l = 1.0f;
             if (l < -1.0f) l = -1.0f;
             if (r > 1.0f) r = 1.0f;
@@ -575,15 +714,18 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
     }
 
     // Apply per-channel reverb effect if enabled
-    if (reverbSend_[channel] > 0) {
+    if (reverbSend_[channel] > 0 && reverbBuffer_[channel]) {
            fixed *reverbBuf = reverbBuffer_[channel];
            int reverbPos = reverbPos_[channel];
         fixed decay = reverbDecay_[channel];
         fixed send = reverbSend_[channel];
         
-        // Tap offsets for early reflections
-        const int tapOffsets[4] = {1557, 2801, 4409, 4000};
+        // Tap offsets scaled to actual sample rate (computed in constructor)
         static const fixed tapGains[4] = {fl2fp(0.35f), fl2fp(0.25f), fl2fp(0.18f), fl2fp(0.12f)};
+
+        // Feedback position offset: scale 100 samples from 44100 Hz to current rate
+        // Hoisted out of the inner loop since it's constant for the entire render call
+        const int fbSamples = (int)(100.0f * (float)reverbBufferLength_ / 4410.0f);
         
         fixed *outPtr = buffer;
         for (int i = 0; i < size; i++) {
@@ -594,16 +736,16 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             fixed wetL = 0;
             fixed wetR = 0;
             for (int t = 0; t < 4; t++) {
-                    int readPos = reverbPos - tapOffsets[t];
-                if (readPos < 0) readPos += LV2_REVERB_BUFFER_LENGTH;
+                    int readPos = reverbPos - reverbTapOffsets_[t];
+                if (readPos < 0) readPos += reverbBufferLength_;
                 
                 wetL = fp_add(wetL, fp_mul(reverbBuf[readPos * 2], tapGains[t]));
                 wetR = fp_add(wetR, fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]));
             }
             
             // Write input + decayed feedback to delay line
-            int fb_pos = reverbPos - LV2_REVERB_BUFFER_LENGTH + 100;
-            if (fb_pos < 0) fb_pos += LV2_REVERB_BUFFER_LENGTH;
+            int fb_pos = reverbPos - reverbBufferLength_ + fbSamples;
+            if (fb_pos < 0) fb_pos += reverbBufferLength_;
             fixed fbL = fp_mul(reverbBuf[fb_pos * 2], decay);
             fixed fbR = fp_mul(reverbBuf[fb_pos * 2 + 1], decay);
 
@@ -622,7 +764,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             
                 outPtr += 2;
                 reverbPos++;
-                if (reverbPos >= LV2_REVERB_BUFFER_LENGTH) {
+                if (reverbPos >= reverbBufferLength_) {
                     reverbPos = 0;
                 }
         }
@@ -691,20 +833,17 @@ void LV2Instrument::Purge() {
 }
 
 void LV2Instrument::Update(Observable &o, I_ObservableData *d) {
-    // Called when a WatchedVariable changes (user edited a parameter in the UI)
-    Variable *v = dynamic_cast<Variable*>(&o);
-    if (!v) return;
-
-    // Find which parameter this variable corresponds to
-    for (size_t i = 0; i < parameters_.size(); ++i) {
-        if (parameters_[i].variable == v) {
-            int scaled = v->GetInt();
-            float realValue = parameters_[i].minValue + (scaled / 127.0f) * (parameters_[i].maxValue - parameters_[i].minValue);
-            Trace::Debug("LV2Instrument: Update - variable changed, paramIndex=%zu scaled=%d real=%g", i, scaled, realValue);
-            SetParameterValue((int)i, realValue);
-            break;
-        }
-    }
+    // Intentionally a no-op.  The audio thread's Render() loop already
+    // re-reads every Variable value each cycle, applies scale-point
+    // snapping, and writes to portControlStorage_ from the correct thread.
+    //
+    // Calling SetParameterValue() here from the UI thread caused:
+    //   1. A data race on portControlStorage_ (UI write vs audio read)
+    //   2. Parameter oscillation for enumerated params (unsnapped value
+    //      from UI thread vs snapped value from audio thread alternating
+    //      every cycle → audible static/glitches)
+    (void)o;
+    (void)d;
 }
 
 void LV2Instrument::cleanupPlugin() {
@@ -949,10 +1088,11 @@ void LV2Instrument::loadPlugin() {
     // Ensure options array is initialized with URIDs/values
     init_options_array();
 
-    // Instantiate the plugin with 44100 Hz sample rate and our features
+    // Instantiate the plugin with the actual audio driver sample rate
+    double pluginRate = (double)Audio::GetInstance()->GetSampleRate();
+    Trace::Debug("LV2Instrument: Instantiating plugin at %.0f Hz: %s", pluginRate, pluginURI_);
 
-
-    LilvInstance* instance = lilv_plugin_instantiate(plugin, 44100.0, g_features);
+    LilvInstance* instance = lilv_plugin_instantiate(plugin, pluginRate, g_features);
     if (!instance) {
         Trace::Error("LV2Instrument: Failed to instantiate plugin with full features: %s", pluginURI_);
 
@@ -984,7 +1124,7 @@ void LV2Instrument::loadPlugin() {
         // Try again with only URID map/unmap to see if extra features are causing the failure
         const LV2_Feature* minimal_features[] = { &g_mapFeature, &g_unmapFeature, nullptr };
 
-        LilvInstance* inst2 = lilv_plugin_instantiate(plugin, 44100.0, minimal_features);
+        LilvInstance* inst2 = lilv_plugin_instantiate(plugin, pluginRate, minimal_features);
         if (!inst2) {
             // Also dump plugin manifest path hint if available (bundle path)
             const LilvNode* uri_node = lilv_plugin_get_uri(plugin);
@@ -1478,7 +1618,14 @@ void LV2Instrument::connectPorts(int bufferSize) {
     LilvNode* output_class = lilv_new_uri(static_cast<LilvWorld*>(world_), LILV_URI_OUTPUT_PORT);
     LilvNode* atom_class = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/ext/atom#AtomPort");
 
-    // Ensure atom buffers vector is sized to number of ports
+    // Ensure atom buffers vector is sized to number of ports.
+    // Free any previously allocated buffers first to avoid memory leaks
+    // (connectPorts may be called again on buffer grow).
+    for (size_t ai = 0; ai < atomInputBuffers_.size(); ++ai) {
+        if (atomInputBuffers_[ai]) {
+            delete[] atomInputBuffers_[ai];
+        }
+    }
     atomInputBuffers_.assign(numPorts, nullptr);
     atomInputBufferSizes_.assign(numPorts, 0);
 

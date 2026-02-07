@@ -27,8 +27,11 @@ void JackAudioDriverThread::Notify() {
 } ;
 
 JackAudioDriver::JackAudioDriver(jack_client_t *client,AudioSettings &settings):AudioDriver(settings) {
-// Jack driver currently ignores the settings
+// Jack driver - query actual sample rate from JACK server
 	client_=client ;
+	sampleRate_ = (int)jack_get_sample_rate(client_) ;
+	settings_.sampleRate_ = sampleRate_ ;
+	Trace::Log("AUDIO","JACK sample rate: %d Hz", sampleRate_) ;
 	portL_ = jack_port_register (client, "mixL",JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
 	portR_ = jack_port_register (client, "mixR",JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
 	thread_=0 ;

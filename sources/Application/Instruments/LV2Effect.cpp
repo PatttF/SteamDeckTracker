@@ -2,6 +2,7 @@
 #include "Application/Model/Config.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "System/Console/Trace.h"
+#include "Services/Audio/Audio.h"
 #include <cstring>
 #include <cstdlib>
 #include <lilv/lilv.h>
@@ -52,6 +53,9 @@ LV2Effect::LV2Effect() {
     midiBufferSize_ = 0;
     isActivated_ = false;
     forcedOutputChannels_ = 0;
+    cachedPatchSetUrid_ = 0;
+    cachedPatchPropertyUrid_ = 0;
+    cachedPatchValueUrid_ = 0;
 
     // Add volume and wet/dry variables
     Variable *vol = new Variable("volume", LV2FX_VOLUME, 0xFF);
@@ -235,8 +239,10 @@ void LV2Effect::loadPlugin() {
         nullptr
     };
 
-    // Instantiate the plugin
-    LilvInstance *instance = lilv_plugin_instantiate(plugin, 44100.0, features);
+    // Instantiate the plugin with actual audio driver sample rate
+    double pluginRate = (double)Audio::GetInstance()->GetSampleRate();
+    Trace::Debug("LV2Effect: Instantiating plugin at %.0f Hz: %s", pluginRate, pluginURI_);
+    LilvInstance *instance = lilv_plugin_instantiate(plugin, pluginRate, features);
     if (!instance) {
         Trace::Error("LV2Effect: Failed to instantiate plugin: %s", pluginURI_);
         // Try minimal features
@@ -245,7 +251,7 @@ void LV2Effect::loadPlugin() {
             &g_unmapFeature,
             nullptr
         };
-        instance = lilv_plugin_instantiate(plugin, 44100.0, minFeatures);
+        instance = lilv_plugin_instantiate(plugin, pluginRate, minFeatures);
         if (!instance) {
             Trace::Error("LV2Effect: Failed to instantiate even with minimal features: %s", pluginURI_);
             return;
@@ -673,15 +679,20 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
         connectPorts(bufferSize_);
     }
 
+    // Round block size to even to satisfy plugins that process in pairs
+    int runSize = sampleCount & ~1;
+    if (runSize < 2) runSize = 2;
+    if (runSize > sampleCount) runSize = sampleCount;
+
     // Deinterleave input from fixed-point stereo interleaved to float L/R
-    for (int i = 0; i < sampleCount; i++) {
+    for (int i = 0; i < runSize; i++) {
         audioInputL_[i] = fp2fl(buffer[i * 2]);
         audioInputR_[i] = fp2fl(buffer[i * 2 + 1]);
     }
 
     // Clear output buffers before running plugin to prevent stale data artifacts
-    memset(audioBufferL_, 0, sampleCount * sizeof(float));
-    memset(audioBufferR_, 0, sampleCount * sizeof(float));
+    memset(audioBufferL_, 0, runSize * sizeof(float));
+    memset(audioBufferR_, 0, runSize * sizeof(float));
 
     // Set up MIDI buffer as empty sequence (no MIDI events for effects)
     if (midiBuffer_) {
@@ -691,7 +702,8 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
         seq->body.unit = 0;
         seq->body.pad = 0;
 
-        // Write any pending atom events (parameter changes)
+        // Write any pending atom events (parameter changes) under lock
+        pendingEventsMutex_.Lock();
         if (!pendingAtomEvents_.empty()) {
             uint8_t *buf = (uint8_t *)LV2_ATOM_CONTENTS(LV2_Atom_Sequence, seq);
             size_t offset = 0;
@@ -710,6 +722,7 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
             seq->atom.size = sizeof(LV2_Atom_Sequence_Body) + offset;
             pendingAtomEvents_.clear();
         }
+        pendingEventsMutex_.Unlock();
     }
 
     // Re-initialize non-MIDI atom INPUT buffers as empty sequences
@@ -739,8 +752,33 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
         memset(audioDummyBuffer_, 0, sampleCount * sizeof(float));
     }
 
-    // Run the plugin
-    lilv_instance_run((LilvInstance *)pluginInstance_, sampleCount);
+    // Run the plugin with even-rounded block size
+    lilv_instance_run((LilvInstance *)pluginInstance_, runSize);
+
+    // Duplicate the last sample for the trailing odd sample
+    if (runSize < sampleCount) {
+        audioBufferL_[runSize] = audioBufferL_[runSize - 1];
+        audioBufferR_[runSize] = audioBufferR_[runSize - 1];
+    }
+
+    // Sanitise plugin output: zero any NaN/Inf samples.
+    // LV2 plugins with feedback networks (reverb, delay, resonant
+    // filters) can produce NaN/Inf which would poison all downstream
+    // processing.  We use a bitwise check that survives -ffast-math.
+    {
+        union { float f; uint32_t u; } chk;
+        for (int i = 0; i < sampleCount; i++) {
+            chk.f = audioBufferL_[i];
+            if ((chk.u & 0x7F800000u) == 0x7F800000u) audioBufferL_[i] = 0.0f;
+            chk.f = audioBufferR_[i];
+            if ((chk.u & 0x7F800000u) == 0x7F800000u) audioBufferR_[i] = 0.0f;
+        }
+    }
+
+    // If mono plugin (no right output port), duplicate left to right
+    if (audioOutputPortR_ == -1 && audioBufferL_ && audioBufferR_) {
+        memcpy(audioBufferR_, audioBufferL_, sampleCount * sizeof(float));
+    }
 
     // Wet/dry mix and convert back to fixed-point stereo interleaved
     float wet = wetDry / 255.0f;
@@ -771,6 +809,13 @@ void LV2Effect::SetParameterValue(int paramIndex, float value) {
         portControlStorage_[pidx] = value;
     } else if (!parameters_[paramIndex].resourceURI.empty() && midiInputPort_ >= 0 && midiBuffer_) {
         // Resource-backed parameter: queue a patch:Set atom event
+        // Cache URIDs on first use so we never call urid_map() on the audio thread
+        if (cachedPatchSetUrid_ == 0) {
+            cachedPatchSetUrid_ = urid_map(nullptr, LV2_PATCH__Set);
+            cachedPatchPropertyUrid_ = urid_map(nullptr, LV2_PATCH__property);
+            cachedPatchValueUrid_ = urid_map(nullptr, LV2_PATCH__value);
+        }
+
         LV2_Atom_Forge forge;
         lv2_atom_forge_init(&forge, &g_uridMapFeature);
 
@@ -779,10 +824,10 @@ void LV2Effect::SetParameterValue(int paramIndex, float value) {
         lv2_atom_forge_set_buffer(&forge, tmp, TMP_SIZE);
 
         LV2_Atom_Forge_Frame frame;
-        lv2_atom_forge_object(&forge, &frame, 0, urid_map(nullptr, LV2_PATCH__Set));
-        lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__property));
+        lv2_atom_forge_object(&forge, &frame, 0, cachedPatchSetUrid_);
+        lv2_atom_forge_key(&forge, cachedPatchPropertyUrid_);
         lv2_atom_forge_urid(&forge, urid_map(nullptr, parameters_[paramIndex].resourceURI.c_str()));
-        lv2_atom_forge_key(&forge, urid_map(nullptr, LV2_PATCH__value));
+        lv2_atom_forge_key(&forge, cachedPatchValueUrid_);
         lv2_atom_forge_float(&forge, value);
         lv2_atom_forge_pop(&forge, &frame);
 
@@ -793,7 +838,9 @@ void LV2Effect::SetParameterValue(int paramIndex, float value) {
             pae.data.assign(tmp + sizeof(LV2_Atom), tmp + sizeof(LV2_Atom) + atom->size);
             pae.type = atom->type;
             pae.destPortIndex = midiInputPort_;
+            pendingEventsMutex_.Lock();
             pendingAtomEvents_.push_back(pae);
+            pendingEventsMutex_.Unlock();
         }
     }
 }

@@ -129,6 +129,23 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
 } ;
 
 
+void PlayerMixer::ReleaseInstrument(I_Instrument *instrument) {
+	if (!instrument) return;
+	for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+		// If this channel is currently rendering the instrument, stop it.
+		// StopInstrument acquires PlayerChannel's startStopMutex_ which
+		// ensures Render() is not mid-flight on that channel.
+		if (channel_[i]->GetInstrument() == instrument) {
+			channel_[i]->StopInstrument();
+			notes_[i] = 0xFF;
+		}
+		// Clear cached lastInstrument_ to prevent dangling pointer reuse
+		if (lastInstrument_[i] == instrument) {
+			lastInstrument_[i] = 0;
+		}
+	}
+}
+
 void PlayerMixer::StartInstrument(int channel,I_Instrument *instrument,unsigned char note,bool newInstrument)  {
 	channel_[channel]->StartInstrument(instrument,note,newInstrument) ;
 	lastInstrument_[channel]=instrument ;

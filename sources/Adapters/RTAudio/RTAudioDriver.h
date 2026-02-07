@@ -34,7 +34,7 @@ public:
 	virtual void StopDriver();
 	virtual int GetPlayedBufferPercentage()  ;
 	virtual double GetStreamTime() ;
-  virtual int GetSampleRate() { return 44100; } ;	
+  virtual int GetSampleRate() { return sampleRate_; } ;
   virtual bool Interlaced() { return true ; } ;
 	void fillBuffer(short *buffer,int frameCount) ;
 
@@ -46,6 +46,7 @@ private:
   char *miniBlank_ ;
   int bufferPos_ ;
   int bufferSize_ ;
+  int sampleRate_ ;
   RTAudioDriverThread *thread_ ;
 } ;
 #endif

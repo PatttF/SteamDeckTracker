@@ -68,6 +68,10 @@ class T_SimpleList: public I_List<Item>
 	
   protected:
 
+	// Direct access to the first node for subclasses that need
+	// allocation-free traversal (e.g. real-time audio callbacks).
+	Node<Item> *GetFirstNode() const { return _first; }
+
 	Node<Item> *findNode(Item &) ;   // Looks for the node that contains a given item
 							   // Note: comparison is on the pointer level at the moment
 

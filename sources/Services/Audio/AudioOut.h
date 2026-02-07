@@ -44,7 +44,7 @@ public:
    int getPlaySampleCount() ;
 
 private:
-	float sampleOffset_ ;
+	double sampleOffset_ ;
 
 } ;
 #endif

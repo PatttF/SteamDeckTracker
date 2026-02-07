@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <map>
 #include <lv2/urid/urid.h>
+#include "System/Process/SysMutex.h"
 
 // Re-use the scale point and parameter structs from LV2Instrument
 #include "LV2Instrument.h"
@@ -101,6 +102,12 @@ private:
         int destPortIndex;
     };
     std::vector<PendingAtomEvent> pendingAtomEvents_;
+    SysMutex pendingEventsMutex_;
+
+    // Cached URIDs for patch:Set atom events (avoid calling urid_map on audio thread)
+    LV2_URID cachedPatchSetUrid_;
+    LV2_URID cachedPatchPropertyUrid_;
+    LV2_URID cachedPatchValueUrid_;
 
     // Plugin parameters
     std::vector<LV2PluginParameter> parameters_;

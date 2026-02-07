@@ -397,6 +397,8 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 	// We allow processing
 
 	rp->finished_=false ;
+	rp->fadeOutSamples_=0 ;
+	rp->fadeOutTotal_=0 ;
 
   // Initialize feedback data
 
@@ -457,14 +459,22 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 	return true ;
 }
 
+#define DECLICK_FADE_SAMPLES 64  // ~1.5ms at 44.1kHz — short enough to be inaudible
+
 void SampleInstrument::Stop(int channel) {
 
 	// Get Rendering params for current voice & fill init data
 
 	 renderParams *rp=renderParams_+channel ;
 	 running_=false ;
-	 // Mark this voice as finished so Render() exits immediately (important for looped modes like SILM_OSC)
-	 rp->finished_ = true ;
+
+	 // Instead of cutting instantly (which causes a click), request a
+	 // short fade-out ramp.  Render() will apply the gain ramp and set
+	 // finished_=true once the fade completes.
+	 if (!rp->finished_ && rp->fadeOutSamples_ <= 0) {
+	     rp->fadeOutSamples_ = DECLICK_FADE_SAMPLES;
+	     rp->fadeOutTotal_   = DECLICK_FADE_SAMPLES;
+	 }
 }
 void SampleInstrument::doTickUpdate(int channel) {
 
@@ -743,7 +753,14 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 					switch(loopMode) {
 						case SILM_ONESHOT:
 						case SILM_SLICE:
-							*rpFinished=true ;
+							// Trigger declick fade instead of abrupt cut
+							if (rp->fadeOutSamples_ <= 0) {
+								rp->fadeOutSamples_ = DECLICK_FADE_SAMPLES;
+								rp->fadeOutTotal_   = DECLICK_FADE_SAMPLES;
+							}
+							// Pin to last valid sample to avoid out-of-bounds reads
+							input = lastSample - channelCount;
+							if (input < dsBasePtr) input = dsBasePtr;
 							break ;
 						case SILM_LOOP:
 						case SILM_OSC:
@@ -792,7 +809,13 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 					switch(loopMode) {
 						case SILM_ONESHOT:
 						case SILM_SLICE:
-							*rpFinished=true ;
+							// Trigger declick fade instead of abrupt cut
+							if (rp->fadeOutSamples_ <= 0) {
+								rp->fadeOutSamples_ = DECLICK_FADE_SAMPLES;
+								rp->fadeOutTotal_   = DECLICK_FADE_SAMPLES;
+							}
+							// Pin to first valid sample to avoid out-of-bounds reads
+							input = lastSample;
 							break ;
 						case SILM_LOOP:
 						case SILM_OSC:
@@ -1085,6 +1108,38 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 
 		rp->feedbackIn_=(feedbackIn-feedbackStart)/2 ;
 		rp->feedbackOut_=(feedbackPick-feedbackStart)/2 ;
+
+		// ---- Anti-click fade-out ramp ----
+		// When Stop() was called or ONESHOT reached the end, fadeOutSamples_
+		// counts down while a linear gain ramp is applied to the rendered
+		// audio, smoothly fading it to zero over DECLICK_FADE_SAMPLES.
+		// This eliminates the discontinuity that would otherwise cause a
+		// click/pop.
+
+		if (rp->fadeOutSamples_ > 0 && rp->fadeOutTotal_ > 0) {
+			int total = rp->fadeOutTotal_;
+			int remaining = rp->fadeOutSamples_;
+			fixed *fp = buffer;
+			for (int i = 0; i < size; i++) {
+				if (remaining > 0) {
+					// Linear ramp from 1→0 over fadeOutTotal_ samples
+					fixed gain = i2fp(remaining) / total; // fixed-point division
+					*fp = fp_mul(*fp, gain);  fp++;
+					*fp = fp_mul(*fp, gain);  fp++;
+					remaining--;
+				} else {
+					// Past the end of the fade — silence
+					*fp++ = 0;
+					*fp++ = 0;
+				}
+			}
+			rp->fadeOutSamples_ = remaining;
+			if (remaining <= 0) {
+				rp->finished_ = true;
+			}
+			// Even during fade-out we produced audio, so report it
+			somethingToMix = true;
+		}
 		
 		// Apply per-channel reverb effect if enabled
 		if (rp->reverbSend_ > 0) {

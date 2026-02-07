@@ -4,6 +4,7 @@
 #include "AudioOut.h"
 #include "Foundation/Observable.h"
 #include "Application/Instruments/WavFileWriter.h"
+#include <atomic>
 
 class AudioDriver ;
 
@@ -42,7 +43,7 @@ class AudioOutDriver: public AudioOut,protected I_Observer {
     virtual float GetFinalPeak();
 
   private:
-    float finalLastPeak_ ;
+    std::atomic<float> finalLastPeak_ ;
     bool shuttingDown_ ;
 
     virtual std::string GetAudioAPI() ;

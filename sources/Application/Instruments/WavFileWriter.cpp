@@ -1,5 +1,6 @@
 #include "WavFileWriter.h"
 #include "System/Console/Trace.h"
+#include "Services/Audio/Audio.h"
 
 WavFileWriter::WavFileWriter(const char *path):
 	file_(0),
@@ -10,6 +11,9 @@ WavFileWriter::WavFileWriter(const char *path):
 	Path filePath(path) ;
 	file_=FileSystem::GetInstance()->Open(filePath.GetPath().c_str(),"wb") ;
 	if (file_) {
+
+		// Use actual audio driver sample rate for WAV header
+		int rate = Audio::GetInstance()->GetSampleRate() ;
 
 		// RIFF chunk
 
@@ -34,10 +38,10 @@ WavFileWriter::WavFileWriter(const char *path):
 		file_->Write(&ushort,1,2);
 		ushort=Swap16(2) ; // nChannels
 		file_->Write(&ushort,1,2);
-		unsigned int sampleRate=Swap32(44100) ;
+		unsigned int sampleRate=Swap32(rate) ;
 		file_->Write(&sampleRate,1,4);
 
-		unsigned int byteRate=Swap32(4*44100) ;
+		unsigned int byteRate=Swap32(4*rate) ;
 		file_->Write(&byteRate,1,4);
 
 		ushort=Swap16(4) ; //  blockalign

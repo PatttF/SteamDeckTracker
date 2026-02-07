@@ -102,12 +102,13 @@ private:
     bool playing_[SONG_CHANNEL_COUNT];  // Playing state per channel
     TableSaveState tableState_;
     
-    // Per-channel reverb state
-    static const int LV2_REVERB_BUFFER_LENGTH = 4410; // ~100ms at 44.1kHz
-    fixed reverbBuffer_[SONG_CHANNEL_COUNT][LV2_REVERB_BUFFER_LENGTH * 2]; // Stereo delay line per channel
+    // Per-channel reverb state (dynamically sized based on sample rate)
+    int reverbBufferLength_;  // ~100ms worth of samples at actual sample rate
+    fixed *reverbBuffer_[SONG_CHANNEL_COUNT]; // Stereo delay line per channel (heap-allocated)
     fixed reverbDecay_[SONG_CHANNEL_COUNT];   // Decay amount per channel
     fixed reverbSend_[SONG_CHANNEL_COUNT];    // Send level per channel
     int reverbPos_[SONG_CHANNEL_COUNT];       // Write position per channel
+    int reverbTapOffsets_[4];                 // Early reflection tap offsets (scaled to sample rate)
 
     // LV2 plugin state
     void *world_;                       // LilvWorld*
@@ -175,7 +176,15 @@ private:
         LV2_URID type;
         int destPortIndex; // destination port index this atom event should be written to
     };
-    std::vector<PendingAtomEvent> pendingAtomEvents_;    
+    std::vector<PendingAtomEvent> pendingAtomEvents_;
+
+    // Pre-allocated scratch vectors used inside Render() to avoid heap
+    // allocation/deallocation in the audio thread (malloc/free can cause
+    // priority inversion → glitches).
+    std::vector<MidiEvent> renderLocalMidi_;
+    std::vector<PendingAtomEvent> renderLocalAtom_;
+    std::vector<PendingAtomEvent> renderPatchEvents_;
+
     // Helper methods
     void discoverParameters();
     void loadPlugin();

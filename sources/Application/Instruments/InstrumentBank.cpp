@@ -4,6 +4,7 @@
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Instruments/MidiInstrument.h"
 #include "Application/Instruments/LV2Instrument.h"
+#include "Application/Player/PlayerMixer.h"
 #include "System/io/Status.h"
 #include "Application/Utils/char.h"
 #include "Application/Model/Config.h"
@@ -360,16 +361,21 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 		return NO_MORE_INSTRUMENT ;
 	}
 
-	delete dst ;
-  
-	if (src->GetType()==IT_SAMPLE) {
-		dst=new SampleInstrument() ;
-	} else if (src->GetType()==IT_MIDI) {
-		dst=new MidiInstrument() ;
-	} else {
-		dst=new LV2Instrument() ;
+	// Release any channels that might reference the destination instrument
+	PlayerMixer *pm = PlayerMixer::GetInstance();
+	if (pm) {
+		pm->ReleaseInstrument(dst);
 	}
-	instrument_[next]=dst ;
+
+	if (src->GetType()==IT_SAMPLE) {
+		instrument_[next]=new SampleInstrument() ;
+	} else if (src->GetType()==IT_MIDI) {
+		instrument_[next]=new MidiInstrument() ;
+	} else {
+		instrument_[next]=new LV2Instrument() ;
+	}
+	delete dst ;
+	dst=instrument_[next] ;
 	IteratorPtr<Variable> it(src->GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Variable &srcV=it->CurrentItem() ;
@@ -417,8 +423,20 @@ void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
         n->Insert(ntv);
     }
 
-    delete old;
+    // CRITICAL: Stop any audio channels currently rendering the old
+    // instrument and clear lastInstrument_ references to it. This
+    // prevents the audio thread from calling Render() on freed memory.
+    // ReleaseInstrument() acquires each PlayerChannel's startStopMutex_,
+    // guaranteeing the audio thread is not mid-Render() when we proceed.
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    if (pm) {
+        pm->ReleaseInstrument(old);
+    }
+
+    // Swap the pointer BEFORE deleting so any concurrent GetInstrument()
+    // call sees the new (valid) object rather than a dangling pointer.
     instrument_[i] = n;
+    delete old;
 
     // initialize new instrument
     n->Init();

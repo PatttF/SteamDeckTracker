@@ -14,9 +14,14 @@ public:
 	virtual ~Audio() ;
 	virtual void Init()=0 ;
 	virtual void Close()=0 ;
-	virtual int GetSampleRate() {return 44100 ; } ;
+	virtual int GetSampleRate() { return settings_.sampleRate_ > 0 ? settings_.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ; } ;
+	virtual int GetChannelCount() { return settings_.channelCount_ > 0 ? settings_.channelCount_ : 2 ; } ;
 	virtual int GetMixerVolume() { return 100 ; } ;
 	virtual void SetMixerVolume(int volume) {} ;
+
+	// Update the actual obtained sample rate (called by driver after device opens)
+	void SetActualSampleRate(int rate) { settings_.sampleRate_ = rate ; } ;
+	void SetActualChannelCount(int ch) { settings_.channelCount_ = ch ; } ;
 
 	const char *GetAudioAPI() ;
 	const char *GetAudioDevice() ;

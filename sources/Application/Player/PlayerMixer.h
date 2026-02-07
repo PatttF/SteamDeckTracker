@@ -30,6 +30,11 @@ public:
 	void StartInstrument(int channel,I_Instrument *instrument,unsigned char note,bool newInstrument) ;
 	void StopInstrument(int channel) ;
 
+	// Stop all channels currently playing the given instrument and clear
+	// any lastInstrument_ references to it. Must be called before deleting
+	// an instrument to prevent use-after-free in the audio thread.
+	void ReleaseInstrument(I_Instrument *instrument) ;
+
 	int GetChannelNote(int Channel) ;
 
 	I_Instrument *GetInstrument(int channel) ;

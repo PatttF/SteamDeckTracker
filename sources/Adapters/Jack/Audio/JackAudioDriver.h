@@ -30,7 +30,7 @@ public:
 	virtual bool StartDriver() ; 
 	virtual void StopDriver();
 	virtual int GetPlayedBufferPercentage() { return 0 ; }
-	virtual int GetSampleRate() { return 44100 ; } ;
+	virtual int GetSampleRate() { return sampleRate_ ; } ;
 	virtual bool Interlaced() { return true ; } ;	
 	virtual double GetStreamTime() ;
 	jack_port_t *GetPort() ;
@@ -41,6 +41,7 @@ private:
 	short *tempBuffer_ ;
 	short *current_ ;
 	unsigned int available_ ;
+	int sampleRate_ ;
 	jack_client_t *client_ ;
 	jack_port_t *portL_;
 	jack_port_t *portR_;

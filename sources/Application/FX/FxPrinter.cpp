@@ -1,4 +1,5 @@
 #include "FxPrinter.h"
+#include "Services/Audio/Audio.h"
 
 FxPrinter::FxPrinter(ViewData* viewData)
     : samples_dir("project:samples"),
@@ -33,7 +34,7 @@ void FxPrinter::setPaths() {
 std::string FxPrinter::parseCommand() {
     std::string command;
     float padDur = static_cast<float>(irPad_) / 1000;
-    float smplLength = static_cast<float>(instrument_->GetSampleSize()) / 44100;
+    float smplLength = static_cast<float>(instrument_->GetSampleSize()) / Audio::GetInstance()->GetSampleRate();
 
     std::ostringstream cm1, cm2, cm3, cm4, cm5;
     cm1 << ffmpeg_ << " -y -i "

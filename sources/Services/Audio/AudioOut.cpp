@@ -1,7 +1,7 @@
 #include "AudioOut.h"
 #include "Application/Player/SyncMaster.h"
 
-AudioOut::AudioOut():AudioMixer("AudioOut"),sampleOffset_(0) {
+AudioOut::AudioOut():AudioMixer("AudioOut"),sampleOffset_(0.0) {
 } ;
 
 AudioOut::~AudioOut() {

@@ -10,6 +10,7 @@
 #include "SoundFontManager.h"
 #include "Application/Model/Config.h"
 #include "AudioFile.h"
+#include "WavFile.h"
 
 #define SAMPLE_LIB "root:samplelib" 
 
@@ -150,8 +151,27 @@ bool SamplePool::loadSample(const char *path) {
         const std::string name = wavPath.GetName();
         names_[count_] = (char*)SYS_MALLOC(name.length() + 1);
         strcpy(names_[count_], name.c_str());
+        Trace::Log("SamplePool", "Loaded via FFmpeg: %s (%d Hz, %d ch, %d frames)",
+            name.c_str(), audio->GetSampleRate(0), audio->GetChannelCount(0), audio->GetSize(0));
         count_++;
         return true;
+    }
+
+    // Fallback to native WavFile loader (handles WAV without FFmpeg dependency)
+    if (wavPath.Matches("*.wav")) {
+        WavFile *wav = WavFile::Open(path);
+        if (wav) {
+            // Load entire sample into memory
+            wav->GetBuffer(0, wav->GetSize(0));
+            wav_[count_] = wav;
+            const std::string name = wavPath.GetName();
+            names_[count_] = (char*)SYS_MALLOC(name.length() + 1);
+            strcpy(names_[count_], name.c_str());
+            Trace::Log("SamplePool", "Loaded via WavFile fallback: %s (%d Hz, %d ch, %d frames)",
+                name.c_str(), wav->GetSampleRate(0), wav->GetChannelCount(0), wav->GetSize(0));
+            count_++;
+            return true;
+        }
     }
     
     Trace::Error("Failed to load sample %s", wavPath.GetName().c_str());

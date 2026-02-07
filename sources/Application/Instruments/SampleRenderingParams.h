@@ -78,7 +78,10 @@ struct renderParams {
 	bool couldClick_ ;
 
 	char midiNote_ ;  // Current midi note
-	
+
+	int fadeOutSamples_ ;  // When >0, fade-out ramp is active (counts down to 0)
+	int fadeOutTotal_ ;    // Total length of fade-out for gain calculation
+
 	// Per-channel reverb parameters (set via REVB command)
 	fixed reverbDecay_ ;   // Feedback decay amount (0 = off)
 	fixed reverbSend_ ;    // Send level

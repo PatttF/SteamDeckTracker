@@ -47,6 +47,7 @@ SDLAudioDriver::SDLAudioDriver(AudioSettings &settings):AudioDriver(settings),
 {
 	isPlaying_=false ;
 	thread_=0 ;
+	sampleRate_=AUDIO_DEFAULT_SAMPLE_RATE ;
 }
 
 SDLAudioDriver::~SDLAudioDriver() {
@@ -57,8 +58,9 @@ struct SDL_AudioSpec returned ;
 
 bool SDLAudioDriver::InitDriver() {
 
-  //set sound
-  input.freq=44100 ;
+  //set sound — request the configured sample rate
+  int requestedRate = settings_.sampleRate_ > 0 ? settings_.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ;
+  input.freq=requestedRate ;
   input.format=AUDIO_S16SYS ;
   input.channels=2 ;
   input.callback=sdl_callback ;
@@ -72,6 +74,10 @@ bool SDLAudioDriver::InitDriver() {
   } 
   char bufferName[256] ;
   SDL_AudioDriverName(bufferName,256) ;
+
+  // Capture actual obtained sample rate
+  sampleRate_ = returned.freq ;
+  settings_.sampleRate_ = sampleRate_ ;
 
   fragSize_=returned.size ;
   // Allocates a rotating sound buffer

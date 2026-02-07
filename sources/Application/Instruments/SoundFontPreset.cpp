@@ -1,6 +1,7 @@
 #include "SoundFontPreset.h"
 #include "Externals/Soundfont/ENAB.H"
 #include "System/Console/Trace.h"
+#include "Services/Audio/AudioSettings.h"
 
 SoundFontPreset::SoundFontPreset(int sfID,int presetID):
 	sfID_(sfID),
@@ -33,7 +34,7 @@ int SoundFontPreset::GetSampleRate(int note) {
 	if (vect_) {
 		return vect_->dwSampleRate ;
 	} ;
-	return 44100 ;
+	return AUDIO_DEFAULT_SAMPLE_RATE ;
 } ;
 
 int SoundFontPreset::GetSize(int note) {

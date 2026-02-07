@@ -1,4 +1,5 @@
 #include "Reverb.h"
+#include "Services/Audio/Audio.h"
 #include <string.h>
 
 Reverb::Reverb() 
@@ -11,12 +12,20 @@ Reverb::Reverb()
     , inputR_(0)
     , initialized_(false) 
 {
-    // Initialize tap offsets (in samples) - prime-ish numbers for less metallic sound
-    // These create a simple multi-tap delay reverb
-    tapOffsets_[0] = 1557;   // ~35ms
-    tapOffsets_[1] = 2801;   // ~63ms  
-    tapOffsets_[2] = 4409;   // ~100ms
-    tapOffsets_[3] = 7127;   // ~161ms
+    // Initialize tap offsets scaled to actual sample rate
+    // Target delay times in ms: ~35, ~63, ~100, ~161
+    int sampleRate = Audio::GetInstance()->GetSampleRate();
+    tapOffsets_[0] = (sampleRate * 35) / 1000;    // ~35ms
+    tapOffsets_[1] = (sampleRate * 63) / 1000;    // ~63ms  
+    tapOffsets_[2] = (sampleRate * 100) / 1000;   // ~100ms
+    tapOffsets_[3] = (sampleRate * 161) / 1000;   // ~161ms
+
+    // Clamp to buffer size
+    for (int i = 0; i < NUM_TAPS; i++) {
+        if (tapOffsets_[i] >= REVERB_BUFFER_SIZE) {
+            tapOffsets_[i] = REVERB_BUFFER_SIZE - 1;
+        }
+    }
     
     // Tap gains (decreasing for later reflections)
     tapGains_[0] = 0.4f;

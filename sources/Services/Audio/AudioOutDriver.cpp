@@ -64,7 +64,7 @@ AudioOutDriver::AudioOutDriver(AudioDriver &driver) {
 	driver.AddObserver(*this) ;
 	primarySoundBuffer_=0 ;
     mixBuffer_ = 0;
-    finalLastPeak_ = 0.0f;
+    finalLastPeak_.store(0.0f, std::memory_order_relaxed);
     shuttingDown_ = false;
     SetOwnership(false);
 }
@@ -138,7 +138,7 @@ void AudioOutDriver::prepareMixBuffers() {
 	int maxSamples = MIX_BUFFER_SIZE / (2 * (int)sizeof(fixed));
 	if (sampleCount_ > maxSamples) sampleCount_ = maxSamples;
 	clipped_=false ;  
-	finalLastPeak_ = 0.0f;  
+	finalLastPeak_.store(0.0f, std::memory_order_relaxed);  
 } ;
 
 void AudioOutDriver::SetSoftclip(int clip, int gain) {
@@ -237,7 +237,7 @@ void AudioOutDriver::clipToMix() {
 
         // Store final post-damp peak for UI and meters
         if (finalPeak > 1.0f) finalPeak = 1.0f;
-        finalLastPeak_ = finalPeak;
+        finalLastPeak_.store(finalPeak, std::memory_order_relaxed);
     }
 } ;
 
@@ -245,7 +245,7 @@ int AudioOutDriver::GetPlayedBufferPercentage() {
 	return driver_->GetPlayedBufferPercentage() ;
 } ;
 
-float AudioOutDriver::GetFinalPeak() { return finalLastPeak_; } ;
+float AudioOutDriver::GetFinalPeak() { return finalLastPeak_.load(std::memory_order_relaxed); } ;
 
 AudioDriver *AudioOutDriver::GetDriver() { return driver_; };
 
