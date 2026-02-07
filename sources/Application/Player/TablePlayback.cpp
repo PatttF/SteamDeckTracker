@@ -1,6 +1,7 @@
 #include "TablePlayback.h"
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/I_Instrument.h"
+#include "Player.h"
 
 TablePlayback TablePlayback::playback_[SONG_CHANNEL_COUNT] ;
 
@@ -179,9 +180,25 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 				hopped_[1]=ProcessLocalCommand(1,table_->cmd2_,table_->param2_,tpc) ;
 				hopped_[2]=ProcessLocalCommand(2,table_->cmd3_,table_->param3_,tpc) ;
 
-				instrument_->ProcessCommand(channel_,table_->cmd1_[position_[0]],table_->param1_[position_[0]]) ;
-				instrument_->ProcessCommand(channel_,table_->cmd2_[position_[1]],table_->param2_[position_[1]]) ;
-				instrument_->ProcessCommand(channel_,table_->cmd3_[position_[2]],table_->param3_[position_[2]]) ;
+				// Route global commands through Player first, then instrument
+				Player *player = Player::GetInstance();
+				FourCC tc1 = table_->cmd1_[position_[0]];
+				ushort tp1 = table_->param1_[position_[0]];
+				if (tc1 == I_CMD_NONE || !player->ProcessChannelCommand(channel_, tc1, tp1)) {
+					instrument_->ProcessCommand(channel_, tc1, tp1);
+				}
+
+				FourCC tc2 = table_->cmd2_[position_[1]];
+				ushort tp2 = table_->param2_[position_[1]];
+				if (tc2 == I_CMD_NONE || !player->ProcessChannelCommand(channel_, tc2, tp2)) {
+					instrument_->ProcessCommand(channel_, tc2, tp2);
+				}
+
+				FourCC tc3 = table_->cmd3_[position_[2]];
+				ushort tp3 = table_->param3_[position_[2]];
+				if (tc3 == I_CMD_NONE || !player->ProcessChannelCommand(channel_, tc3, tp3)) {
+					instrument_->ProcessCommand(channel_, tc3, tp3);
+				}
 
 				previous_[0]=position_[0] ;
 				previous_[1]=position_[1] ;

@@ -5,6 +5,7 @@
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/I_Instrument.h"
 #include "Application/Instruments/SampleInstrument.h"
+#include "Application/Instruments/LV2Effect.h"
 #include "Application/Utils/char.h"
 #include "System/Console/n_assert.h"
 #include "Application/Player/TablePlayback.h"
@@ -725,6 +726,24 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
         }
       }
 			break ;
+		case I_CMD_FXSN:
+			{
+				// FXSN XXYY: XX = effect slot (0x00-0x0F), YY = wet/dry (0x00-0xFF)
+				int effectSlot = (param >> 8) & 0xFF;
+				int wetDry = param & 0xFF;
+				Trace::Log("FXSN", "slot=%d wetDry=%d channel=%d", effectSlot, wetDry, channel);
+				if (effectSlot < MAX_LV2EFFECT_COUNT && project_) {
+					LV2Effect *effect = project_->GetEffect(effectSlot);
+					PlayerChannel *ch = mixer_->GetChannel(channel);
+					Trace::Log("FXSN", "effect=%p ch=%p empty=%d", effect, ch, effect ? effect->IsEmpty() : -1);
+					if (ch && effect && !effect->IsEmpty()) {
+						ch->SetEffect(effect, wetDry);
+					} else if (ch) {
+						ch->ClearEffect();
+					}
+				}
+				return true;
+			}
 		default:
 			break ;
 	} ;

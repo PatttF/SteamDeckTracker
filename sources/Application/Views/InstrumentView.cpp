@@ -726,6 +726,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
                 //		NotifyObservers(&ve) ;
                 //}
 
+                if (mask & EPBM_RIGHT) {
+                    // Go to effect view
+                    ViewType vt = VT_EFFECT;
+                    ViewEvent ve(VET_SWITCH_VIEW, &vt);
+                    SetChanged();
+                    NotifyObservers(&ve);
+                }
+
                 if (mask & EPBM_START) {
                     player->OnStartButton(PM_PHRASE, viewData_->songX_, true,
                                           viewData_->chainRow_);

@@ -8,6 +8,8 @@
 #include "System/Process/SysMutex.h"
 #include <atomic>
 
+class LV2Effect;
+
 class PlayerChannel: public AudioModule {
 public:
 	// Diagnostics counters (start attempts / success / fail)
@@ -24,6 +26,11 @@ public:
 	bool IsMuted() ;
 	void SetMixBus(int i) ;
 	void Reset() ;
+
+	// LV2 effect support
+	void SetEffect(LV2Effect *effect, int wetDry = 255);
+	void ClearEffect();
+
 private:
 	int index_ ;
 	I_Instrument *instr_ ;
@@ -33,6 +40,10 @@ private:
 
 	// Mutex protecting start/stop/access to instr_
 	SysMutex startStopMutex_ ;
+
+	// LV2 effect chain
+	LV2Effect *activeEffect_;
+	int effectWetDry_;
 
 	// Diagnostics
 	std::atomic<int> startAttempts_{0};

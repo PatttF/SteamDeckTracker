@@ -111,6 +111,11 @@ static inline std::string* getHelpLegend(FourCC command) {
 			result[0].assign("PitchFINetune:aabb");
 			result[1].assign("fine tune to ");
 			break;
+		case I_CMD_FXSN:
+			result[0].assign("FX SeNd:aabb");
+			result[1].assign("aa=effect slot (0-F)");
+			result[2].assign("bb=wet/dry (00-FF)");
+			break;
 		case I_CMD_DLAY:
 			result[0].assign("DeLAY:--bb");
 			result[1].assign("delay bb tics");

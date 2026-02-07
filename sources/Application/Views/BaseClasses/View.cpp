@@ -85,7 +85,7 @@ void View::drawMap() {
 		// rather than at the left margin so it doesn't overlap main content.
 		// Compute visible logical width from actual window pixel width and
 		// clamp placement so the map stays inside the visible area.
-		int mapWidth = 4;
+		int mapWidth = 5;
 		int mapHeight = 3;
 		const int CHAR_PX = 8;
 		int winPixelWidth = w_.GetRect().Width();
@@ -102,18 +102,18 @@ void View::drawMap() {
 
 		//draw entire map (draw background without inversion so blank spaces are clear)
 		SetColor(CD_HILITE1) ;
-		char buffer[5] ;
+		char buffer[6] ;
 		props.invert_=false ;
 		//row1
-		sprintf(buffer,"P G ");
+		sprintf(buffer,"P G  ");
 		DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row2
-		sprintf(buffer,"SCPI");
+		sprintf(buffer,"SCPIE");
 		DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row3
-		sprintf(buffer,"  TT");
+		sprintf(buffer,"  TT ");
 		DrawString(pos._x,pos._y,buffer,props) ;
 
 		// Draw static view markers (non-highlighted) so guide shows available pages
@@ -128,6 +128,8 @@ void View::drawMap() {
 		DrawString(staticOrigin._x + 2, staticOrigin._y + 1, "P", props);
 		// Instrument at +3,+1
 		DrawString(staticOrigin._x + 3, staticOrigin._y + 1, "I", props);
+		// Effect at +4,+1
+		DrawString(staticOrigin._x + 4, staticOrigin._y + 1, "E", props);
 		// Table under phrase at +2,+2
 		DrawString(staticOrigin._x + 2, staticOrigin._y + 2, "T", props);
 		// Table2 under instrument at +3,+2
@@ -161,6 +163,11 @@ void View::drawMap() {
 			pos._x+=3;
 			pos._y+=1;
 	        DrawString(pos._x,pos._y,"I",props) ;
+			break;
+		case VT_EFFECT:
+			pos._x+=4;
+			pos._y+=1;
+	        DrawString(pos._x,pos._y,"E",props) ;
 			break;
 		case VT_TABLE: //under phrase
 			pos._x+=2;

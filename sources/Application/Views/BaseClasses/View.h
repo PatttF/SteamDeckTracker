@@ -37,6 +37,7 @@ enum ViewType {
     VT_PHRASE,
     VT_PROJECT,
     VT_INSTRUMENT,
+    VT_EFFECT,   // LV2 effects page (right of instrument)
     VT_TABLE,  // Table screen under phrase
     VT_TABLE2, // Table screen under instrument
     VT_GROOVE,

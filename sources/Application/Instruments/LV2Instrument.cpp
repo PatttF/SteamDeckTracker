@@ -34,7 +34,7 @@
 static std::map<std::string, LV2_URID> g_uridMap;
 static LV2_URID g_nextUrid = 1;
 
-static LV2_URID urid_map(LV2_URID_Map_Handle handle, const char* uri) {
+LV2_URID urid_map(LV2_URID_Map_Handle handle, const char* uri) {
     auto it = g_uridMap.find(uri);
     if (it != g_uridMap.end()) {
         return it->second;
@@ -44,7 +44,7 @@ static LV2_URID urid_map(LV2_URID_Map_Handle handle, const char* uri) {
     return urid;
 }
 
-static const char* urid_unmap(LV2_URID_Unmap_Handle handle, LV2_URID urid) {
+const char* urid_unmap(LV2_URID_Unmap_Handle handle, LV2_URID urid) {
     for (auto& pair : g_uridMap) {
         if (pair.second == urid) {
             return pair.first.c_str();
@@ -54,24 +54,24 @@ static const char* urid_unmap(LV2_URID_Unmap_Handle handle, LV2_URID urid) {
 }
 
 // LV2 features
-static LV2_URID_Map g_uridMapFeature = { nullptr, urid_map };
-static LV2_URID_Unmap g_uridUnmapFeature = { nullptr, urid_unmap };
+LV2_URID_Map g_uridMapFeature = { nullptr, urid_map };
+LV2_URID_Unmap g_uridUnmapFeature = { nullptr, urid_unmap };
 
-static LV2_Feature g_mapFeature = { LV2_URID__map, &g_uridMapFeature };
-static LV2_Feature g_unmapFeature = { LV2_URID__unmap, &g_uridUnmapFeature };
+LV2_Feature g_mapFeature = { LV2_URID__map, &g_uridMapFeature };
+LV2_Feature g_unmapFeature = { LV2_URID__unmap, &g_uridUnmapFeature };
 
 // Minimal options array (zero-terminated) for LV2_OPTIONS__options feature
 // We'll provide explicit entries for min, nominal and max block lengths plus a zero terminator.
 static uint32_t s_minBlock = 64u;
 static uint32_t s_nominalBlock = 1024u;
 static uint32_t s_maxBlock = 131072u;
-static LV2_Options_Option g_optionsArray[4] = {
+LV2_Options_Option g_optionsArray[4] = {
     { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // max block length (filled at runtime)
     { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // nominal block length (filled at runtime)
     { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }, // min block length (filled at runtime)
     { (LV2_Options_Context)0, 0u, 0u, 0u, 0u, nullptr }  // zero terminator
 };
-static LV2_Feature g_optionsFeature = { LV2_OPTIONS__options, (void*)g_optionsArray };
+LV2_Feature g_optionsFeature = { LV2_OPTIONS__options, (void*)g_optionsArray };
 
 // LV2 Options interface implementation to respond to queries such as
 // "http://lv2plug.in/ns/ext/buf-size#maxBlockLength" made by plugins.
@@ -111,8 +111,8 @@ static uint32_t lv2_options_set(LV2_Handle instance, const LV2_Options_Option* o
     return LV2_OPTIONS_ERR_BAD_KEY;
 }
 
-static LV2_Options_Interface g_optionsInterface = { lv2_options_get, lv2_options_set };
-static LV2_Feature g_optionsInterfaceFeature = { LV2_OPTIONS__interface, &g_optionsInterface };
+LV2_Options_Interface g_optionsInterface = { lv2_options_get, lv2_options_set };
+LV2_Feature g_optionsInterfaceFeature = { LV2_OPTIONS__interface, &g_optionsInterface };
 
 // Fill the options array keys and types using the URID map. Call this before instantiating any plugin.
 static void init_options_array()
@@ -136,15 +136,15 @@ static void init_options_array()
 }
 // Minimal bounded block length data for LV2_BUF_SIZE__boundedBlockLength feature
 static uint32_t g_boundedBlockLength[2] = {64, 131072};
-static LV2_Feature g_boundedFeature = { LV2_BUF_SIZE__boundedBlockLength, &g_boundedBlockLength };
+LV2_Feature g_boundedFeature = { LV2_BUF_SIZE__boundedBlockLength, &g_boundedBlockLength };
 
 static const LV2_Feature* g_features[] = { &g_mapFeature, &g_unmapFeature, &g_optionsFeature, &g_optionsInterfaceFeature, &g_boundedFeature, nullptr };
 
 // Cached URIDs for performance
-static LV2_URID g_midiEventUrid = 0;
-static LV2_URID g_atomSequenceUrid = 0;
+LV2_URID g_midiEventUrid = 0;
+LV2_URID g_atomSequenceUrid = 0;
 
-static LV2_URID g_atomFloatUrid = 0;
+LV2_URID g_atomFloatUrid = 0;
 
 LV2Instrument::LV2Instrument() {
     strcpy(name_, "LV2");

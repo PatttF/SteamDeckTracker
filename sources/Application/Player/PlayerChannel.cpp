@@ -3,6 +3,7 @@
 #include "Application/Player/SyncMaster.h"
 #include "Application/Mixer/MixerService.h"
 #include "Application/Model/Mixer.h"
+#include "Application/Instruments/LV2Effect.h"
 
 PlayerChannel::PlayerChannel(int index) {             
     index_=index ;
@@ -10,6 +11,8 @@ PlayerChannel::PlayerChannel(int index) {
     muted_=false ;
 	mixBus_=0 ;
 	busIndex_=-1 ;
+	activeEffect_=nullptr ;
+	effectWetDry_=255 ;
 }
 
 PlayerChannel::~PlayerChannel() {
@@ -44,14 +47,23 @@ void PlayerChannel::StopInstrument() {
 
 bool PlayerChannel::Render(fixed *buffer,int samplecount) {
    I_Instrument *localInstr = 0;
+   LV2Effect *localEffect = nullptr;
+   int localWetDry = 255;
    {
        SysMutexLocker locker(startStopMutex_);
        localInstr = instr_;
+       localEffect = activeEffect_;
+       localWetDry = effectWetDry_;
    }
    if (localInstr) {
      bool tableSlice=SyncMaster::GetInstance()->TableSlice() ;
      bool status=localInstr->Render(index_,buffer,samplecount,tableSlice) ;
      bool result = ((status)&&(!muted_));
+
+     // Apply LV2 effect if active
+     if (result && localEffect && !localEffect->IsEmpty()) {
+         localEffect->ProcessAudio(buffer, samplecount, localWetDry);
+     }
      
      return result;
    } else {
@@ -91,4 +103,18 @@ void PlayerChannel::Reset() {
 	}
 	muted_=false ;
 	busIndex_=-1 ;
+	activeEffect_=nullptr ;
+	effectWetDry_=255 ;
 } ;
+
+void PlayerChannel::SetEffect(LV2Effect *effect, int wetDry) {
+    SysMutexLocker locker(startStopMutex_);
+    activeEffect_ = effect;
+    effectWetDry_ = wetDry;
+}
+
+void PlayerChannel::ClearEffect() {
+    SysMutexLocker locker(startStopMutex_);
+    activeEffect_ = nullptr;
+    effectWetDry_ = 255;
+}

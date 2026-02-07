@@ -158,6 +158,11 @@ bool PlayerMixer::IsChannelMuted(int channel) {
      return channel_[channel]->IsMuted() ;
 }
 
+PlayerChannel *PlayerMixer::GetChannel(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return nullptr;
+    return channel_[channel];
+}
+
 void PlayerMixer::StartStreaming(const Path &path) {
 	fileStreamer_.Start(path) ;
 } ;

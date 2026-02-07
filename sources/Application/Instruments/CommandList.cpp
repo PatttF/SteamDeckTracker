@@ -11,6 +11,7 @@ static FourCC _all[]= {
 	I_CMD_FCUT,
 	I_CMD_FLTR,
 	I_CMD_FRES,
+	I_CMD_FXSN,
 	I_CMD_GROV,
 	I_CMD_HOP,
 	I_CMD_IRTG,

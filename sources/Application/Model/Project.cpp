@@ -56,6 +56,7 @@ tempoNudge_(0)
 
 	song_=new Song() ;
 	instrumentBank_=new InstrumentBank() ;
+	effectBank_=new EffectBank() ;
 
 	// look if we can find a sav file
 
@@ -74,6 +75,7 @@ tempoNudge_(0)
 Project::~Project() {
 	delete song_ ;
 	delete instrumentBank_ ;
+	delete effectBank_ ;
 } ;
 
 int Project::GetScale() {
@@ -152,6 +154,14 @@ bool Project::Wrap() {
 
 InstrumentBank* Project::GetInstrumentBank() {
 	return instrumentBank_ ;
+} ;
+
+EffectBank* Project::GetEffectBank() {
+	return effectBank_ ;
+} ;
+
+LV2Effect* Project::GetEffect(int index) {
+	return effectBank_->GetEffect(index) ;
 } ;
 
 //bool Project::MidiEnabled() {

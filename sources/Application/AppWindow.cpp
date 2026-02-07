@@ -82,6 +82,7 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     _phraseView = 0;
     _projectView = 0;
     _instrumentView = 0;
+    _effectView = 0;
     _tableView = 0;
     _nullView = 0;
     _mixerView = 0;
@@ -405,6 +406,9 @@ void AppWindow::LoadProject(const Path &p) {
     _instrumentView = new InstrumentView((*this), _viewData);
     _instrumentView->AddObserver((*this));
 
+    _effectView = new EffectView((*this), _viewData);
+    _effectView->AddObserver((*this));
+
     _tableView = new TableView((*this), _viewData);
     _tableView->AddObserver((*this));
 
@@ -448,6 +452,7 @@ void AppWindow::CloseProject() {
     SAFE_DELETE(_phraseView);
     SAFE_DELETE(_projectView);
     SAFE_DELETE(_instrumentView);
+    SAFE_DELETE(_effectView);
     SAFE_DELETE(_tableView);
 
     UIController *controller = UIController::GetInstance();
@@ -586,6 +591,9 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
             break;
         case VT_INSTRUMENT:
             _currentView = _instrumentView;
+            break;
+        case VT_EFFECT:
+            _currentView = _effectView;
             break;
         case VT_TABLE:
             _currentView = _tableView;

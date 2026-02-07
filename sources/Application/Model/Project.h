@@ -3,6 +3,7 @@
 
 #include "Song.h"
 #include "Application/Instruments/InstrumentBank.h"
+#include "Application/Instruments/EffectBank.h"
 #include "Application/Persistency/Persistent.h"
 #include "Foundation/Variables/VariableContainer.h"
 #include "Foundation/Types/Types.h"
@@ -52,6 +53,8 @@ public:
   virtual void Update(Observable &o, I_ObservableData *d);
 
   InstrumentBank *GetInstrumentBank();
+  EffectBank *GetEffectBank();
+  LV2Effect *GetEffect(int index);
   virtual void SaveContent(TiXmlNode *node);
   virtual void RestoreContent(TiXmlElement *element);
 
@@ -62,6 +65,7 @@ protected:
 
 private:
   InstrumentBank *instrumentBank_;
+  EffectBank *effectBank_;
   char **midiDeviceList_;
   int midiDeviceListSize_;
   int tempoNudge_;
