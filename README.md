@@ -13,6 +13,12 @@ Key Enhancements:
 
     Plugin Integration: Support for LV2 plugins, allowing for professional-grade synthesis and effects within the tracker environment. This will be a per plugin process so bare with me while I work through it.
 
+    LV2 Effects: A dedicated Effects page (to the right of the Instrument page, accessed via the 'E' legend shortcut) provides 16 effect slots for loading LV2 audio effect plugins. Effects are applied to channels using the FXSN command on the Phrase or Table pages.
+
+        FXSN aabb — aa = effect slot (0-F), bb = wet/dry mix (00-FF)
+
+    Effects support full parameter editing with real value display and scale point labels. Effect configurations are saved and restored with the project.
+
     Automated Workspace: On first launch, the software generates a streamlined directory structure in the user's Documents/SDTracker folder for easy management. After that use the options in the Projects page to install the factory samples as well as my Mutated Instruments plugin.
 
 
