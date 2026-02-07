@@ -167,7 +167,6 @@ LV2Instrument::LV2Instrument() {
     midiBufferSize_ = 0;
     isActivated_ = false;
     forcedOutputChannels_ = 0; // default to automatic
-    diagRenderCounter_ = 0;
 
     // Initialize options array entries so plugins can read block-size options
     init_options_array();
@@ -274,7 +273,7 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
     noteOn.size = 3;
     pendingMidiEvents_.push_back(noteOn);
 
-    Trace::Error("LV2Instrument: Start() queued note-on ch=%d note=%d vel=100 pending=%zu", channel, (int)note, pendingMidiEvents_.size());
+    Trace::Debug("LV2Instrument: Start() queued note-on ch=%d note=%d vel=100 pending=%zu", channel, (int)note, pendingMidiEvents_.size());
 
     return true;
 }
@@ -335,10 +334,13 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         lilv_instance_activate(instance);
         isActivated_ = true;
 
-        // Send default values for ALL parameters to the now-active plugin.
-        // For control ports: write defaults into portControlStorage_ (the plugin
-        // reads these directly). For resource-backed params: queue patch:Set atoms
-        // so the plugin receives initial values on this render pass.
+        // Send default values for control ports to the now-active plugin.
+        // Control ports: write defaults into portControlStorage_ (the plugin
+        // reads these directly).
+        // NOTE: Do NOT send patch:Set atom messages during activation — sending
+        // hundreds of patch:Set defaults floods the atom buffer and can prevent
+        // the plugin from processing MIDI note-on events on the first render.
+        // The plugin's own instantiation should have set up sensible defaults.
         for (size_t pi = 0; pi < parameters_.size(); ++pi) {
             int pidx = parameters_[pi].portIndex;
             if (pidx >= 0 && !parameters_[pi].isAtomPort) {
@@ -346,12 +348,9 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
                 if (pidx < (int)portControlStorage_.size()) {
                     portControlStorage_[pidx] = parameters_[pi].currentValue;
                 }
-            } else if (!parameters_[pi].resourceURI.empty()) {
-                // Resource-backed parameter: queue a patch:Set with the default value
-                SetParameterValue((int)pi, parameters_[pi].currentValue);
             }
         }
-        Trace::Debug("LV2Instrument: Activated plugin and sent %zu parameter defaults", parameters_.size());
+        Trace::Debug("LV2Instrument: Activated plugin and sent %zu control port defaults", parameters_.size());
     }
 
     // Clear input buffers (no audio input for synths)
@@ -437,7 +436,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             size_t padded_size = sizeof(LV2_Atom_Event) + ((evt.size + 7) & ~7);
             offset += padded_size;
             
-            Trace::Error("LV2Instrument: Wrote MIDI evt[%zu] status=0x%02X data1=%d data2=%d to midiBuffer_ offset=%zu midiEventUrid=%u",
+            Trace::Debug("LV2Instrument: Wrote MIDI evt[%zu] status=0x%02X data1=%d data2=%d to midiBuffer_ offset=%zu midiEventUrid=%u",
                 i, evt.data[0], evt.data[1], evt.data[2], offset, g_midiEventUrid);
         }
         pendingMidiEvents_.clear();
@@ -552,45 +551,6 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
     LilvInstance* instance = (LilvInstance*)pluginInstance_;
 
     lilv_instance_run(instance, size);
-
-    // DIAGNOSTIC: check if plugin produced non-zero audio
-    {
-        // Use instance counter, not static (avoid sharing across instruments)
-        diagRenderCounter_++;
-        int diagCounter = diagRenderCounter_;
-        if (diagCounter <= 50) { // only log first 50 render calls per instrument
-            float maxL = 0.0f, maxR = 0.0f;
-            for (int di = 0; di < size; ++di) {
-                float al = audioBufferL_[di] < 0 ? -audioBufferL_[di] : audioBufferL_[di];
-                float ar = audioBufferR_[di] < 0 ? -audioBufferR_[di] : audioBufferR_[di];
-                if (al > maxL) maxL = al;
-                if (ar > maxR) maxR = ar;
-            }
-            // Also check the actual portControlStorage values for Enabled
-            float enabledVal = -1.0f;
-            if (portControlStorage_.size() > 12) enabledVal = portControlStorage_[12];
-            float latencyVal = -1.0f;
-            if (portControlStorage_.size() > 10) latencyVal = portControlStorage_[10];
-            Trace::Error("LV2Instrument: Render[%d] uri=%s size=%d maxL=%.6f maxR=%.6f vol=%.2f pendMidi=%zu enabled=%.1f latency=%.0f",
-                diagCounter, pluginURI_, size, maxL, maxR,
-                FindVariable(LV2IP_VOLUME) ? (FindVariable(LV2IP_VOLUME)->GetInt() / 255.0f) : 1.0f,
-                pendingMidiEvents_.size(), enabledVal, latencyVal);
-            // Also log the audio dummy buffer to see if extra outputs wrote there
-            if (audioDummyBuffer_) {
-                float maxD = 0.0f;
-                for (int di = 0; di < size; ++di) {
-                    float ad = audioDummyBuffer_[di] < 0 ? -audioDummyBuffer_[di] : audioDummyBuffer_[di];
-                    if (ad > maxD) maxD = ad;
-                }
-                Trace::Error("LV2Instrument: Render[%d] dummyMax=%.6f", diagCounter, maxD);
-            }
-            // Check raw samples at start
-            Trace::Error("LV2Instrument: Render[%d] L[0..3]=%.8f %.8f %.8f %.8f R[0..3]=%.8f %.8f %.8f %.8f",
-                diagCounter,
-                audioBufferL_[0], audioBufferL_[1], audioBufferL_[2], audioBufferL_[3],
-                audioBufferR_[0], audioBufferR_[1], audioBufferR_[2], audioBufferR_[3]);
-        }
-    }
 
     // Convert float output to fixed point stereo interleaved
     // Apply volume control
@@ -841,15 +801,12 @@ void LV2Instrument::SetPlugin(const char *uri) {
             }
         }
 
-        // Initialize resource-backed parameters by sending their default via patch:Set
-        int initialized = 0;
-        for (size_t pi = 0; pi < parameters_.size(); ++pi) {
-            if (parameters_[pi].portIndex < 0 && !parameters_[pi].resourceURI.empty()) {
-                SetParameterValue((int)pi, parameters_[pi].currentValue);
-                initialized++;
-            }
-        }
-        Trace::Debug("LV2Instrument: Sent initial patch:Set for %d resource params", initialized);
+        // NOTE: We intentionally do NOT send patch:Set atom messages for
+        // resource-backed parameters here. The plugin's own instantiation sets
+        // up sensible defaults, and flooding the atom buffer with hundreds of
+        // patch:Set messages before the first render can prevent the plugin
+        // from processing MIDI events.
+        Trace::Debug("LV2Instrument: Plugin loaded with %zu parameters (defaults from plugin's own init)", parameters_.size());
 
 
         // Update the 'plugin' Variable so the value is saved with the project
@@ -1018,7 +975,7 @@ void LV2Instrument::loadPlugin() {
     }
 
     pluginInstance_ = instance;
-    Trace::Error("LV2Instrument: Successfully instantiated plugin with FULL features: %s", pluginURI_);
+    Trace::Debug("LV2Instrument: Successfully instantiated plugin with FULL features: %s", pluginURI_);
 }
 
 void LV2Instrument::discoverParameters() {
@@ -1432,10 +1389,17 @@ void LV2Instrument::discoverParameters() {
         }
     }
 
-    // Push initial parameter values into connected ports/atom buffers so plugins receive default state
+    // Push initial parameter values into control port storage so the plugin
+    // sees correct defaults. Do NOT queue patch:Set atom events here — those
+    // would be sent on the first render and flood the atom buffer, potentially
+    // preventing the plugin from processing MIDI events.
     for (size_t pi = 0; pi < parameters_.size(); ++pi) {
-        float v = parameters_[pi].currentValue;
-        SetParameterValue((int)pi, v);
+        int pidx = parameters_[pi].portIndex;
+        if (pidx >= 0 && !parameters_[pi].isAtomPort) {
+            if (pidx < (int)portControlStorage_.size()) {
+                portControlStorage_[pidx] = parameters_[pi].currentValue;
+            }
+        }
     }
 }
 
@@ -1495,15 +1459,15 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 // Connect plugin audio output ports to our audio output buffers
                 if ((int)i == audioOutputPortL_ && audioBufferL_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferL_);
-                    Trace::Error("LV2Instrument: Connected audio output L port %u -> audioBufferL_=%p", i, (void*)audioBufferL_);
+                    Trace::Debug("LV2Instrument: Connected audio output L port %u -> audioBufferL_=%p", i, (void*)audioBufferL_);
                 } else if ((int)i == audioOutputPortR_ && audioBufferR_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferR_);
-                    Trace::Error("LV2Instrument: Connected audio output R port %u -> audioBufferR_=%p", i, (void*)audioBufferR_);
+                    Trace::Debug("LV2Instrument: Connected audio output R port %u -> audioBufferR_=%p", i, (void*)audioBufferR_);
                 } else {
                     // Connect extra audio outputs to a separate dummy buffer so they
                     // don't overwrite the real L/R output data.
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioDummyBuffer_ ? audioDummyBuffer_ : (void*)nullptr);
-                    Trace::Error("LV2Instrument: Connected audio output (DUMMY) port %u -> audioDummyBuffer_=%p", i, (void*)audioDummyBuffer_);
+                    Trace::Debug("LV2Instrument: Connected audio output (DUMMY) port %u -> audioDummyBuffer_=%p", i, (void*)audioDummyBuffer_);
                 }
             }
             continue;
@@ -1522,12 +1486,12 @@ void LV2Instrument::connectPorts(int bufferSize) {
         if (lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, atom_class)) {
             bool isAtomInput = lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, input_class);
             bool isAtomOutput = lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, output_class);
-            Trace::Error("LV2Instrument: Connecting atom port %u (input=%d output=%d)", i, isAtomInput, isAtomOutput);
+            Trace::Debug("LV2Instrument: Connecting atom port %u (input=%d output=%d)", i, isAtomInput, isAtomOutput);
 
             // MIDI input port uses preallocated midiBuffer_
             if ((int)i == midiInputPort_ && midiBuffer_) {
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, midiBuffer_);
-                Trace::Error("LV2Instrument: Connected MIDI input port %u", i);
+                Trace::Debug("LV2Instrument: Connected MIDI input port %u", i);
                 continue;
             }
 
@@ -1551,7 +1515,7 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 seq->body.unit = 0;
                 seq->body.pad = 0;
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomOutputBuffers_[i]);
-                Trace::Error("LV2Instrument: Connected atom OUTPUT port %u size=%zu", i, bufSize);
+                Trace::Debug("LV2Instrument: Connected atom OUTPUT port %u size=%zu", i, bufSize);
             } else {
                 // Atom INPUT port (non-MIDI): allocate and connect
                 if (atomInputBuffers_[i]) {
@@ -1563,7 +1527,7 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 memset(atomInputBuffers_[i], 0, bufSize);
                 atomInputBufferSizes_[i] = bufSize;
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomInputBuffers_[i]);
-                Trace::Error("LV2Instrument: Connected atom INPUT port %u size=%zu", i, bufSize);
+                Trace::Debug("LV2Instrument: Connected atom INPUT port %u size=%zu", i, bufSize);
             }
             continue; 
         }
@@ -1577,19 +1541,12 @@ void LV2Instrument::connectPorts(int bufferSize) {
         int pidx = parameters_[pi].portIndex;
         if (pidx >= 0 && pidx < (int)portControlStorage_.size() && !parameters_[pi].isAtomPort) {
             portControlStorage_[pidx] = parameters_[pi].currentValue;
-            Trace::Error("LV2Instrument: connectPorts default param[%zu] port=%d name=%s value=%.4f", pi, pidx, parameters_[pi].name.c_str(), parameters_[pi].currentValue);
+            Trace::Debug("LV2Instrument: connectPorts default param[%zu] port=%d name=%s value=%.4f", pi, pidx, parameters_[pi].name.c_str(), parameters_[pi].currentValue);
         }
     }
 
-    // DIAGNOSTIC: dump port connection summary
-    Trace::Error("LV2Instrument: connectPorts summary: audioOutL=%d audioOutR=%d audioInL=%d audioInR=%d midiIn=%d",
+    Trace::Debug("LV2Instrument: connectPorts summary: audioOutL=%d audioOutR=%d audioInL=%d audioInR=%d midiIn=%d",
         audioOutputPortL_, audioOutputPortR_, audioInputPortL_, audioInputPortR_, midiInputPort_);
-    Trace::Error("LV2Instrument: connectPorts buffers: audioBufferL_=%p audioBufferR_=%p audioDummy=%p",
-        (void*)audioBufferL_, (void*)audioBufferR_, (void*)audioDummyBuffer_);
-    Trace::Error("LV2Instrument: portControlStorage size=%zu", portControlStorage_.size());
-    for (size_t i = 0; i < portControlStorage_.size(); ++i) {
-        Trace::Error("LV2Instrument: portControlStorage_[%zu] = %.4f", i, portControlStorage_[i]);
-    }
 
     // Free temporary nodes
     lilv_node_free(audio_class);

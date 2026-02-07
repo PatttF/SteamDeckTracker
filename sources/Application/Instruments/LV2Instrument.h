@@ -162,7 +162,6 @@ private:
         int destPortIndex; // destination port index this atom event should be written to
     };
     std::vector<PendingAtomEvent> pendingAtomEvents_;    
-    int diagRenderCounter_; // Per-instance render counter for diagnostics
     // Helper methods
     void discoverParameters();
     void loadPlugin();
