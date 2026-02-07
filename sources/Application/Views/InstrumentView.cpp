@@ -460,24 +460,30 @@ void InstrumentView::fillLV2Parameters() {
 					bigStep
 				);
 				T_SimpleList<UIField>::Insert(pfield);
-				
-				row++;
-				if (row >= MAX_ROWS) {
-					row = 0;
-					col++;
-					if (col >= 2) break;  // Only two columns
-				}
-			}
-			
-			// Move position down past the parameter grid
-			position._y = baseY + MAX_ROWS + 1;
-		}
-	} else {
-		position._y += 2;
-	}
 
-	// Footer controls - stacked vertically since LV2 has no note blocks
-	Variable *v=instrument->FindVariable(LV2IP_VOLUME) ;
+                // Diagnostic: log whether this variable is a WatchedVariable and its id
+                WatchedVariable *wv_check = dynamic_cast<WatchedVariable*>(param->variable);
+                Trace::Debug("InstrumentView: param field created idx=%d name=%s varIsWatched=%d varID=%u", p, param->name.c_str(), wv_check ? 1 : 0, param->variable->GetID());
+
+                // Advance row / column cursor for two-column layout
+                row++;
+                if (row >= MAX_ROWS) {
+                    row = 0;
+                    col++;
+                    if (col >= 2) break;  // Only two columns
+                }
+            }
+
+            // Move position down past the parameter grid
+                position._y = baseY + MAX_ROWS + 1;
+            }
+        } else {
+            // No plugin loaded: leave a small gap
+            position._y += 2;
+        }
+
+    // Footer controls - stacked vertically since LV2 has no note blocks
+    Variable *v=instrument->FindVariable(LV2IP_VOLUME) ;
 	UIIntVarField* f1=new UIIntVarField(position,*v,"volume: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 	f1->SetFocus() ;

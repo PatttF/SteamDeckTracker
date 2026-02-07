@@ -87,13 +87,15 @@ void UIIntVarField::ProcessArrow(unsigned short mask) {
 		value=max_ ;
 	}
 	
-	src_.SetInt(value) ;
-} ;
-
-FourCC UIIntVarField::GetVariableID() {
-    return src_.GetID() ;
+    // Diagnostic: log UI-originated variable changes so we can trace notifications
+    Trace::Debug("UIIntVarField: ProcessArrow varID=%u name=%s newValue=%d", src_.GetID(), src_.GetName(), value);
+    src_.SetInt(value) ;
 } ;
 
 Variable &UIIntVarField::GetVariable() {
 	return src_ ;
+} ;
+
+FourCC UIIntVarField::GetVariableID() {
+    return src_.GetID();
 } ;

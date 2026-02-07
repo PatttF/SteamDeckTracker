@@ -1,0 +1,13 @@
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<http://example.org/atom-logger>
+    a lv2:Plugin ;
+    rdfs:label "Atom Logger" ;
+    lv2:binary "atom-logger.so" ;
+    lv2:port [
+        a lv2:InputPort, atom:Atom ;
+        lv2:symbol "in" ;
+        rdfs:label "Atom Input"
+    ] .
