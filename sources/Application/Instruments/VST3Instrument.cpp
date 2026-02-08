@@ -19,6 +19,7 @@
 #include "Services/Audio/Audio.h"
 #include "System/Console/Trace.h"
 #include "Foundation/Variables/WatchedVariable.h"
+#include "OsTIrusPatches.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -903,8 +904,14 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
             float volMul = 1.0f + sine * depth;
             if (volMul < 0.0f) volMul = 0.0f;
             fixed mul = fl2fp(volMul);
-            buffer[i * 2]     = fp_mul(buffer[i * 2], mul);
-            buffer[i * 2 + 1] = fp_mul(buffer[i * 2 + 1], mul);
+            fixed tl = fp_mul(buffer[i * 2], mul);
+            fixed tr = fp_mul(buffer[i * 2 + 1], mul);
+            if (tl > i2fp(32767)) tl = i2fp(32767);
+            else if (tl < i2fp(-32768)) tl = i2fp(-32768);
+            if (tr > i2fp(32767)) tr = i2fp(32767);
+            else if (tr < i2fp(-32768)) tr = i2fp(-32768);
+            buffer[i * 2]     = tl;
+            buffer[i * 2 + 1] = tr;
             phase += speed;
             if (phase >= 256.0f) phase -= 256.0f;
         }
@@ -952,8 +959,14 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
             fixed fbL = fp_mul(dampStateL, decay);
             fixed fbR = fp_mul(dampStateR, decay);
 
-            reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
-            reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
+            fixed rbL = fp_add(fp_mul(dryL, send), fbL);
+            fixed rbR = fp_add(fp_mul(dryR, send), fbR);
+            if (rbL > i2fp(32767)) rbL = i2fp(32767);
+            else if (rbL < i2fp(-32768)) rbL = i2fp(-32768);
+            if (rbR > i2fp(32767)) rbR = i2fp(32767);
+            else if (rbR < i2fp(-32768)) rbR = i2fp(-32768);
+            reverbBuf[reverbPos * 2] = rbL;
+            reverbBuf[reverbPos * 2 + 1] = rbR;
 
             fixed mixL = fp_add(dryL, wetL);
             fixed mixR = fp_add(dryR, wetR);
@@ -1560,8 +1573,13 @@ void VST3Instrument::discoverPresets() {
         discoverPresetFiles();
     }
 
-    // If file-based scanning also didn't find anything, try patchmanager cache
+    // If file-based scanning also didn't find anything, try hardcoded ROM presets
     if (!usingFilePresets_ && !hasUsefulPresets) {
+        discoverHardcodedPresets();
+    }
+
+    // If no hardcoded presets either, try patchmanager cache (other gearmulator)
+    if (!usingFilePresets_ && !usingMidiPresets_ && !hasUsefulPresets) {
         discoverPatchManagerPresets();
     }
 }
@@ -1714,6 +1732,33 @@ void VST3Instrument::discoverPresetFiles() {
         Trace::Log("VST3", "  Bank '%s': %d presets",
             programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
     }
+}
+
+// ====================================================================
+// discoverHardcodedPresets: use built-in ROM patch names for OsTIrus
+// ====================================================================
+void VST3Instrument::discoverHardcodedPresets() {
+    if (strstr(name_, "OsTIrus") == nullptr) return;
+
+    Trace::Log("VST3", "Using hardcoded ROM presets for OsTIrus");
+
+    programLists_.clear();
+    for (int b = 0; b < OSTIRUS_BANK_COUNT; b++) {
+        VST3ProgramList pl;
+        pl.listId = b;
+        pl.name = ostirusBankNames[b];
+        for (int p = 0; p < OSTIRUS_PATCHES_PER_BANK; p++) {
+            pl.programs.push_back(ostirusPatchNames[b][p]);
+        }
+        programLists_.push_back(pl);
+    }
+
+    usingMidiPresets_ = true;
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    Trace::Log("VST3", "Hardcoded presets: %d banks x %d patches",
+        OSTIRUS_BANK_COUNT, OSTIRUS_PATCHES_PER_BANK);
 }
 
 // ====================================================================
@@ -2039,6 +2084,157 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
     Trace::Log("VST3", "Loaded preset from file: %s (%ld bytes, skipped %d)",
         filePath.c_str(), dataSize, headerSkipBytes);
     return true;
+}
+
+// ====================================================================
+// savePresetToFile: save current plugin state to a native preset file
+// ====================================================================
+bool VST3Instrument::savePresetToFile(const std::string &filePath) {
+    if (!component_) {
+        Trace::Error("VST3: Cannot save preset – plugin not loaded");
+        return false;
+    }
+
+    // Find the mapping for this plugin
+    const VST3PluginPresetMapping *mapping = nullptr;
+    for (int i = 0; knownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, knownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &knownPresetMappings[i];
+            break;
+        }
+    }
+    if (!mapping) {
+        Trace::Error("VST3: No preset mapping for '%s' – cannot save", name_);
+        return false;
+    }
+
+    // Get the raw state from IComponent::getState()
+    IComponent *comp = (IComponent *)component_;
+    SimpleMemoryStream stream;
+    tresult res = comp->getState(&stream);
+    if (res != kResultOk || stream.size() == 0) {
+        Trace::Error("VST3: getState failed or returned empty state");
+        return false;
+    }
+
+    const uint8_t *rawData = stream.data();
+    size_t rawSize = stream.size();
+
+    Trace::Log("VST3", "Got %d bytes of raw state data for save", (int)rawSize);
+
+    // Write the file
+    int fd = open(filePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        Trace::Error("VST3: Cannot create preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    // For Surge XT, prepend a 60-byte FXP header
+    if (mapping->headerSkipBytes > 0) {
+        uint8_t fxpHeader[60];
+        memset(fxpHeader, 0, 60);
+
+        // FXP magic: "CcnK"
+        fxpHeader[0] = 'C'; fxpHeader[1] = 'c'; fxpHeader[2] = 'n'; fxpHeader[3] = 'K';
+
+        // byteSize: total file size - 8 (big-endian 32-bit)
+        uint32_t byteSize = (uint32_t)(60 - 8 + rawSize);
+        fxpHeader[4] = (byteSize >> 24) & 0xFF;
+        fxpHeader[5] = (byteSize >> 16) & 0xFF;
+        fxpHeader[6] = (byteSize >> 8) & 0xFF;
+        fxpHeader[7] = byteSize & 0xFF;
+
+        // fxMagic: "FPCh" for opaque chunk
+        fxpHeader[8] = 'F'; fxpHeader[9] = 'P'; fxpHeader[10] = 'C'; fxpHeader[11] = 'h';
+
+        // version: 1
+        fxpHeader[15] = 1;
+
+        // fxID: "csST" for Surge XT
+        fxpHeader[16] = 'c'; fxpHeader[17] = 's'; fxpHeader[18] = 'S'; fxpHeader[19] = 'T';
+
+        // fxVersion: 1
+        fxpHeader[23] = 1;
+
+        // prgName: extract from file path
+        std::string fname = filePath;
+        size_t slashPos = fname.rfind('/');
+        if (slashPos != std::string::npos) fname = fname.substr(slashPos + 1);
+        size_t dotPos = fname.rfind('.');
+        if (dotPos != std::string::npos) fname = fname.substr(0, dotPos);
+        strncpy((char *)&fxpHeader[28], fname.c_str(), 27);
+        fxpHeader[55] = 0;
+
+        // chunkSize at offset 56
+        uint32_t chunkSize = (uint32_t)rawSize;
+        fxpHeader[56] = (chunkSize >> 24) & 0xFF;
+        fxpHeader[57] = (chunkSize >> 16) & 0xFF;
+        fxpHeader[58] = (chunkSize >> 8) & 0xFF;
+        fxpHeader[59] = chunkSize & 0xFF;
+
+        ssize_t w = write(fd, fxpHeader, 60);
+        (void)w;
+    }
+
+    // Write the raw state data
+    ssize_t w = write(fd, rawData, rawSize);
+    (void)w;
+    close(fd);
+
+    Trace::Log("VST3", "Saved preset to: %s (%d bytes + %d header)",
+        filePath.c_str(), (int)rawSize, mapping->headerSkipBytes);
+    return true;
+}
+
+// ====================================================================
+// getCurrentBankDirectory: get directory path for the current bank
+// ====================================================================
+std::string VST3Instrument::getCurrentBankDirectory() const {
+    if (!usingFilePresets_) return "";
+    if (currentBank_ < 0 || currentBank_ >= (int)filePresetsByBank_.size()) return "";
+    if (filePresetsByBank_[currentBank_].empty()) return "";
+
+    const std::string &path = filePresetsByBank_[currentBank_][0].filePath;
+    size_t slashPos = path.rfind('/');
+    if (slashPos != std::string::npos) {
+        return path.substr(0, slashPos);
+    }
+    return "";
+}
+
+// ====================================================================
+// getPresetExtension: get native file extension for this plugin
+// ====================================================================
+const char *VST3Instrument::getPresetExtension() const {
+    for (int i = 0; knownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, knownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            return knownPresetMappings[i].extension;
+        }
+    }
+    return nullptr;
+}
+
+// ====================================================================
+// canSavePreset: check if preset saving is supported for this plugin
+// ====================================================================
+bool VST3Instrument::canSavePreset() const {
+    if (!usingFilePresets_ || !component_) return false;
+    return getPresetExtension() != nullptr;
+}
+
+// ====================================================================
+// refreshPresets: re-scan preset files and update lists
+// ====================================================================
+void VST3Instrument::refreshPresets() {
+    int savedBank = currentBank_;
+    discoverPresetFiles();
+    if (savedBank >= 0 && savedBank < (int)programLists_.size()) {
+        currentBank_ = savedBank;
+    }
+    int count = GetPresetCountForBank(currentBank_);
+    if (count > 0) {
+        currentPreset_ = count - 1;
+    }
 }
 
 // ====================================================================

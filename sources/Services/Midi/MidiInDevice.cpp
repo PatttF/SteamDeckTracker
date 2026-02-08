@@ -233,10 +233,11 @@ void MidiInDevice::treatChannelEvent(MidiMessage &event) {
       MidiChannel* channel = pbChannel_[midiChannel];
 			if (channel)
       {
-				channel->SetValue((event.data2_*0x7F+event.data1_)/float(0x3F80)) ;
+				channel->SetValue((event.data2_*0x80+event.data1_)/float(0x3FFF)) ;
         channel->Trigger();
 			} ;
 		}
+		break ;
 		case 0xF0: // Midi clock
 			break ;
 		default:
@@ -379,16 +380,14 @@ Channel *MidiInDevice::GetChannel(const char *sourcePath) {
 		channel=*catChannel ;
 	} ;
 	if (type=="pc") {
-		if (*catChannel==0) {
-			*catChannel=new MidiChannel(sourcePath) ;
+		if (*pcChannel==0) {
+			*pcChannel=new MidiChannel(sourcePath) ;
 		};
 		channel=*pcChannel ;
 	} ;
 	if (type=="activity") {
-		if (*activityChannel==0) {
-			*activityChannel=new MidiChannel(sourcePath) ;
-		};
-		channel=*activityChannel ;
+		// activity channel not yet implemented
+		channel=0 ;
 	} ;
 	return channel ; ;
 } ;

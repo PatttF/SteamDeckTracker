@@ -20,6 +20,7 @@
 #include "ModalDialogs/ImportVST3Dialog.h"
 #include "BaseClasses/UIVST3ParameterField.h"
 #include "ModalDialogs/MessageBox.h"
+#include "ModalDialogs/SavePresetDialog.h"
 #include "System/System/System.h"
 #include "System/Console/Trace.h"
 #include "Application/Player/Player.h"
@@ -30,6 +31,7 @@
 #define ACTION_LOAD_LV2 MAKE_FOURCC('L','V','2','L')
 #define ACTION_LOAD_SF2 MAKE_FOURCC('S','F','2','L')
 #define ACTION_LOAD_VST3 MAKE_FOURCC('V','3','L','D')
+#define ACTION_SAVE_PRESET MAKE_FOURCC('P','S','A','V')
 
 // Callback for LV2 plugin selection dialog
 static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
@@ -49,6 +51,16 @@ static void VST3PluginSelectCallback(View &v, ModalView &dialog) {
 	iv.OnVST3PluginSelected();
 }
 
+// Callback for save preset dialog
+static void SavePresetCallback(View &v, ModalView &dialog) {
+	SavePresetDialog &spd = (SavePresetDialog &)dialog;
+	std::string name = spd.GetName();
+	if (name.empty()) return;
+
+	InstrumentView &iv = (InstrumentView &)v;
+	iv.OnSavePreset(name);
+}
+
 InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
 	project_=data->project_ ;
@@ -58,8 +70,10 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	pendingTypeInstrumentIdx_ = -1;
 	pendingType_ = IT_SAMPLE;
 	lv2LoadField_ = nullptr;
+	lv2SaveField_ = nullptr;
 	sf2LoadField_ = nullptr;
 	vst3LoadField_ = nullptr;
+	vst3SaveField_ = nullptr;
 	vst3ScrollOffset_ = 0;
 	// Initialize lastType_ to mirror instrument types
 	for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
@@ -372,6 +386,8 @@ void InstrumentView::fillMidiParameters() {
 
 void InstrumentView::fillLV2Parameters() {
 
+	lv2SaveField_ = nullptr;
+
 	int i=viewData_->currentInstrument_ ;
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	I_Instrument *instr=bank->GetInstrument(i) ;
@@ -489,6 +505,15 @@ void InstrumentView::fillLV2Parameters() {
 		UIStaticField *sf = new UIStaticField(position, lv2PresetLabel_);
 		T_SimpleList<UIField>::Insert(sf);
 		position._y += 1;
+
+		// Show save preset action if supported
+		if (instrument->canSavePreset()) {
+			UIActionField *savAf = new UIActionField("save preset", ACTION_SAVE_PRESET, position);
+			T_SimpleList<UIField>::Insert(savAf);
+			savAf->AddObserver(*this);
+			lv2SaveField_ = savAf;
+			position._y += 1;
+		}
 	}
 
 	// Show parameters if plugin is loaded
@@ -722,6 +747,8 @@ void InstrumentView::fillSoundFontParameters() {
 
 void InstrumentView::fillVST3Parameters() {
 
+	vst3SaveField_ = nullptr;
+
 	int i=viewData_->currentInstrument_ ;
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	I_Instrument *instr=bank->GetInstrument(i) ;
@@ -835,6 +862,15 @@ void InstrumentView::fillVST3Parameters() {
 		UIStaticField *sf = new UIStaticField(position, vst3PresetLabel_);
 		T_SimpleList<UIField>::Insert(sf);
 		position._y += 1;
+
+		// Show save preset action if supported
+		if (instrument->canSavePreset()) {
+			UIActionField *savAf = new UIActionField("save preset", ACTION_SAVE_PRESET, position);
+			T_SimpleList<UIField>::Insert(savAf);
+			savAf->AddObserver(*this);
+			vst3SaveField_ = savAf;
+			position._y += 1;
+		}
 	}
 
 	// Show parameters if plugin is loaded
@@ -946,6 +982,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 				}
 				return;
 			}
+			if (focusField == lv2SaveField_) {
+				InstrumentType it = getInstrumentType();
+				if (it == IT_LV2) {
+					SavePresetDialog *dialog = new SavePresetDialog(*this);
+					DoModal(dialog, SavePresetCallback);
+				}
+				return;
+			}
 			if (focusField == sf2LoadField_) {
 				InstrumentType it = getInstrumentType();
 				if (it == IT_SOUNDFONT) {
@@ -959,6 +1003,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 				if (it == IT_VST3) {
 					ImportVST3Dialog *dialog = new ImportVST3Dialog(*this);
 					DoModal(dialog, VST3PluginSelectCallback);
+				}
+				return;
+			}
+			if (focusField == vst3SaveField_) {
+				InstrumentType it = getInstrumentType();
+				if (it == IT_VST3) {
+					SavePresetDialog *dialog = new SavePresetDialog(*this);
+					DoModal(dialog, SavePresetCallback);
 				}
 				return;
 			}
@@ -1267,6 +1319,59 @@ void InstrumentView::OnVST3PluginSelected() {
 	isDirty_ = true;
 }
 
+void InstrumentView::OnSavePreset(const std::string &name) {
+	int i = viewData_->currentInstrument_;
+	InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+	I_Instrument *instr = bank->GetInstrument(i);
+	if (!instr) return;
+
+	std::string dir;
+	const char *ext = nullptr;
+	bool saved = false;
+
+	if (instr->GetType() == IT_LV2) {
+		LV2Instrument *lv2 = (LV2Instrument *)instr;
+		if (!lv2->canSavePreset()) return;
+		dir = lv2->getCurrentBankDirectory();
+		ext = lv2->getPresetExtension();
+		if (dir.empty() || !ext) {
+			MessageBox *mb = new MessageBox(*this, "No bank directory available", MBBF_OK);
+			DoModal(mb);
+			return;
+		}
+		std::string filePath = dir + "/" + name + ext;
+		if (lv2->savePresetToFile(filePath)) {
+			lv2->refreshPresets();
+			saved = true;
+		}
+	} else if (instr->GetType() == IT_VST3) {
+		VST3Instrument *vst3 = (VST3Instrument *)instr;
+		if (!vst3->canSavePreset()) return;
+		dir = vst3->getCurrentBankDirectory();
+		ext = vst3->getPresetExtension();
+		if (dir.empty() || !ext) {
+			MessageBox *mb = new MessageBox(*this, "No bank directory available", MBBF_OK);
+			DoModal(mb);
+			return;
+		}
+		std::string filePath = dir + "/" + name + ext;
+		if (vst3->savePresetToFile(filePath)) {
+			vst3->refreshPresets();
+			saved = true;
+		}
+	} else {
+		return;
+	}
+
+	if (saved) {
+		onInstrumentChange();
+		isDirty_ = true;
+	} else {
+		MessageBox *mb = new MessageBox(*this, "Failed to save preset", MBBF_OK);
+		DoModal(mb);
+	}
+}
+
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle action field clicks (e.g. LV2 load action)
     UIActionField *action = dynamic_cast<UIActionField *>(&o);
     if (action) {
@@ -1297,6 +1402,14 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 if (it == IT_VST3) {
                     ImportVST3Dialog *dialog = new ImportVST3Dialog(*this);
                     DoModal(dialog, VST3PluginSelectCallback);
+                }
+                return;
+            }
+            if (fourcc == ACTION_SAVE_PRESET) {
+                InstrumentType it = getInstrumentType();
+                if (it == IT_LV2 || it == IT_VST3) {
+                    SavePresetDialog *dialog = new SavePresetDialog(*this);
+                    DoModal(dialog, SavePresetCallback);
                 }
                 return;
             }

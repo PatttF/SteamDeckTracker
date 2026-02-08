@@ -42,6 +42,7 @@ void JackMidiDevice::SendMessage(MidiMessage &msg) {
 	jack_nframes_t nframes = jack_get_buffer_size(client_);
 	void* port_buf = jack_port_get_buffer(port_, nframes);
 	unsigned char *buffer = jack_midi_event_reserve(port_buf, frameOffset_, 3);
+	if (!buffer) return ;
 	buffer[0] = msg.status_ ;
 	buffer[1] = msg.data1_ ;
 	buffer[2] = msg.data2_ ;

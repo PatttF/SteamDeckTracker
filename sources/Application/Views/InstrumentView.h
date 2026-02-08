@@ -5,6 +5,7 @@
 #include "BaseClasses/FieldView.h"
 #include "Foundation/Observable.h"
 #include "ViewData.h"
+#include <string>
 
 class UIActionField; // forward declaration to avoid header dependency
 
@@ -33,6 +34,7 @@ public:
 	void OnLV2PluginSelected() ;  // Callback when LV2 plugin is selected
 	void OnSF2Selected() ;        // Callback when SF2 file/preset is selected
 	void OnVST3PluginSelected() ; // Callback when VST3 plugin is selected
+	void OnSavePreset(const std::string &name) ;  // Callback when save preset name is entered
 
 private:
 	Project *project_ ;
@@ -45,10 +47,14 @@ private:
 	char lv2PresetLabel_[80];  // Storage for LV2 preset name display
 	// Action field for loading LV2 list (clickable)
 	UIActionField *lv2LoadField_ ;
+	// Action field for saving LV2 preset (clickable)
+	UIActionField *lv2SaveField_ ;
 	// Action field for loading SF2 browser (clickable)
 	UIActionField *sf2LoadField_ ;
 	// Action field for loading VST3 browser (clickable)
 	UIActionField *vst3LoadField_ ;
+	// Action field for saving VST3 preset (clickable)
+	UIActionField *vst3SaveField_ ;
 	char sf2Label_[80];  // Storage for SF2 display label
 	char sf2PresetLabel_[80];  // Storage for SF2 preset display label
 	char vst3PluginLabel_[80]; // Storage for VST3 plugin label

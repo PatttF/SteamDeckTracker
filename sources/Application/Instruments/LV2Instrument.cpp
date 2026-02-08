@@ -19,6 +19,7 @@
 #include <lv2/midi/midi.h>
 #include <lv2/options/options.h>
 #include <lv2/buf-size/buf-size.h>
+#include <lv2/state/state.h>
 #include <dlfcn.h>
 #include <unistd.h>
 #include <fstream>
@@ -27,6 +28,7 @@
 #include <fcntl.h>
 
 #include "Foundation/Variables/WatchedVariable.h"
+#include "OsTIrusPatches.h"
 
 // LV2 URI definitions
 #undef LV2_ATOM__Sequence
@@ -742,8 +744,14 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             float volMul = 1.0f + sine * depth;
             if (volMul < 0.0f) volMul = 0.0f;
             fixed mul = fl2fp(volMul);
-            buffer[i * 2]     = fp_mul(buffer[i * 2], mul);
-            buffer[i * 2 + 1] = fp_mul(buffer[i * 2 + 1], mul);
+            fixed tl = fp_mul(buffer[i * 2], mul);
+            fixed tr = fp_mul(buffer[i * 2 + 1], mul);
+            if (tl > i2fp(32767)) tl = i2fp(32767);
+            else if (tl < i2fp(-32768)) tl = i2fp(-32768);
+            if (tr > i2fp(32767)) tr = i2fp(32767);
+            else if (tr < i2fp(-32768)) tr = i2fp(-32768);
+            buffer[i * 2]     = tl;
+            buffer[i * 2 + 1] = tr;
             phase += speed;
             if (phase >= 256.0f) phase -= 256.0f;
         }
@@ -802,8 +810,14 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             fixed fbL = fp_mul(dampStateL, decay);
             fixed fbR = fp_mul(dampStateR, decay);
 
-            reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
-            reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
+            fixed rbL = fp_add(fp_mul(dryL, send), fbL);
+            fixed rbR = fp_add(fp_mul(dryR, send), fbR);
+            if (rbL > i2fp(32767)) rbL = i2fp(32767);
+            else if (rbL < i2fp(-32768)) rbL = i2fp(-32768);
+            if (rbR > i2fp(32767)) rbR = i2fp(32767);
+            else if (rbR < i2fp(-32768)) rbR = i2fp(-32768);
+            reverbBuf[reverbPos * 2] = rbL;
+            reverbBuf[reverbPos * 2 + 1] = rbR;
             
             // Mix wet with dry output (clamp to prevent fixed-point overflow)
             fixed mixL = fp_add(dryL, wetL);
@@ -2285,6 +2299,341 @@ bool LV2Instrument::loadPresetFromFile(const std::string &filePath, int headerSk
 }
 
 // ====================================================================
+// savePresetToFile: save current plugin state to a native preset file
+// ====================================================================
+bool LV2Instrument::savePresetToFile(const std::string &filePath) {
+    if (!pluginInstance_ || !world_ || !plugin_) {
+        Trace::Error("LV2: Cannot save preset – plugin not loaded");
+        return false;
+    }
+
+    // Find the mapping for this plugin
+    const LV2PluginPresetMapping *mapping = nullptr;
+    for (int i = 0; lv2KnownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, lv2KnownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &lv2KnownPresetMappings[i];
+            break;
+        }
+    }
+    if (!mapping) {
+        Trace::Error("LV2: No preset mapping for '%s' – cannot save", name_);
+        return false;
+    }
+
+    // Capture current plugin state using lilv
+    LilvWorld *world = (LilvWorld *)world_;
+    LilvInstance *instance = (LilvInstance *)pluginInstance_;
+    const LilvPlugin *lplug = (const LilvPlugin *)plugin_;
+
+    LilvState *state = lilv_state_new_from_instance(
+        lplug, instance, &g_uridMapFeature,
+        nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, LV2_STATE_IS_POD, nullptr);
+
+    if (!state) {
+        Trace::Error("LV2: lilv_state_new_from_instance failed");
+        return false;
+    }
+
+    // Serialize state to TTL string
+    char *ttlStr = lilv_state_to_string(
+        world, &g_uridMapFeature, &g_uridUnmapFeature,
+        state, "http://temp/state", nullptr);
+
+    lilv_state_free(state);
+
+    if (!ttlStr) {
+        Trace::Error("LV2: lilv_state_to_string failed");
+        return false;
+    }
+
+    std::string ttl(ttlStr);
+    free(ttlStr);
+
+    Trace::Log("LV2", "State TTL for save (%d bytes):\n%.200s...",
+        (int)ttl.size(), ttl.c_str());
+
+    // Extract the base64-encoded data from the TTL
+    std::vector<uint8_t> rawData;
+
+    if (mapping->useStateBinary) {
+        // ============================================================
+        // Binary state path (Vital): extract standard base64 from
+        //   rdf:value "...base64..."^^xsd:base64Binary
+        // ============================================================
+        std::string marker = "rdf:value \"";
+        size_t pos = ttl.find(marker);
+        if (pos == std::string::npos) {
+            // Try alternative: just find base64Binary typed literal
+            marker = "\"";
+            pos = ttl.find("^^xsd:base64Binary");
+            if (pos != std::string::npos) {
+                // Search backwards from ^^ to find the opening quote
+                size_t qqEnd = pos;
+                size_t qqStart = ttl.rfind('"', qqEnd - 1);
+                if (qqStart != std::string::npos) {
+                    std::string b64 = ttl.substr(qqStart + 1, qqEnd - qqStart - 1);
+                    // Standard base64 decode
+                    static const int stdB64Decode[256] = {
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+                        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+                        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+                        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+                        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+                        41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+                    };
+                    for (size_t i = 0; i < b64.size(); i += 4) {
+                        int a = (i < b64.size()) ? stdB64Decode[(unsigned char)b64[i]] : -1;
+                        int b = (i+1 < b64.size()) ? stdB64Decode[(unsigned char)b64[i+1]] : -1;
+                        int c = (i+2 < b64.size()) ? stdB64Decode[(unsigned char)b64[i+2]] : -1;
+                        int d = (i+3 < b64.size()) ? stdB64Decode[(unsigned char)b64[i+3]] : -1;
+                        if (a < 0 || b < 0) break;
+                        rawData.push_back((a << 2) | (b >> 4));
+                        if (c >= 0) rawData.push_back(((b & 0xF) << 4) | (c >> 2));
+                        if (d >= 0) rawData.push_back(((c & 0x3) << 6) | d);
+                    }
+                }
+            }
+        } else {
+            pos += marker.size();
+            size_t endPos = ttl.find('"', pos);
+            if (endPos != std::string::npos) {
+                std::string b64 = ttl.substr(pos, endPos - pos);
+                // Standard base64 decode
+                static const int stdB64Decode[256] = {
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+                    52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+                    -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+                    15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+                    -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+                    41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+                };
+                for (size_t i = 0; i < b64.size(); i += 4) {
+                    int a = (i < b64.size()) ? stdB64Decode[(unsigned char)b64[i]] : -1;
+                    int b = (i+1 < b64.size()) ? stdB64Decode[(unsigned char)b64[i+1]] : -1;
+                    int c = (i+2 < b64.size()) ? stdB64Decode[(unsigned char)b64[i+2]] : -1;
+                    int d = (i+3 < b64.size()) ? stdB64Decode[(unsigned char)b64[i+3]] : -1;
+                    if (a < 0 || b < 0) break;
+                    rawData.push_back((a << 2) | (b >> 4));
+                    if (c >= 0) rawData.push_back(((b & 0xF) << 4) | (c >> 2));
+                    if (d >= 0) rawData.push_back(((c & 0x3) << 6) | d);
+                }
+            }
+        }
+    } else {
+        // ============================================================
+        // JUCE String State path (Surge XT): extract JUCE proprietary base64 from
+        //   <pluginURI>:StateString "size.encoded_data"
+        // ============================================================
+        std::string stateKey = ":StateString";
+        size_t pos = ttl.find(stateKey);
+        if (pos == std::string::npos) {
+            Trace::Error("LV2: StateString key not found in state TTL");
+            return false;
+        }
+        // Find the quoted value after the key
+        pos = ttl.find('"', pos + stateKey.size());
+        if (pos == std::string::npos) {
+            Trace::Error("LV2: No quoted value after StateString key");
+            return false;
+        }
+        pos++; // skip opening quote
+        size_t endPos = ttl.find('"', pos);
+        if (endPos == std::string::npos) {
+            Trace::Error("LV2: No closing quote for StateString value");
+            return false;
+        }
+        std::string juceB64 = ttl.substr(pos, endPos - pos);
+
+        // Parse JUCE format: "<decimal_byte_count>.<encoded_chars>"
+        size_t dotPos = juceB64.find('.');
+        if (dotPos == std::string::npos) {
+            Trace::Error("LV2: Invalid JUCE base64 format (no dot)");
+            return false;
+        }
+        long byteCount = atol(juceB64.substr(0, dotPos).c_str());
+        std::string encoded = juceB64.substr(dotPos + 1);
+
+        // JUCE proprietary base64 charset (LSB-first, index 0 = '.')
+        static const char juceB64Table[] =
+            ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+";
+        int juceB64Decode[256];
+        memset(juceB64Decode, -1, sizeof(juceB64Decode));
+        for (int i = 0; i < 64; i++) {
+            juceB64Decode[(unsigned char)juceB64Table[i]] = i;
+        }
+
+        // Decode JUCE proprietary base64: LSB-first 6-bit packing
+        rawData.resize(byteCount, 0);
+        for (size_t i = 0; i < encoded.size(); i++) {
+            int sixBits = juceB64Decode[(unsigned char)encoded[i]];
+            if (sixBits < 0) continue;
+            // Write 6 bits starting at bit position i*6, LSB-first
+            long bitStart = (long)i * 6;
+            for (int b = 0; b < 6; b++) {
+                if (sixBits & (1 << b)) {
+                    long bitPos = bitStart + b;
+                    long byteIdx = bitPos >> 3;
+                    int bitInByte = bitPos & 7;
+                    if (byteIdx < byteCount) {
+                        rawData[byteIdx] |= (1 << bitInByte);
+                    }
+                }
+            }
+        }
+    }
+
+    if (rawData.empty()) {
+        Trace::Error("LV2: No state data decoded from plugin state");
+        return false;
+    }
+
+    Trace::Log("LV2", "Decoded %d bytes of raw state data", (int)rawData.size());
+
+    // Write the file
+    int fd = open(filePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        Trace::Error("LV2: Cannot create preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    // For Surge XT, prepend a 60-byte FXP header
+    if (mapping->headerSkipBytes > 0) {
+        // FXP header for Surge XT (60 bytes)
+        uint8_t fxpHeader[60];
+        memset(fxpHeader, 0, 60);
+
+        // FXP magic: "CcnK" (big-endian)
+        fxpHeader[0] = 'C'; fxpHeader[1] = 'c'; fxpHeader[2] = 'n'; fxpHeader[3] = 'K';
+
+        // byteSize: total file size - 8 (big-endian 32-bit)
+        uint32_t byteSize = (uint32_t)(60 - 8 + rawData.size());
+        fxpHeader[4] = (byteSize >> 24) & 0xFF;
+        fxpHeader[5] = (byteSize >> 16) & 0xFF;
+        fxpHeader[6] = (byteSize >> 8) & 0xFF;
+        fxpHeader[7] = byteSize & 0xFF;
+
+        // fxMagic: "FPCh" for opaque chunk (big-endian)
+        fxpHeader[8] = 'F'; fxpHeader[9] = 'P'; fxpHeader[10] = 'C'; fxpHeader[11] = 'h';
+
+        // version: 1 (big-endian)
+        fxpHeader[15] = 1;
+
+        // fxID: "csST" for Surge XT (big-endian)
+        fxpHeader[16] = 'c'; fxpHeader[17] = 's'; fxpHeader[18] = 'S'; fxpHeader[19] = 'T';
+
+        // fxVersion: 1 (big-endian)
+        fxpHeader[23] = 1;
+
+        // numParams: 0 (opaque chunk mode)
+        // bytes 24-27 = 0
+
+        // prgName: up to 28 chars at offset 28
+        // Extract name from file path for the FXP program name
+        std::string fname = filePath;
+        size_t slashPos = fname.rfind('/');
+        if (slashPos != std::string::npos) fname = fname.substr(slashPos + 1);
+        size_t dotPos = fname.rfind('.');
+        if (dotPos != std::string::npos) fname = fname.substr(0, dotPos);
+        strncpy((char *)&fxpHeader[28], fname.c_str(), 27);
+        fxpHeader[55] = 0;
+
+        // chunkSize: size of the chunk data (big-endian 32-bit) at offset 56
+        uint32_t chunkSize = (uint32_t)rawData.size();
+        fxpHeader[56] = (chunkSize >> 24) & 0xFF;
+        fxpHeader[57] = (chunkSize >> 16) & 0xFF;
+        fxpHeader[58] = (chunkSize >> 8) & 0xFF;
+        fxpHeader[59] = chunkSize & 0xFF;
+
+        ssize_t w = write(fd, fxpHeader, 60);
+        (void)w;
+    }
+
+    // Write the raw state data
+    ssize_t w = write(fd, rawData.data(), rawData.size());
+    (void)w;
+    close(fd);
+
+    Trace::Log("LV2", "Saved preset to: %s (%d bytes + %d header)",
+        filePath.c_str(), (int)rawData.size(), mapping->headerSkipBytes);
+    return true;
+}
+
+// ====================================================================
+// getCurrentBankDirectory: get directory path for the current bank
+// ====================================================================
+std::string LV2Instrument::getCurrentBankDirectory() const {
+    if (!usingFilePresets_) return "";
+    if (currentBank_ < 0 || currentBank_ >= (int)filePresetsByBank_.size()) return "";
+    if (filePresetsByBank_[currentBank_].empty()) return "";
+
+    // Get directory from the first preset in the current bank
+    const std::string &path = filePresetsByBank_[currentBank_][0].filePath;
+    size_t slashPos = path.rfind('/');
+    if (slashPos != std::string::npos) {
+        return path.substr(0, slashPos);
+    }
+    return "";
+}
+
+// ====================================================================
+// getPresetExtension: get native file extension for this plugin
+// ====================================================================
+const char *LV2Instrument::getPresetExtension() const {
+    for (int i = 0; lv2KnownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, lv2KnownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            return lv2KnownPresetMappings[i].extension;
+        }
+    }
+    return nullptr;
+}
+
+// ====================================================================
+// canSavePreset: check if preset saving is supported for this plugin
+// ====================================================================
+bool LV2Instrument::canSavePreset() const {
+    if (!usingFilePresets_ || !pluginInstance_) return false;
+    return getPresetExtension() != nullptr;
+}
+
+// ====================================================================
+// refreshPresets: re-scan preset files and update lists
+// ====================================================================
+void LV2Instrument::refreshPresets() {
+    int savedBank = currentBank_;
+    discoverPresetFiles();
+    // Try to restore the bank position
+    if (savedBank >= 0 && savedBank < (int)programLists_.size()) {
+        currentBank_ = savedBank;
+    }
+    // Set preset to the last one (the newly saved one is likely at the end)
+    int count = GetPresetCountForBank(currentBank_);
+    if (count > 0) {
+        currentPreset_ = count - 1;
+    }
+}
+
+// ====================================================================
 // discoverPresets: main preset discovery entry point
 // ====================================================================
 void LV2Instrument::discoverPresets() {
@@ -2298,8 +2647,13 @@ void LV2Instrument::discoverPresets() {
     // Try file-based preset scanning (Surge XT .fxp, Vital .vital)
     discoverPresetFiles();
 
-    // If no file presets found, try patchmanager cache (gearmulator)
+    // If no file presets found, try hardcoded ROM presets (OsTIrus)
     if (!usingFilePresets_) {
+        discoverHardcodedPresets();
+    }
+
+    // If no hardcoded presets either, try patchmanager cache (other gearmulator)
+    if (!usingFilePresets_ && !usingMidiPresets_) {
         discoverPatchManagerPresets();
     }
 }
@@ -2416,6 +2770,33 @@ void LV2Instrument::discoverPresetFiles() {
         Trace::Log("LV2", "  Bank '%s': %d presets",
             programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
     }
+}
+
+// ====================================================================
+// discoverHardcodedPresets: use built-in ROM patch names for OsTIrus
+// ====================================================================
+void LV2Instrument::discoverHardcodedPresets() {
+    if (strstr(name_, "OsTIrus") == nullptr) return;
+
+    Trace::Log("LV2", "Using hardcoded ROM presets for OsTIrus");
+
+    programLists_.clear();
+    for (int b = 0; b < OSTIRUS_BANK_COUNT; b++) {
+        LV2ProgramList pl;
+        pl.listId = b;
+        pl.name = ostirusBankNames[b];
+        for (int p = 0; p < OSTIRUS_PATCHES_PER_BANK; p++) {
+            pl.programs.push_back(ostirusPatchNames[b][p]);
+        }
+        programLists_.push_back(pl);
+    }
+
+    usingMidiPresets_ = true;
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    Trace::Log("LV2", "Hardcoded presets: %d banks x %d patches",
+        OSTIRUS_BANK_COUNT, OSTIRUS_PATCHES_PER_BANK);
 }
 
 // ====================================================================

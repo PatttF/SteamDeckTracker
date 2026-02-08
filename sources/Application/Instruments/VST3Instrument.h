@@ -131,6 +131,17 @@ public:
     int GetCurrentPreset() const { return currentPreset_; }
     void SetPreset(int presetIdx);     // selects program via kIsProgramChange param
 
+    // Save current plugin state as a native preset file
+    bool savePresetToFile(const std::string &filePath);
+    // Get the directory of the current bank (for saving presets)
+    std::string getCurrentBankDirectory() const;
+    // Get the native file extension for this plugin's presets
+    const char *getPresetExtension() const;
+    // Returns true if this plugin has file-based presets (save is supported)
+    bool canSavePreset() const;
+    // Refresh preset file list after saving
+    void refreshPresets();
+
     // Store a variable value read from project file when variable doesn't yet exist
     void StorePendingVariable(const char *name, const char *value);
 
@@ -256,6 +267,7 @@ private:
     void discoverPresets();
     void discoverPresetFiles();
     void discoverPatchManagerPresets();
+    void discoverHardcodedPresets();
     bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes);
     void setupProcessing(int bufferSize);
 };

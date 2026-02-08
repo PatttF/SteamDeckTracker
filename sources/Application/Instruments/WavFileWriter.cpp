@@ -56,7 +56,7 @@ WavFileWriter::WavFileWriter(const char *path):
 		file_->Write(&chunk,1,4);
 
 		size=0 ;  // to be updated later
-		file_->Write(&chunk,1,4);
+		file_->Write(&size,1,4);
 	} ;
 } ;
 

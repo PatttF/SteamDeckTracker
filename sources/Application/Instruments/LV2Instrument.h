@@ -131,6 +131,17 @@ public:
     int GetCurrentPreset() const { return currentPreset_; }
     void SetPreset(int presetIdx);
 
+    // Save current plugin state as a native preset file
+    bool savePresetToFile(const std::string &filePath);
+    // Get the directory of the current bank (for saving presets)
+    std::string getCurrentBankDirectory() const;
+    // Get the native file extension for this plugin's presets
+    const char *getPresetExtension() const;
+    // Returns true if this plugin has file-based presets (save is supported)
+    bool canSavePreset() const;
+    // Refresh preset file list after saving
+    void refreshPresets();
+
 private:
     char name_[80];                     // Instrument name
     char pluginURI_[256];               // LV2 plugin URI
@@ -251,6 +262,7 @@ private:
     void discoverPresets();
     void discoverPresetFiles();
     void discoverPatchManagerPresets();
+    void discoverHardcodedPresets();
     bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes, bool useStateBinary);
     
 };

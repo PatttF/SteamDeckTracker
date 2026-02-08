@@ -12,7 +12,7 @@
 
 MidiService::MidiService()
     : T_SimpleList<MidiOutDevice>(true), inList_(true), device_(0),
-      sendSync_(true) {
+      tickToFlush_(0), sendSync_(true) {
 #ifndef _FEAT_MIDI_MULTITHREAD
     for (int i=0;i<MIDI_MAX_BUFFERS;i++) {
 		queues_[i]=new T_SimpleList<MidiMessage>(true);

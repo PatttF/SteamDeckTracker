@@ -213,8 +213,6 @@ void RTAudioDriver::fillBuffer(short *stream,int frameCount)
       bufferSize_ = bufferSize_-bufferPos_ + pool_[poolPlayPosition_].size_ ;
       bufferPos_ = 0 ;
 
-      SYS_FREE( pool_[poolPlayPosition_].buffer_) ;
-
       pool_[poolPlayPosition_].buffer_ = 0 ;
       poolPlayPosition_ = (poolPlayPosition_+1)%SOUND_BUFFER_COUNT ;
       thread_->Notify() ;

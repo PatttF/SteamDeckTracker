@@ -99,8 +99,8 @@ void JackAudioDriver::StopDriver() {
 void JackAudioDriver::dumpBuffer(jack_default_audio_sample_t *dstL,jack_default_audio_sample_t *dstR,short *src,int frameCount) {
 
 	for (int i=0;i<frameCount;i++) {
-		*dstL++=(float(*src++)/32767.0) ;
-		*dstR++=(float(*src++)/32767.0) ;
+		*dstL++=(float(*src++)/32768.0) ;
+		*dstR++=(float(*src++)/32768.0) ;
 	}
 } ;
 
@@ -148,12 +148,11 @@ void JackAudioDriver::ProcessCallback(jack_nframes_t frames) {
 				if (pool_[poolPlayPosition_].buffer_!=0) {
 					available_=(pool_[poolPlayPosition_].size_)/2/sizeof(short)  ;
 					SYS_MEMCPY(tempBuffer_,pool_[poolPlayPosition_].buffer_,pool_[poolPlayPosition_].size_);
-					SYS_FREE( pool_[poolPlayPosition_].buffer_) ;
 					pool_[poolPlayPosition_].buffer_=0 ;
 					poolPlayPosition_=(poolPlayPosition_+1)%SOUND_BUFFER_COUNT ;
 					current_=tempBuffer_ ;
 				} else {
-					SYS_MEMSET(tempBuffer_,0,nframes*sizeof(short *)*2) ;
+					SYS_MEMSET(tempBuffer_,0,nframes*sizeof(short)*2) ;
 					available_=nframes ;
 					current_=tempBuffer_ ;
 					Trace::Debug("[J]: Underrun detected") ;

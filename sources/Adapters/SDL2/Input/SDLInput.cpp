@@ -173,9 +173,9 @@ unsigned short SDLInput::GetButtonMask() {
 			case MT_JOYHAT:
 				if (joystick_) {
 					int hat=keyMapping[i]/100 ;
-					int mask=keyMapping[i]-100*hat ;
+					int hatMask=keyMapping[i]-100*hat ;
 					Uint8 state=SDL_JoystickGetHat(joystick_,hat) ;
-					mask|=(state&mask)*eventMapping[i] ;
+					mask|=(state&hatMask)*eventMapping[i] ;
 				}
 				break ;
 			case MT_JOYAXES:

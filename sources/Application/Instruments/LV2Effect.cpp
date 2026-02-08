@@ -818,6 +818,13 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
 
         float mixL = dryL * dry + wetL * wet;
         float mixR = dryR * dry + wetR * wet;
+
+        // Clamp to ±1.0 to prevent fixed-point overflow / clipping
+        if (mixL > 1.0f) mixL = 1.0f;
+        else if (mixL < -1.0f) mixL = -1.0f;
+        if (mixR > 1.0f) mixR = 1.0f;
+        else if (mixR < -1.0f) mixR = -1.0f;
+
         buffer[i * 2]     = (fixed)(mixL * fromFloat);
         buffer[i * 2 + 1] = (fixed)(mixR * fromFloat);
     }

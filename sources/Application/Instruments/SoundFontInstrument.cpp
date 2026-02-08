@@ -426,6 +426,7 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
                 // depth=1.0 means volume swings from 0 to 2x (±100%)
                 float volMul = 1.0f + sine * cs.tremolo.depth;
                 if (volMul < 0.0f) volMul = 0.0f;
+                if (volMul > 2.0f) volMul = 2.0f;
                 tremoloMul = fl2fp(volMul);
                 tPhase += cs.tremolo.speed;
                 if (tPhase >= 256.0f) tPhase -= 256.0f;
@@ -476,6 +477,14 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
             // Accumulate to interleaved stereo buffer (additive for multi-voice)
             buffer[i * 2]     = fp_add(buffer[i * 2], outL);
             buffer[i * 2 + 1] = fp_add(buffer[i * 2 + 1], outR);
+
+            // Saturate to prevent overflow from multi-voice accumulation
+            static const fixed sf_max = i2fp(32767);
+            static const fixed sf_min = i2fp(-32768);
+            if (buffer[i * 2] > sf_max) buffer[i * 2] = sf_max;
+            else if (buffer[i * 2] < sf_min) buffer[i * 2] = sf_min;
+            if (buffer[i * 2 + 1] > sf_max) buffer[i * 2 + 1] = sf_max;
+            else if (buffer[i * 2 + 1] < sf_min) buffer[i * 2 + 1] = sf_min;
 
             // Advance position with vibrato pitch modulation
             v.position += v.speed * speedMul;

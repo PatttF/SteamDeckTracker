@@ -1206,9 +1206,15 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 				fixed fbL = fp_mul(dampStateL, decay);
 				fixed fbR = fp_mul(dampStateR, decay);
 				
-				// Write: input*send + decayed/damped feedback
-				reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
-				reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
+				// Write: input*send + decayed/damped feedback (saturate to prevent runaway)
+				fixed rbL = fp_add(fp_mul(dryL, send), fbL);
+				fixed rbR = fp_add(fp_mul(dryR, send), fbR);
+				if (rbL > i2fp(32767)) rbL = i2fp(32767);
+				else if (rbL < i2fp(-32768)) rbL = i2fp(-32768);
+				if (rbR > i2fp(32767)) rbR = i2fp(32767);
+				else if (rbR < i2fp(-32768)) rbR = i2fp(-32768);
+				reverbBuf[reverbPos * 2] = rbL;
+				reverbBuf[reverbPos * 2 + 1] = rbR;
 				
 				// Mix wet with dry output (clamp to prevent fixed-point overflow)
 				fixed mixL = fp_add(dryL, wetL);

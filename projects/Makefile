@@ -251,7 +251,7 @@ COMMONFILES := \
 	I_GUIWindowImp.o \
 	Application.o AppWindow.o SelectProjectDialog.o \
 	NewProjectDialog.o \
-	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o ImportSoundFontDialog.o ImportVST3Dialog.o \
+	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o ImportSoundFontDialog.o ImportVST3Dialog.o SavePresetDialog.o \
 	MixerView.o NullView.o \
 	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o EffectView.o UIController.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
