@@ -3,6 +3,7 @@
 #include "Application/Instruments/SampleInstrument.h"
 #include "Application/Instruments/LV2Instrument.h"
 #include "Application/Instruments/SoundFontInstrument.h"
+#include "Application/Instruments/VST3Instrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Config.h"
 #include "BaseClasses/UIBigHexVarField.h"
@@ -16,6 +17,8 @@
 #include "ModalDialogs/ImportSampleDialog.h"
 #include "ModalDialogs/ImportLV2Dialog.h"
 #include "ModalDialogs/ImportSoundFontDialog.h"
+#include "ModalDialogs/ImportVST3Dialog.h"
+#include "BaseClasses/UIVST3ParameterField.h"
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
 #include "System/Console/Trace.h"
@@ -26,6 +29,7 @@
 
 #define ACTION_LOAD_LV2 MAKE_FOURCC('L','V','2','L')
 #define ACTION_LOAD_SF2 MAKE_FOURCC('S','F','2','L')
+#define ACTION_LOAD_VST3 MAKE_FOURCC('V','3','L','D')
 
 // Callback for LV2 plugin selection dialog
 static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
@@ -39,6 +43,12 @@ static void SF2SelectCallback(View &v, ModalView &dialog) {
 	iv.OnSF2Selected();
 }
 
+// Callback for VST3 plugin selection dialog
+static void VST3PluginSelectCallback(View &v, ModalView &dialog) {
+	InstrumentView &iv = (InstrumentView &)v;
+	iv.OnVST3PluginSelected();
+}
+
 InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
 	project_=data->project_ ;
@@ -49,6 +59,8 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	pendingType_ = IT_SAMPLE;
 	lv2LoadField_ = nullptr;
 	sf2LoadField_ = nullptr;
+	vst3LoadField_ = nullptr;
+	vst3ScrollOffset_ = 0;
 	// Initialize lastType_ to mirror instrument types
 	for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
 		I_Instrument* instr = data->project_->GetInstrumentBank()->GetInstrument(i);
@@ -107,6 +119,7 @@ void InstrumentView::onInstrumentChange() {
 	T_SimpleList<UIField>::Empty() ;
 	lv2LoadField_ = nullptr;
 	sf2LoadField_ = nullptr;
+	vst3LoadField_ = nullptr;
 
 	InstrumentType it=getInstrumentType() ;
 	Trace::Log("IVIEW", "onInstrumentChange: inst=%d type=%d current=%p old=%p", i, (int)it, current_, old);
@@ -123,6 +136,9 @@ void InstrumentView::onInstrumentChange() {
 			break ;
 		case IT_SOUNDFONT:
 			fillSoundFontParameters() ;
+			break ;
+		case IT_VST3:
+			fillVST3Parameters() ;
 			break ;
 	} ;
 
@@ -151,15 +167,15 @@ void InstrumentView::fillSampleParameters() {
     // Local variables used to create fields
     Variable *v = nullptr;
     UIIntVarField *f1 = nullptr;
-// Type selector: Sample vs LV2 vs SF2 instrument
+// Type selector: Sample vs LV2 vs SF2 vs VST3 instrument
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, 0);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 0);
         instrument->Insert(wtv);
         tv = wtv;
     }
-    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 2, 1, 7);
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
     T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
 
@@ -367,15 +383,15 @@ void InstrumentView::fillLV2Parameters() {
 	const int MAX_ROWS = 17;       // Max rows for parameters (leaving room for header + footer)
 	const int PARAMS_PER_PAGE = MAX_ROWS * 2;  // Two columns
 
-    // Type selector: Sample vs LV2 vs SF2 instrument (keep accessible to switch back)
+    // Type selector: Sample vs LV2 vs SF2 vs VST3 instrument (keep accessible to switch back)
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, 1);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 1);
         instrument->Insert(wtv);
         tv = wtv;
     }
-    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 2, 1, 7);
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
     T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
 
@@ -554,15 +570,15 @@ void InstrumentView::fillSoundFontParameters() {
 	Variable *v = nullptr;
 	UIIntVarField *f1 = nullptr;
 
-	// Type selector: Sample vs LV2 vs SF2
+	// Type selector: Sample vs LV2 vs SF2 vs VST3
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
 	if (!tv) {
-		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
-		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, 2);
+		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 2);
 		instrument->Insert(wtv);
 		tv = wtv;
 	}
-	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 2, 1, 7);
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
 	T_SimpleList<UIField>::Insert(typeField);
 	position._y += 1;
 
@@ -643,6 +659,193 @@ void InstrumentView::fillSoundFontParameters() {
 	T_SimpleList<UIField>::Insert(f1);
 }
 
+void InstrumentView::fillVST3Parameters() {
+
+	int i=viewData_->currentInstrument_ ;
+	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
+	I_Instrument *instr=bank->GetInstrument(i) ;
+	VST3Instrument *instrument=(VST3Instrument *)instr ;
+	GUIPoint position=GetAnchor() ;
+
+	const int COL_WIDTH = 27;
+	const int MAX_ROWS = 17;
+	const int PARAMS_PER_PAGE = MAX_ROWS * 2;
+
+	// Type selector
+	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
+	if (!tv) {
+		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 3);
+		instrument->Insert(wtv);
+		tv = wtv;
+	}
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
+	T_SimpleList<UIField>::Insert(typeField);
+	position._y += 1;
+
+	if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+		wtv->RemoveObserver(*this);
+		wtv->AddObserver(*this);
+	}
+
+	// Page scroll help
+	const char *helpText = "L to change pages";
+	const int CHAR_PX = 8;
+	int winPixelWidth = w_.GetRect().Width();
+	int visibleCols = winPixelWidth / CHAR_PX;
+	int width = (visibleCols > 0) ? visibleCols : 80;
+	int helpLen = (int)strlen(helpText);
+	int helpX = width - helpLen - View::margin_;
+	if (helpX < 0) helpX = 0;
+	GUIPoint helpPos(helpX, 0);
+	UIStaticField *helpField = new UIStaticField(helpPos, helpText);
+	T_SimpleList<UIField>::Insert(helpField);
+
+	// Plugin selector
+	if (instrument->IsEmpty()) {
+		strcpy(vst3PluginLabel_, "plugin: ---");
+	} else {
+		snprintf(vst3PluginLabel_, 80, "plugin: %s", instrument->GetName());
+	}
+	UIActionField *af = new UIActionField(vst3PluginLabel_, ACTION_LOAD_VST3, position);
+	T_SimpleList<UIField>::Insert(af);
+	af->AddObserver(*this);
+	vst3LoadField_ = af;
+
+	position._y += 1;
+
+	// Show bank/preset selectors if plugin has presets
+	if (!instrument->IsEmpty() && instrument->GetBankCount() > 0) {
+		// Bank selector (if more than one bank)
+		if (instrument->GetBankCount() > 1) {
+			Variable *bv = instrument->FindVariable(VST3IP_BANK);
+			if (!bv) {
+				int maxBank = instrument->GetBankCount() - 1;
+				WatchedVariable *wbv = new WatchedVariable("bank", VST3IP_BANK, 0);
+				wbv->AddObserver(*this);
+				instrument->Insert(wbv);
+				bv = wbv;
+			}
+			if (WatchedVariable *wbv = dynamic_cast<WatchedVariable *>(bv)) {
+				wbv->RemoveObserver(*this);
+				wbv->AddObserver(*this);
+			}
+			int maxBank = instrument->GetBankCount() - 1;
+			if (maxBank < 0) maxBank = 0;
+			UIIntVarField *bf = new UIIntVarField(position, *bv, "bank: %2.2X", 0, maxBank, 1, 0x10);
+			T_SimpleList<UIField>::Insert(bf);
+			position._y += 1;
+		}
+
+		// Preset selector
+		Variable *pv = instrument->FindVariable(VST3IP_PRESET);
+		if (!pv) {
+			WatchedVariable *wpv = new WatchedVariable("preset", VST3IP_PRESET, 0);
+			wpv->AddObserver(*this);
+			instrument->Insert(wpv);
+			pv = wpv;
+		}
+		if (WatchedVariable *wpv = dynamic_cast<WatchedVariable *>(pv)) {
+			wpv->RemoveObserver(*this);
+			wpv->AddObserver(*this);
+		}
+		// Sync variable to actual preset
+		if (pv->GetInt() != instrument->GetCurrentPreset()) {
+			pv->SetInt(instrument->GetCurrentPreset());
+		}
+		int maxPreset = instrument->GetPresetCount() - 1;
+		if (maxPreset < 0) maxPreset = 0;
+		UIIntVarField *pf = new UIIntVarField(position, *pv, "preset: %2.2X", 0, maxPreset, 1, 0x10);
+		T_SimpleList<UIField>::Insert(pf);
+		position._y += 1;
+
+		// Show preset name
+		int presetIdx = instrument->GetCurrentPreset();
+		const char *presetName = instrument->GetPresetName(presetIdx);
+		snprintf(vst3PresetLabel_, sizeof(vst3PresetLabel_), "  [%s]", presetName);
+		UIStaticField *sf = new UIStaticField(position, vst3PresetLabel_);
+		T_SimpleList<UIField>::Insert(sf);
+		position._y += 1;
+	}
+
+	// Show parameters if plugin is loaded
+	if (!instrument->IsEmpty()) {
+		int paramCount = instrument->GetParameterCount();
+		if (paramCount > 0) {
+			int totalParams = paramCount;
+			int startIdx = vst3ScrollOffset_;
+			if (startIdx >= totalParams) startIdx = 0;
+			int endIdx = startIdx + PARAMS_PER_PAGE;
+			if (endIdx > totalParams) endIdx = totalParams;
+
+			int baseY = position._y;
+			int baseX = 0;
+			int col = 0;
+			int row = 0;
+			int textIdx = 0;
+
+			for (int p = startIdx; p < endIdx && textIdx < 40; p++, textIdx++) {
+				const VST3PluginParameter *param = instrument->GetParameter(p);
+				if (!param || !param->variable) continue;
+
+				GUIPoint pos(baseX + col * COL_WIDTH, baseY + row);
+
+				strncpy(vst3ParamText_[textIdx], param->name.c_str(), 22);
+				vst3ParamText_[textIdx][22] = '\0';
+
+				int stepSize = 1;
+				int bigStep = 10;
+				int maxVal = (param->stepCount > 0 && param->stepCount <= 255) ? param->stepCount : 255;
+
+				UIVST3ParameterField *pfield = new UIVST3ParameterField(
+					pos,
+					*param->variable,
+					vst3ParamText_[textIdx],
+					instrument,
+					p,
+					0,
+					maxVal,
+					stepSize,
+					bigStep
+				);
+				T_SimpleList<UIField>::Insert(pfield);
+
+				row++;
+				if (row >= MAX_ROWS) {
+					row = 0;
+					col++;
+					if (col >= 2) break;
+				}
+			}
+
+			position._y = baseY + MAX_ROWS + 1;
+		}
+	} else {
+		position._y += 2;
+	}
+
+	// Footer controls
+	Variable *v = instrument->FindVariable(VST3IP_VOLUME);
+	UIIntVarField *f1 = new UIIntVarField(position, *v, "volume: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+	f1->SetFocus();
+
+	position._y += 1;
+	v = instrument->FindVariable(VST3IP_PAN);
+	f1 = new UIIntVarField(position, *v, "pan: %2.2X", 0, 0xFE, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(VST3IP_TABLEAUTO);
+	UIIntVarField *f2 = new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
+	T_SimpleList<UIField>::Insert(f2);
+
+	position._y += 1;
+	v = instrument->FindVariable(VST3IP_TABLE);
+	f1 = new UIIntVarOffField(position, *v, "table: %2.2X", 0, 0x7F, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+}
+
 
 void InstrumentView::warpToNext(int offset) {
 	int instrument=viewData_->currentInstrument_+offset ;
@@ -679,6 +882,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 				if (it == IT_SOUNDFONT) {
 					ImportSoundFontDialog *dialog = new ImportSoundFontDialog(*this);
 					DoModal(dialog, SF2SelectCallback);
+				}
+				return;
+			}
+			if (focusField == vst3LoadField_) {
+				InstrumentType it = getInstrumentType();
+				if (it == IT_VST3) {
+					ImportVST3Dialog *dialog = new ImportVST3Dialog(*this);
+					DoModal(dialog, VST3PluginSelectCallback);
 				}
 				return;
 			}
@@ -867,22 +1078,45 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
                     player->OnStartButton(PM_PHRASE, viewData_->songX_, true,
                                           viewData_->chainRow_);
                 }
-            } else if (mask & EPBM_L) {
-                // L shoulder - scroll LV2 parameters with wrap-around
+            } else if (mask & (EPBM_L | EPBM_PGBACK | EPBM_PGFWD)) {
+                // L / > scroll forward, < scrolls backward
                 InstrumentType it=getInstrumentType() ;
+                const int SCROLL_STEP = 18;
                 const int PARAMS_PER_PAGE = 36;  // 18 rows x 2 columns
+                int paramCount = 0;
+                int *scrollOffset = nullptr;
+
                 if (it==IT_LV2) {
                     LV2Instrument *lv2instr=(LV2Instrument *)current_ ;
-                    if (!lv2instr->IsEmpty() && lv2instr->GetParameterCount() > PARAMS_PER_PAGE) {
-                        lv2ScrollOffset_ += 18;  // Scroll by one column
-                        // Wrap around when hitting the end
-                        if (lv2ScrollOffset_ >= lv2instr->GetParameterCount()) {
-                            lv2ScrollOffset_ = 0;
-                        }
-                        onInstrumentChange();
-                        isDirty_=true;
-                        return; // Don't process other L commands
+                    if (!lv2instr->IsEmpty()) {
+                        paramCount = lv2instr->GetParameterCount();
+                        scrollOffset = &lv2ScrollOffset_;
                     }
+                } else if (it==IT_VST3) {
+                    VST3Instrument *vst3instr=(VST3Instrument *)current_ ;
+                    if (!vst3instr->IsEmpty()) {
+                        paramCount = vst3instr->GetParameterCount();
+                        scrollOffset = &vst3ScrollOffset_;
+                    }
+                }
+
+                if (scrollOffset && paramCount > PARAMS_PER_PAGE) {
+                    if (mask & EPBM_PGBACK) {
+                        // Scroll backward
+                        *scrollOffset -= SCROLL_STEP;
+                        if (*scrollOffset < 0) {
+                            *scrollOffset = ((paramCount - 1) / SCROLL_STEP) * SCROLL_STEP;
+                        }
+                    } else {
+                        // L or > scroll forward
+                        *scrollOffset += SCROLL_STEP;
+                        if (*scrollOffset >= paramCount) {
+                            *scrollOffset = 0;
+                        }
+                    }
+                    onInstrumentChange();
+                    isDirty_=true;
+                    return;
                 }
             } else {
                 // No modifier
@@ -958,6 +1192,12 @@ void InstrumentView::OnSF2Selected() {
 	isDirty_ = true;
 }
 
+void InstrumentView::OnVST3PluginSelected() {
+	vst3ScrollOffset_ = 0;
+	onInstrumentChange();
+	isDirty_ = true;
+}
+
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle action field clicks (e.g. LV2 load action)
     UIActionField *action = dynamic_cast<UIActionField *>(&o);
     if (action) {
@@ -983,6 +1223,14 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 }
                 return;
             }
+            if (fourcc == ACTION_LOAD_VST3) {
+                InstrumentType it = getInstrumentType();
+                if (it == IT_VST3) {
+                    ImportVST3Dialog *dialog = new ImportVST3Dialog(*this);
+                    DoModal(dialog, VST3PluginSelectCallback);
+                }
+                return;
+            }
         }
     }
     // Check for a change in the 'type' variable so we can switch instrument types on demand
@@ -994,10 +1242,11 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
         Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
         if (tv) {
             int val = tv->GetInt();
-            // val==0 => Sample, val==1 => LV2, val==2 => SF2
+            // val==0 => Sample, val==1 => LV2, val==2 => SF2, val==3 => VST3
             InstrumentType targetType = IT_SAMPLE;
             if (val == 1) targetType = IT_LV2;
             else if (val == 2) targetType = IT_SOUNDFONT;
+            else if (val == 3) targetType = IT_VST3;
 
             if (instr->GetType() != targetType) {
                 // Defer changing instrument type until outside of the variable notification
@@ -1016,6 +1265,29 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
             if (pv && sfi->GetCurrentPreset() != pv->GetInt()) {
                 Trace::Log("SF2", "Preset change detected: var=%d current=%d", pv->GetInt(), sfi->GetCurrentPreset());
                 sfi->SelectPreset(pv->GetInt());
+                onInstrumentChange();
+                isDirty_ = true;
+                return;
+            }
+        }
+
+        // Handle VST3 bank/preset changes
+        if (instr->GetType() == IT_VST3) {
+            VST3Instrument *vst3 = (VST3Instrument *)instr;
+            Variable *bv = vst3->FindVariable(VST3IP_BANK);
+            if (bv && vst3->GetCurrentBank() != bv->GetInt()) {
+                vst3->SetCurrentBank(bv->GetInt());
+                // Reset preset to 0 when bank changes
+                Variable *pv = vst3->FindVariable(VST3IP_PRESET);
+                if (pv) pv->SetInt(0);
+                vst3->SetPreset(0);
+                onInstrumentChange();
+                isDirty_ = true;
+                return;
+            }
+            Variable *pv = vst3->FindVariable(VST3IP_PRESET);
+            if (pv && vst3->GetCurrentPreset() != pv->GetInt()) {
+                vst3->SetPreset(pv->GetInt());
                 onInstrumentChange();
                 isDirty_ = true;
                 return;

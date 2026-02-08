@@ -5,6 +5,7 @@
 #include "Application/Instruments/MidiInstrument.h"
 #include "Application/Instruments/LV2Instrument.h"
 #include "Application/Instruments/SoundFontInstrument.h"
+#include "Application/Instruments/VST3Instrument.h"
 #include "Application/Player/PlayerMixer.h"
 #include "System/io/Status.h"
 #include "Application/Utils/char.h"
@@ -18,7 +19,8 @@ char *InstrumentTypeData[IT_LAST]= {
 	"Sample",
 	"Midi",
 	"LV2",
-	"SF2"
+	"SF2",
+	"VST3"
 } ;
 
 
@@ -43,9 +45,13 @@ InstrumentBank::InstrumentBank():Persistent("INSTRUMENTBANK") {
         SoundFontInstrument *s=new SoundFontInstrument() ;
         instrument_[MAX_SAMPLEINSTRUMENT_COUNT+MAX_MIDIINSTRUMENT_COUNT+MAX_LV2INSTRUMENT_COUNT+i]=s ;
     }
+	for (int i=0;i<MAX_VST3INSTRUMENT_COUNT;i++) {
+        VST3Instrument *s=new VST3Instrument() ;
+        instrument_[MAX_SAMPLEINSTRUMENT_COUNT+MAX_MIDIINSTRUMENT_COUNT+MAX_LV2INSTRUMENT_COUNT+MAX_SOUNDFONTINSTRUMENT_COUNT+i]=s ;
+    }
 
     // Insert a 'type' Variable into each instrument so the UI can bind to it and allow switching
-    static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
+    static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
     for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
         I_Instrument *ins = instrument_[i];
         // ID: ITYP
@@ -53,7 +59,8 @@ InstrumentBank::InstrumentBank():Persistent("INSTRUMENTBANK") {
         int init = 0;
         if (ins->GetType() == IT_LV2) init = 1;
         else if (ins->GetType() == IT_SOUNDFONT) init = 2;
-        WatchedVariable *tv = new WatchedVariable("type", id, instrTypes, 3, init);
+        else if (ins->GetType() == IT_VST3) init = 3;
+        WatchedVariable *tv = new WatchedVariable("type", id, instrTypes, 4, init);
         ins->Insert(tv);
     }
 
@@ -160,6 +167,26 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					count++;
 				}
 			}
+			// VST3 instruments: save plugin path and class ID
+			if (instr->GetType() == IT_VST3) {
+				VST3Instrument *vin = (VST3Instrument *)instr;
+				int pc = vin->GetParameterCount();
+				for (int pi = 0; pi < pc; ++pi) {
+					const VST3PluginParameter *p = vin->GetParameter(pi);
+					if (!p) continue;
+					char varName[64];
+					snprintf(varName, sizeof(varName), "v3p%d", pi);
+					int scaled = (int)(p->currentValue * 255.0 + 0.5);
+					if (scaled < 0) scaled = 0; if (scaled > 255) scaled = 255;
+					Variable *v = instr->FindVariable(varName);
+					if (v) {
+						v->SetInt(scaled, false);
+					} else {
+						Variable *nv = new Variable(varName, MAKE_FOURCC('V','P',pi/256,pi%256), scaled);
+						instr->Insert(nv);
+					}
+				}
+			}
 			// Ensure LV2 plugin URI and parameter values are recorded even if
 			// Variables weren't present for some reason (fallback persistence).
 			if (instr->GetType() == IT_LV2) {
@@ -262,8 +289,11 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						if (!strcmp(gname, "sf2file")) { it = IT_SOUNDFONT; break; }
 						if (!strcmp(gname, "plugin")) { it = IT_LV2; break; }
 						if (gname[0] == 'p' && isdigit((unsigned char)gname[1])) { it = IT_LV2; break; }
+						// VST3 params are named v3p0, v3p1, etc.
+						if (gname[0]=='v' && gname[1]=='3' && gname[2]=='p') { it = IT_VST3; break; }
 					}
 					if (gval) {
+						if (strstr(gval, ".vst3")) { it = IT_VST3; break; }
 						if (strstr(gval, "://") || strstr(gval, ".lv2") || strchr(gval, '/')) { it = IT_LV2; break; }
 					}
 					guess = guess->NextSiblingElement();
@@ -287,18 +317,22 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						case IT_SOUNDFONT:
 							instr=new SoundFontInstrument() ;
 							break ;
+						case IT_VST3:
+							instr=new VST3Instrument() ;
+							break ;
 					}
 					instrument_[id]=instr ;
 				// Ensure 'type' Variable exists on restored/replaced instruments so the UI binds correctly
 				int typeInit = 0;
 				if (it==IT_LV2) typeInit = 1;
 				else if (it==IT_SOUNDFONT) typeInit = 2;
+				else if (it==IT_VST3) typeInit = 3;
 				Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
 				if (tv) {
 					tv->SetInt(typeInit, false);
 				} else {
-					static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
-					WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, typeInit);
+					static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
+					WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, typeInit);
 					instr->Insert(wtv);
 				} 
 			}
@@ -344,6 +378,11 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						if (instr->GetType()==IT_SOUNDFONT) {
 							SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
 							sfi->StorePendingVariable(name,value);
+						}
+						// VST3 instruments store params for Init()
+						if (instr->GetType()==IT_VST3) {
+							VST3Instrument *vin = (VST3Instrument *)instr;
+							vin->StorePendingVariable(name,value);
 						}
 					}
 					param=param->NextSiblingElement() ;
@@ -414,6 +453,8 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 		instrument_[next]=new MidiInstrument() ;
 	} else if (src->GetType()==IT_SOUNDFONT) {
 		instrument_[next]=new SoundFontInstrument() ;
+	} else if (src->GetType()==IT_VST3) {
+		instrument_[next]=new VST3Instrument() ;
 	} else {
 		instrument_[next]=new LV2Instrument() ;
 	}
@@ -444,6 +485,7 @@ void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
         case IT_MIDI: n = new MidiInstrument(); break;
         case IT_LV2: n = new LV2Instrument(); break;
         case IT_SOUNDFONT: n = new SoundFontInstrument(); break;
+        case IT_VST3: n = new VST3Instrument(); break;
         default: return;
     }
 
@@ -461,12 +503,13 @@ void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
     int typeInit = 0;
     if (type == IT_LV2) typeInit = 1;
     else if (type == IT_SOUNDFONT) typeInit = 2;
+    else if (type == IT_VST3) typeInit = 3;
     Variable *tv = n->FindVariable(MAKE_FOURCC('I','T','Y','P'));
     if (tv) {
         tv->SetInt(typeInit, false);
     } else {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2" } ;
-        WatchedVariable *ntv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 3, typeInit);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
+        WatchedVariable *ntv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, typeInit);
         n->Insert(ntv);
     }
 

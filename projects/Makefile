@@ -58,7 +58,8 @@ COMMONDIRS := \
 	../sources/Foundation/Variables \
 	../sources/Externals/Compression \
 	../sources/Externals/Soundfont \
-	../sources/Externals/TinyXML
+	../sources/Externals/TinyXML \
+	../vst3sdk/pluginterfaces/base
 
 #---------------------------------------------------------------------------------
 # Linux
@@ -250,11 +251,11 @@ COMMONFILES := \
 	I_GUIWindowImp.o \
 	Application.o AppWindow.o SelectProjectDialog.o \
 	NewProjectDialog.o \
-	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o ImportSoundFontDialog.o \
+	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o ImportSoundFontDialog.o ImportVST3Dialog.o \
 	MixerView.o NullView.o \
 	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o EffectView.o UIController.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
-	UIIntVarOffField.o UIIntVarField.o UILV2ParameterField.o UILV2EffectParameterField.o ViewEvent.o I_Action.o\
+	UIIntVarOffField.o UIIntVarField.o UILV2ParameterField.o UILV2EffectParameterField.o UIVST3ParameterField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \
 	MessageBox.o \
 	GrooveView.o UINoteVarField.o UIBigHexVarField.o \
@@ -263,7 +264,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o LV2Instrument.o LV2Effect.o SoundFontInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o LV2Instrument.o LV2Effect.o SoundFontInstrument.o VST3Instrument.o VST3IIDs.o funknown.o coreiids.o conststringtable.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \

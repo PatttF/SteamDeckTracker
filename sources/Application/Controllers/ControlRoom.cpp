@@ -131,6 +131,8 @@ void ControlRoom::InstallDefaultMapping() {
 	Attach("/event/b","key:0:a") ;
 	Attach("/event:a","key:0:s") ;
 	Attach("/event:start","key:0:space") ;
+	Attach("/event/pgback","key:0:,") ;
+	Attach("/event/pgfwd","key:0:.") ;
 
 	// Hat (common d-pad) - try hat 0 bits
 	Attach("/event/up","hat:0:0") ;

@@ -25,12 +25,14 @@ protected:
 	void fillMidiParameters() ;
 	void fillLV2Parameters() ;
 	void fillSoundFontParameters() ;
+	void fillVST3Parameters() ;
 	InstrumentType getInstrumentType() ;
 	void Update(Observable &o,I_ObservableData *d) ;
 
 public:
 	void OnLV2PluginSelected() ;  // Callback when LV2 plugin is selected
 	void OnSF2Selected() ;        // Callback when SF2 file/preset is selected
+	void OnVST3PluginSelected() ; // Callback when VST3 plugin is selected
 
 private:
 	Project *project_ ;
@@ -43,8 +45,14 @@ private:
 	UIActionField *lv2LoadField_ ;
 	// Action field for loading SF2 browser (clickable)
 	UIActionField *sf2LoadField_ ;
+	// Action field for loading VST3 browser (clickable)
+	UIActionField *vst3LoadField_ ;
 	char sf2Label_[80];  // Storage for SF2 display label
 	char sf2PresetLabel_[80];  // Storage for SF2 preset display label
+	char vst3PluginLabel_[80]; // Storage for VST3 plugin label
+	char vst3ParamText_[40][40]; // Storage for VST3 parameter labels
+	char vst3PresetLabel_[80]; // Storage for VST3 preset name display
+	int vst3ScrollOffset_ ;  // For scrolling VST3 parameters
 	// Track last selected 'type' per instrument so we can detect changes and switch types
 	int lastType_[MAX_INSTRUMENT_COUNT];
 

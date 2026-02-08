@@ -32,10 +32,10 @@ FFMPEG_LIBS := $(FFMPEG_PREFIX)/lib/libavformat.a \
 
 # optimization (with debug symbols for profiling)
 OPT_FLAGS := -O3 -g -ffast-math
-INCLUDES := $(ALSA_CFLAGS) $(JACK_CFLAGS) $(SDL_CFLAGS) $(LV2_CFLAGS) $(FFMPEG_CFLAGS) -I$(PWD)/../sources
+INCLUDES := $(ALSA_CFLAGS) $(JACK_CFLAGS) $(SDL_CFLAGS) $(LV2_CFLAGS) $(FFMPEG_CFLAGS) -I$(PWD)/../sources -I$(PWD)/../vst3sdk
 CFLAGS := $(OPT_FLAGS) $(DEFINES) $(INCLUDES) -Wall
 CXXFLAGS := $(CFLAGS) -std=gnu++11
-LIBS := $(ALSA_LIBS) $(JACK_LIBS) $(SDL_LIBS) $(LV2_LIBS) $(FFMPEG_LIBS)
+LIBS := $(ALSA_LIBS) $(JACK_LIBS) $(SDL_LIBS) $(LV2_LIBS) $(FFMPEG_LIBS) -ldl
 LDFLAGS := -static-libgcc -static-libstdc++ 
 OUTPUT := ../../SDTracker
 EXTENSION := bin

@@ -133,6 +133,8 @@ bool Application::Init(GUICreateWindowParams &params) {
         <MAP src="key:0:a" dst="/event/b" />
         <MAP src="key:0:s" dst="/event/a" />
         <MAP src="key:0:space" dst="/event/start" />
+        <MAP src="key:0:," dst="/event/pgback" />
+        <MAP src="key:0:." dst="/event/pgfwd" />
       <!--
           EXAMPLE
           maps the button "8" to left shoulder
