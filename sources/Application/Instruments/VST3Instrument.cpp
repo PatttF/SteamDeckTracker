@@ -22,11 +22,14 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 #include <cmath>
 #include <algorithm>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <dlfcn.h>
 
 // ---- VST3 SDK headers (pluginterfaces only — no compiled library needed) ----
@@ -306,12 +309,66 @@ public:
 
     void resetRead() { pos_ = 0; }
     size_t size() const { return data_.size(); }
+    const uint8_t* data() const { return data_.empty() ? nullptr : &data_[0]; }
+    void setData(const uint8_t* src, size_t len) {
+        data_.assign(src, src + len);
+        pos_ = 0;
+    }
 
 private:
     std::vector<uint8_t> data_;
     size_t pos_;
     int32_t refCount_;
 };
+
+// ====================================================================
+// Base64 encode/decode helpers for storing binary state blobs in XML
+// ====================================================================
+static const char b64chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static std::string base64Encode(const uint8_t *data, size_t len) {
+    std::string out;
+    out.reserve(((len + 2) / 3) * 4);
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t n = ((uint32_t)data[i]) << 16;
+        if (i + 1 < len) n |= ((uint32_t)data[i + 1]) << 8;
+        if (i + 2 < len) n |= (uint32_t)data[i + 2];
+        out += b64chars[(n >> 18) & 0x3F];
+        out += b64chars[(n >> 12) & 0x3F];
+        out += (i + 1 < len) ? b64chars[(n >> 6) & 0x3F] : '=';
+        out += (i + 2 < len) ? b64chars[n & 0x3F] : '=';
+    }
+    return out;
+}
+
+static int b64val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+static std::vector<uint8_t> base64Decode(const std::string &encoded) {
+    std::vector<uint8_t> out;
+    out.reserve((encoded.size() / 4) * 3);
+    uint32_t buf = 0;
+    int bits = 0;
+    for (size_t i = 0; i < encoded.size(); i++) {
+        int v = b64val(encoded[i]);
+        if (v < 0) continue; // skip '=' and whitespace
+        buf = (buf << 6) | (uint32_t)v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out.push_back((uint8_t)(buf >> bits));
+            buf &= (1u << bits) - 1;
+        }
+    }
+    return out;
+}
 
 // ====================================================================
 // Helpers: get machine arch string for .vst3 bundle Contents/<arch>-linux/
@@ -444,6 +501,8 @@ VST3Instrument::VST3Instrument() {
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
+    usingFilePresets_ = false;
+    usingMidiPresets_ = false;
 
     // Compute reverb buffer length based on sample rate (~100ms)
     int sampleRate = Audio::GetInstance()->GetSampleRate();
@@ -514,7 +573,22 @@ bool VST3Instrument::Init() {
                 hexToTuid(cidHex, cid);
                 SetPlugin(p.c_str(), cid);
 
-                // Apply pending parameter values that were loaded from project
+                // Restore full component state blob first (this sets the
+                // plugin's internal state, then syncs params to Variables)
+                auto compIt = pendingParamValues_.find("vst3_comp_state");
+                if (compIt != pendingParamValues_.end()) {
+                    RestoreComponentState(compIt->second);
+                    pendingParamValues_.erase(compIt);
+                }
+
+                // Restore controller state (if separate from component)
+                auto ctrlIt = pendingParamValues_.find("vst3_ctrl_state");
+                if (ctrlIt != pendingParamValues_.end()) {
+                    RestoreControllerState(ctrlIt->second);
+                    pendingParamValues_.erase(ctrlIt);
+                }
+
+                // Apply any remaining pending parameter values
                 for (auto& kv : pendingParamValues_) {
                     Variable *var = FindVariable(kv.first.c_str());
                     if (var) {
@@ -641,6 +715,7 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         if (pendingEventsMutex_.TryLock()) {
             renderLocalNotes_.swap(pendingNoteEvents_);
             renderLocalParams_.swap(pendingParamChanges_);
+            renderLocalMidiCCs_.swap(pendingMidiCCs_);
             pendingEventsMutex_.Unlock();
         }
 
@@ -694,6 +769,21 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
             eventList.addEvent(e);
         }
         renderLocalNotes_.clear();
+
+        // Convert pending MIDI CC events to kLegacyMIDICCOutEvent
+        for (auto& mc : renderLocalMidiCCs_) {
+            Event e;
+            memset(&e, 0, sizeof(e));
+            e.busIndex = 0;
+            e.sampleOffset = 0;
+            e.type = Event::kLegacyMIDICCOutEvent;
+            e.midiCCOut.controlNumber = mc.controlNumber;
+            e.midiCCOut.channel = mc.channel;
+            e.midiCCOut.value = mc.value;
+            e.midiCCOut.value2 = mc.value2;
+            eventList.addEvent(e);
+        }
+        renderLocalMidiCCs_.clear();
 
         // Convert pending param changes
         for (auto& pc : renderLocalParams_) {
@@ -972,6 +1062,90 @@ void VST3Instrument::Update(Observable &o, I_ObservableData *d) {
 
 void VST3Instrument::StorePendingVariable(const char *name, const char *value) {
     pendingParamValues_[std::string(name)] = std::string(value);
+}
+
+// ====================================================================
+// Full plugin state save/restore via IComponent/IEditController
+// ====================================================================
+
+std::string VST3Instrument::GetComponentStateBase64() const {
+    if (!component_) return "";
+    IComponent* comp = (IComponent*)component_;
+    SimpleMemoryStream stream;
+    tresult res = comp->getState(&stream);
+    if (res != kResultOk || stream.size() == 0) return "";
+    return base64Encode(stream.data(), stream.size());
+}
+
+std::string VST3Instrument::GetControllerStateBase64() const {
+    if (!editController_) return "";
+    IEditController* ctrl = (IEditController*)editController_;
+    SimpleMemoryStream stream;
+    tresult res = ctrl->getState(&stream);
+    if (res != kResultOk || stream.size() == 0) return "";
+    return base64Encode(stream.data(), stream.size());
+}
+
+bool VST3Instrument::RestoreComponentState(const std::string &base64Data) {
+    if (!component_ || base64Data.empty()) return false;
+    std::vector<uint8_t> blob = base64Decode(base64Data);
+    if (blob.empty()) return false;
+
+    IComponent* comp = (IComponent*)component_;
+    SimpleMemoryStream stream;
+    stream.setData(&blob[0], blob.size());
+
+    tresult res = comp->setState(&stream);
+    if (res != kResultOk) {
+        Trace::Error("VST3: IComponent::setState failed (%d)", (int)res);
+        return false;
+    }
+
+    // Also notify the controller about the component state
+    if (editController_ && !componentIsController_) {
+        IEditController* ctrl = (IEditController*)editController_;
+        stream.resetRead();
+        ctrl->setComponentState(&stream);
+    }
+
+    // Sync parameter values from the plugin back into our Variables
+    if (editController_) {
+        IEditController* ctrl = (IEditController*)editController_;
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            VST3PluginParameter &p = parameters_[i];
+            double norm = ctrl->getParamNormalized(p.paramId);
+            p.currentValue = norm;
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaled = (int)(norm * maxVal + 0.5);
+                if (scaled < 0) scaled = 0;
+                if (scaled > maxVal) scaled = maxVal;
+                p.variable->SetInt(scaled, false);
+            }
+        }
+    }
+
+    Trace::Log("VST3", "Restored component state (%d bytes)", (int)blob.size());
+    return true;
+}
+
+bool VST3Instrument::RestoreControllerState(const std::string &base64Data) {
+    if (!editController_ || base64Data.empty()) return false;
+    std::vector<uint8_t> blob = base64Decode(base64Data);
+    if (blob.empty()) return false;
+
+    IEditController* ctrl = (IEditController*)editController_;
+    SimpleMemoryStream stream;
+    stream.setData(&blob[0], blob.size());
+
+    tresult res = ctrl->setState(&stream);
+    if (res != kResultOk) {
+        Trace::Log("VST3", "IEditController::setState returned %d (may be unsupported)", (int)res);
+        return false;
+    }
+
+    Trace::Log("VST3", "Restored controller state (%d bytes)", (int)blob.size());
+    return true;
 }
 
 // ====================================================================
@@ -1289,6 +1463,9 @@ void VST3Instrument::discoverParameters() {
 // ====================================================================
 void VST3Instrument::discoverPresets() {
     programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = false;
+    usingMidiPresets_ = false;
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
@@ -1370,6 +1547,497 @@ void VST3Instrument::discoverPresets() {
             programLists_[0].name.c_str(),
             (int)programLists_[0].programs.size());
     }
+
+    // If IUnitInfo yielded no useful presets (0 or only 1), try file-based scanning
+    bool hasUsefulPresets = false;
+    for (size_t i = 0; i < programLists_.size(); i++) {
+        if (programLists_[i].programs.size() > 1) {
+            hasUsefulPresets = true;
+            break;
+        }
+    }
+    if (!hasUsefulPresets) {
+        discoverPresetFiles();
+    }
+
+    // If file-based scanning also didn't find anything, try patchmanager cache
+    if (!usingFilePresets_ && !hasUsefulPresets) {
+        discoverPatchManagerPresets();
+    }
+}
+
+// ====================================================================
+// discoverPresetFiles: scan filesystem for native preset files
+// ====================================================================
+
+// Helper: recursively find files with a given extension in a directory
+static void findPresetFiles(const std::string &dir, const char *extension,
+                            const std::string &category,
+                            std::map<std::string, std::vector<VST3FilePreset>> &bankMap) {
+    DIR *d = opendir(dir.c_str());
+    if (!d) return;
+    struct dirent *ent;
+    size_t extLen = strlen(extension);
+
+    while ((ent = readdir(d)) != nullptr) {
+        if (ent->d_name[0] == '.') continue;
+        std::string name(ent->d_name);
+        std::string full = dir + "/" + name;
+        struct stat st;
+        if (stat(full.c_str(), &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            // Recurse into subdirectory; use subdirectory name as category
+            std::string subCat = category.empty() ? name : category + "/" + name;
+            findPresetFiles(full, extension, subCat, bankMap);
+        } else if (S_ISREG(st.st_mode)) {
+            // Check extension
+            if (name.size() > extLen &&
+                name.substr(name.size() - extLen) == extension) {
+                VST3FilePreset fp;
+                fp.name = name.substr(0, name.size() - extLen);
+                fp.filePath = full;
+                std::string bankName = category.empty() ? "Presets" : category;
+                bankMap[bankName].push_back(fp);
+            }
+        }
+    }
+    closedir(d);
+}
+
+// Table of known plugin-to-preset-directory mappings
+static const VST3PluginPresetMapping knownPresetMappings[] = {
+    // Surge XT: .fxp files with 60-byte FXP header to skip
+    {
+        "Surge XT",
+        {
+            "/usr/share/surge-xt/patches_factory",
+            "/usr/share/surge-xt/patches_3rdparty",
+            nullptr
+        },
+        ".fxp",
+        60  // CcnK(4) + byteSize(4) + FPCh(4) + version(4) + fxID(4) + fxVersion(4) +
+            // numPrograms(4) + prgName(28) + chunkSize(4) = 60 bytes
+    },
+    // Vital / Vitalium: .vital JSON files, no header to skip
+    {
+        "Vital",
+        {
+            nullptr  // No known preset directories installed; user can add their own
+        },
+        ".vital",
+        0
+    },
+    // Sentinel
+    { nullptr, {nullptr}, nullptr, 0 }
+};
+
+void VST3Instrument::discoverPresetFiles() {
+    // Find a matching plugin mapping
+    const VST3PluginPresetMapping *mapping = nullptr;
+    for (int i = 0; knownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, knownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &knownPresetMappings[i];
+            break;
+        }
+    }
+
+    if (!mapping) {
+        Trace::Log("VST3", "No known preset file mapping for '%s'", name_);
+        return;
+    }
+
+    Trace::Log("VST3", "Scanning preset files for '%s' (ext: %s, skip: %d)",
+        name_, mapping->extension, mapping->headerSkipBytes);
+
+    // Also check user home directories
+    std::string homeDir;
+    const char *home = getenv("HOME");
+    if (home) homeDir = home;
+
+    // Collect directories to scan
+    std::vector<std::string> scanDirs;
+    for (int i = 0; i < 6 && mapping->directories[i] != nullptr; i++) {
+        scanDirs.push_back(mapping->directories[i]);
+    }
+
+    // Add user-specific directories based on plugin name
+    if (!homeDir.empty()) {
+        if (strstr(name_, "Surge XT") != nullptr) {
+            scanDirs.push_back(homeDir + "/Documents/Surge XT/Patches");
+        } else if (strstr(name_, "Vital") != nullptr) {
+            scanDirs.push_back(homeDir + "/.vital/User/Presets");
+            scanDirs.push_back(homeDir + "/Music/Vital");
+        }
+    }
+
+    // Scan all directories and collect presets by category
+    std::map<std::string, std::vector<VST3FilePreset>> bankMap;
+    for (size_t i = 0; i < scanDirs.size(); i++) {
+        findPresetFiles(scanDirs[i], mapping->extension, "", bankMap);
+    }
+
+    if (bankMap.empty()) {
+        Trace::Log("VST3", "No preset files found for '%s'", name_);
+        return;
+    }
+
+    // Clear any existing IUnitInfo-based presets and switch to file mode
+    programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = true;
+
+    // Convert bankMap into programLists_ and filePresetsByBank_
+    for (std::map<std::string, std::vector<VST3FilePreset>>::iterator it = bankMap.begin();
+         it != bankMap.end(); ++it) {
+        VST3ProgramList pl;
+        pl.listId = (int32_t)programLists_.size();
+        pl.name = it->first;
+
+        std::vector<VST3FilePreset> bankFilePresets;
+        for (size_t j = 0; j < it->second.size(); j++) {
+            pl.programs.push_back(it->second[j].name);
+            bankFilePresets.push_back(it->second[j]);
+        }
+
+        programLists_.push_back(pl);
+        filePresetsByBank_.push_back(bankFilePresets);
+    }
+
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    Trace::Log("VST3", "File presets: %d bank(s), total presets across banks",
+        (int)programLists_.size());
+    for (size_t i = 0; i < programLists_.size(); i++) {
+        Trace::Log("VST3", "  Bank '%s': %d presets",
+            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
+    }
+}
+
+// ====================================================================
+// discoverPatchManagerPresets: parse gearmulator patchmanager cache
+// for OsTIrus/Osirus/etc. plugins that embed presets in ROM
+// ====================================================================
+//
+// Binary format of patchmanagerdb.cache:
+//   Pmpm(4) + version(u32) + totalSize(u32)             -- file header
+//   PmDs(4) + version(u32) + size(u32) + bankCount(u32) -- dataset container
+//   For each bank:
+//     DatS(4) + version(u32) + payloadSize(u32)          -- bank header
+//     flag(u16) + nameLen(u16) + pad(u16)                 -- bank meta
+//     name[nameLen]                                       -- bank name (ASCII)
+//     pad(u32) + patchCount(u32)                          -- patch count
+//     For each patch:
+//       Patc(4) + version(u32) + payloadSize(u32)         -- patch header
+//       nameLen(u32) + name[nameLen]                       -- patch name (ASCII)
+//       ... (tags, sysex data — skipped via payloadSize)
+
+// Table of gearmulator plugin names and their patchmanager cache locations
+struct PatchManagerMapping {
+    const char *pluginNameSubstring;  // substring to match in plugin name
+    const char *cacheDirSuffix;       // relative to ~/.local/share/The Usual Suspects/
+};
+
+static const PatchManagerMapping patchManagerMappings[] = {
+    { "OsTIrus",  "OsTIrus" },
+    { "Osirus",   "Osirus" },
+    { "Vavra",    "Vavra" },
+    { "Xenia",    "Xenia" },
+    { nullptr, nullptr }
+};
+
+void VST3Instrument::discoverPatchManagerPresets() {
+    // Check if this plugin matches a known gearmulator plugin
+    const PatchManagerMapping *mapping = nullptr;
+    for (int i = 0; patchManagerMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, patchManagerMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &patchManagerMappings[i];
+            break;
+        }
+    }
+    if (!mapping) return;
+
+    // Build the cache file path
+    const char *home = getenv("HOME");
+    if (!home) return;
+
+    std::string cachePath = std::string(home) +
+        "/.local/share/The Usual Suspects/" +
+        mapping->cacheDirSuffix +
+        "/patchmanager/patchmanagerdb.cache";
+
+    Trace::Log("VST3", "Looking for patchmanager cache: %s", cachePath.c_str());
+
+    // Open with POSIX I/O (avoid project fopen macro)
+    int fd = open(cachePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        Trace::Log("VST3", "No patchmanager cache found for '%s'", name_);
+        return;
+    }
+
+    off_t fileSize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+
+    if (fileSize < 28) {  // minimum: Pmpm(12) + PmDs(16)
+        Trace::Error("VST3: Patchmanager cache too small (%ld bytes)", (long)fileSize);
+        close(fd);
+        return;
+    }
+
+    // Read entire file into memory
+    std::vector<uint8_t> data(fileSize);
+    ssize_t bytesRead = read(fd, &data[0], fileSize);
+    close(fd);
+
+    if (bytesRead != fileSize) {
+        Trace::Error("VST3: Short read on patchmanager cache");
+        return;
+    }
+
+    // Helper lambdas for reading fields
+    const uint8_t *buf = &data[0];
+    size_t total = (size_t)fileSize;
+    size_t pos = 0;
+
+    auto readU32 = [&](uint32_t &val) -> bool {
+        if (pos + 4 > total) return false;
+        val = (uint32_t)buf[pos] | ((uint32_t)buf[pos+1] << 8) |
+              ((uint32_t)buf[pos+2] << 16) | ((uint32_t)buf[pos+3] << 24);
+        pos += 4;
+        return true;
+    };
+    auto readU16 = [&](uint16_t &val) -> bool {
+        if (pos + 2 > total) return false;
+        val = (uint16_t)buf[pos] | ((uint16_t)buf[pos+1] << 8);
+        pos += 2;
+        return true;
+    };
+    auto readTag = [&](char tag[5]) -> bool {
+        if (pos + 4 > total) return false;
+        tag[0] = buf[pos]; tag[1] = buf[pos+1];
+        tag[2] = buf[pos+2]; tag[3] = buf[pos+3]; tag[4] = '\0';
+        pos += 4;
+        return true;
+    };
+
+    // Parse file header: Pmpm + version + totalSize
+    char tag[5];
+    uint32_t ver, sz;
+    if (!readTag(tag) || strcmp(tag, "Pmpm") != 0) {
+        Trace::Error("VST3: Invalid patchmanager cache header");
+        return;
+    }
+    if (!readU32(ver) || !readU32(sz)) return;
+
+    // Parse PmDs container: PmDs + version + size + bankCount
+    if (!readTag(tag) || strcmp(tag, "PmDs") != 0) {
+        Trace::Error("VST3: Expected PmDs container in patchmanager cache");
+        return;
+    }
+    uint32_t pmdsVer, pmdsSize, bankCount;
+    if (!readU32(pmdsVer) || !readU32(pmdsSize) || !readU32(bankCount)) return;
+
+    Trace::Log("VST3", "Patchmanager cache: %d banks", (int)bankCount);
+
+    // Sanity limit
+    if (bankCount > 256) {
+        Trace::Error("VST3: Unreasonable bank count %d in patchmanager cache", (int)bankCount);
+        return;
+    }
+
+    // Clear any existing preset data
+    programLists_.clear();
+    filePresetsByBank_.clear();
+
+    for (uint32_t b = 0; b < bankCount; b++) {
+        // Parse DatS header
+        if (!readTag(tag) || strcmp(tag, "DatS") != 0) {
+            Trace::Error("VST3: Expected DatS at bank %d, got '%s'", (int)b, tag);
+            return;
+        }
+        uint32_t dsVer, dsSize;
+        if (!readU32(dsVer) || !readU32(dsSize)) return;
+        size_t payloadStart = pos;
+
+        // DatS payload: flag(u16) + nameLen(u16) + pad(u16) + name + pad(u32) + patchCount(u32)
+        uint16_t flag, nameLen, pad16;
+        if (!readU16(flag) || !readU16(nameLen) || !readU16(pad16)) {
+            pos = payloadStart + dsSize;
+            continue;
+        }
+
+        // Read bank name
+        char bankNameBuf[64];
+        if (nameLen > 63) nameLen = 63;
+        if (pos + nameLen > total) {
+            pos = payloadStart + dsSize;
+            continue;
+        }
+        memcpy(bankNameBuf, buf + pos, nameLen);
+        bankNameBuf[nameLen] = '\0';
+        // Trim trailing whitespace/nulls
+        for (int i = (int)nameLen - 1; i >= 0 && (bankNameBuf[i] == '\0' || bankNameBuf[i] == ' '); i--)
+            bankNameBuf[i] = '\0';
+        pos += nameLen;
+
+        uint32_t pad32, patchCount;
+        if (!readU32(pad32) || !readU32(patchCount)) {
+            pos = payloadStart + dsSize;
+            continue;
+        }
+
+        VST3ProgramList pl;
+        pl.listId = (int32_t)b;
+        pl.name = bankNameBuf;
+
+        // Parse patches
+        for (uint32_t p = 0; p < patchCount && pos < total; p++) {
+            if (!readTag(tag) || strcmp(tag, "Patc") != 0) {
+                Trace::Error("VST3: Expected Patc at bank %d patch %d, got '%s'", (int)b, (int)p, tag);
+                pos = payloadStart + dsSize;
+                break;
+            }
+            uint32_t pVer, pSize;
+            if (!readU32(pVer) || !readU32(pSize)) {
+                pos = payloadStart + dsSize;
+                break;
+            }
+            size_t pPayload = pos;
+
+            // Patch payload: nameLen(u32) + name
+            uint32_t pNameLen;
+            if (!readU32(pNameLen)) {
+                pos = pPayload + pSize;
+                continue;
+            }
+            char patchNameBuf[32];
+            uint32_t copyLen = pNameLen;
+            if (copyLen > 31) copyLen = 31;
+            if (pos + copyLen > total) {
+                pos = pPayload + pSize;
+                continue;
+            }
+            memcpy(patchNameBuf, buf + pos, copyLen);
+            patchNameBuf[copyLen] = '\0';
+            // Trim trailing whitespace/nulls
+            for (int i = (int)copyLen - 1; i >= 0 && (patchNameBuf[i] == '\0' || patchNameBuf[i] == ' '); i--)
+                patchNameBuf[i] = '\0';
+
+            pl.programs.push_back(patchNameBuf);
+
+            // Skip to end of patch payload
+            pos = pPayload + pSize;
+        }
+
+        if (pl.programs.size() > 0) {
+            programLists_.push_back(pl);
+        }
+
+        // Ensure we're at the right position for the next bank
+        pos = payloadStart + dsSize;
+    }
+
+    if (programLists_.empty()) {
+        Trace::Log("VST3", "No patches found in patchmanager cache");
+        return;
+    }
+
+    // Presets will be selected by sending MIDI bank select + program change
+    // via kLegacyMIDICCOutEvent in the VST3 event list. JUCE (used by gearmulator)
+    // converts these to real MIDI messages that the Virus emulator processes.
+    usingMidiPresets_ = true;
+
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    Trace::Log("VST3", "Patchmanager presets: %d bank(s), will use MIDI for selection",
+        (int)programLists_.size());
+    for (size_t i = 0; i < programLists_.size() && i < 5; i++) {
+        Trace::Log("VST3", "  Bank '%s': %d presets",
+            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
+    }
+    if (programLists_.size() > 5) {
+        Trace::Log("VST3", "  ... and %d more banks", (int)(programLists_.size() - 5));
+    }
+}
+
+// ====================================================================
+// loadPresetFromFile: read a preset file and feed it to IComponent::setState
+// ====================================================================
+bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerSkipBytes) {
+    if (!component_) return false;
+
+    // Use POSIX I/O to avoid the project's fopen macro redirect
+    int fd = open(filePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        Trace::Error("VST3: Cannot open preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    off_t fileSize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+
+    if (fileSize <= headerSkipBytes) {
+        Trace::Error("VST3: Preset file too small (%ld bytes): %s", (long)fileSize, filePath.c_str());
+        close(fd);
+        return false;
+    }
+
+    // Skip the header (e.g. 60-byte FXP header for Surge)
+    if (headerSkipBytes > 0) {
+        lseek(fd, headerSkipBytes, SEEK_SET);
+    }
+
+    long dataSize = (long)fileSize - headerSkipBytes;
+    std::vector<uint8_t> data(dataSize);
+    ssize_t bytesRead = read(fd, &data[0], dataSize);
+    close(fd);
+
+    if (bytesRead != dataSize) {
+        Trace::Error("VST3: Short read on preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    // Feed the data to IComponent::setState via our SimpleMemoryStream
+    IComponent *comp = (IComponent *)component_;
+    SimpleMemoryStream stream;
+    stream.setData(&data[0], data.size());
+
+    tresult res = comp->setState(&stream);
+    if (res != kResultOk) {
+        Trace::Error("VST3: setState failed for preset file: %s (result=%d)",
+            filePath.c_str(), (int)res);
+        return false;
+    }
+
+    // Also notify the controller about the component state change
+    if (editController_ && !componentIsController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        stream.resetRead();
+        ctrl->setComponentState(&stream);
+    }
+
+    // Sync parameter values from the plugin back into our Variables
+    if (editController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            VST3PluginParameter &p = parameters_[i];
+            double norm = ctrl->getParamNormalized(p.paramId);
+            p.currentValue = norm;
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaled = (int)(norm * maxVal + 0.5);
+                if (scaled < 0) scaled = 0;
+                if (scaled > maxVal) scaled = maxVal;
+                p.variable->SetInt(scaled, false);
+            }
+        }
+    }
+
+    Trace::Log("VST3", "Loaded preset from file: %s (%ld bytes, skipped %d)",
+        filePath.c_str(), dataSize, headerSkipBytes);
+    return true;
 }
 
 // ====================================================================
@@ -1420,6 +2088,67 @@ void VST3Instrument::SetPreset(int presetIdx) {
 
     currentPreset_ = presetIdx;
 
+    // --- File-based preset loading ---
+    if (usingFilePresets_) {
+        if (currentBank_ < (int)filePresetsByBank_.size() &&
+            presetIdx < (int)filePresetsByBank_[currentBank_].size()) {
+
+            const VST3FilePreset &fp = filePresetsByBank_[currentBank_][presetIdx];
+
+            // Determine headerSkipBytes from the known mappings table
+            int headerSkip = 0;
+            for (int m = 0; knownPresetMappings[m].pluginNameSubstring != nullptr; m++) {
+                if (strstr(name_, knownPresetMappings[m].pluginNameSubstring) != nullptr) {
+                    headerSkip = knownPresetMappings[m].headerSkipBytes;
+                    break;
+                }
+            }
+
+            if (loadPresetFromFile(fp.filePath, headerSkip)) {
+                Trace::Log("VST3", "Loaded file preset %d ('%s') from bank '%s'",
+                    presetIdx, fp.name.c_str(), pl.name.c_str());
+            }
+        }
+        return;
+    }
+
+    // --- MIDI-based preset selection (gearmulator/OsTIrus) ---
+    // Send bank select LSB (CC#32) + program change as kLegacyMIDICCOutEvent
+    // events through the VST3 event list.  JUCE converts these to real MIDI
+    // messages that the Virus emulator's Microcontroller processes.
+    if (usingMidiPresets_) {
+        int bankVal = currentBank_;
+        if (bankVal < 0) bankVal = 0;
+        if (bankVal > 127) bankVal = 127;
+
+        int progVal = presetIdx;
+        if (progVal < 0) progVal = 0;
+        if (progVal > 127) progVal = 127;
+
+        PendingMidiCC bankCC;
+        bankCC.controlNumber = 32;  // kCtrlBankSelectLSB — CC#32
+        bankCC.channel = 0;
+        bankCC.value = (int8_t)bankVal;
+        bankCC.value2 = 0;
+
+        PendingMidiCC progCC;
+        progCC.controlNumber = (uint8_t)130;  // kCtrlProgramChange
+        progCC.channel = 0;
+        progCC.value = (int8_t)progVal;
+        progCC.value2 = 0;
+
+        pendingEventsMutex_.Lock();
+        pendingMidiCCs_.push_back(bankCC);
+        pendingMidiCCs_.push_back(progCC);
+        pendingEventsMutex_.Unlock();
+
+        Trace::Log("VST3", "MIDI preset: bank %d ('%s') preset %d ('%s')",
+            currentBank_, pl.name.c_str(), presetIdx,
+            GetPresetName(presetIdx));
+        return;
+    }
+
+    // --- IUnitInfo-based preset selection via kIsProgramChange parameter ---
     if (!editController_) return;
     IEditController* ctrl = (IEditController*)editController_;
 

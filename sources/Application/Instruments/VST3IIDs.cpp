@@ -33,5 +33,6 @@ DEF_CLASS_IID (Vst::IConnectionPoint)
 DEF_CLASS_IID (Vst::IMessage)
 DEF_CLASS_IID (Vst::IAttributeList)
 DEF_CLASS_IID (Vst::IUnitInfo)
+DEF_CLASS_IID (Vst::IMidiMapping)
 
 } // namespace Steinberg

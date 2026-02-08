@@ -167,7 +167,7 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					count++;
 				}
 			}
-			// VST3 instruments: save plugin path and class ID
+			// VST3 instruments: save plugin path, class ID, and full state blobs
 			if (instr->GetType() == IT_VST3) {
 				VST3Instrument *vin = (VST3Instrument *)instr;
 				int pc = vin->GetParameterCount();
@@ -185,6 +185,24 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 						Variable *nv = new Variable(varName, MAKE_FOURCC('V','P',pi/256,pi%256), scaled);
 						instr->Insert(nv);
 					}
+				}
+				// Save full component state blob (base64)
+				std::string compState = vin->GetComponentStateBase64();
+				if (!compState.empty()) {
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", "vst3_comp_state");
+					paramp.SetAttribute("VALUE", compState.c_str());
+					data.InsertEndChild(paramp);
+					count++;
+				}
+				// Save full controller state blob (base64)
+				std::string ctrlState = vin->GetControllerStateBase64();
+				if (!ctrlState.empty()) {
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", "vst3_ctrl_state");
+					paramp.SetAttribute("VALUE", ctrlState.c_str());
+					data.InsertEndChild(paramp);
+					count++;
 				}
 			}
 			// Ensure LV2 plugin URI and parameter values are recorded even if

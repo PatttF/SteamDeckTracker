@@ -52,6 +52,7 @@ private:
 	char vst3PluginLabel_[80]; // Storage for VST3 plugin label
 	char vst3ParamText_[40][40]; // Storage for VST3 parameter labels
 	char vst3PresetLabel_[80]; // Storage for VST3 preset name display
+	char vst3BankLabel_[80]; // Storage for VST3 bank name display
 	int vst3ScrollOffset_ ;  // For scrolling VST3 parameters
 	// Track last selected 'type' per instrument so we can detect changes and switch types
 	int lastType_[MAX_INSTRUMENT_COUNT];

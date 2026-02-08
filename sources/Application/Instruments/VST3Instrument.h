@@ -52,6 +52,20 @@ struct VST3ProgramList {
     std::vector<std::string> programs;  // program names
 };
 
+// File-based preset entry (for plugins that don't expose presets via IUnitInfo)
+struct VST3FilePreset {
+    std::string name;       // display name (filename without extension)
+    std::string filePath;   // full filesystem path to preset file
+};
+
+// Known plugin preset directory mapping
+struct VST3PluginPresetMapping {
+    const char *pluginNameSubstring;    // substring to match in plugin name
+    const char *directories[6];         // directories to scan (nullptr terminated)
+    const char *extension;              // file extension (e.g. ".fxp")
+    int headerSkipBytes;                // bytes to skip at start of file (60 for FXP)
+};
+
 class VST3Instrument : public I_Instrument, public I_Observer {
 
 public:
@@ -119,6 +133,12 @@ public:
 
     // Store a variable value read from project file when variable doesn't yet exist
     void StorePendingVariable(const char *name, const char *value);
+
+    // Full plugin state save/restore (binary blob via IComponent/IEditController)
+    std::string GetComponentStateBase64() const;
+    std::string GetControllerStateBase64() const;
+    bool RestoreComponentState(const std::string &base64Data);
+    bool RestoreControllerState(const std::string &base64Data);
 
     // Scanning: discover all VST3 instrument plugins on the system
     static std::vector<VST3PluginInfo> ScanPlugins();
@@ -193,11 +213,27 @@ private:
     // Plugin parameters
     std::vector<VST3PluginParameter> parameters_;
 
-    // Program lists / presets (discovered via IUnitInfo)
+    // Program lists / presets (discovered via IUnitInfo or file scanning)
     std::vector<VST3ProgramList> programLists_;
     int currentBank_;                           // index into programLists_
     int currentPreset_;                         // index into current bank's programs
     int32_t programChangeParamIdx_;             // index into parameters_ for kIsProgramChange param (-1 if none)
+
+    // File-based preset support (for plugins that don't expose presets via IUnitInfo)
+    bool usingFilePresets_;                     // true when presets come from file scanning
+    std::vector<std::vector<VST3FilePreset>> filePresetsByBank_;  // parallel to programLists_
+
+    // MIDI-based preset support (for gearmulator/OsTIrus: bank select CC#32 + program change)
+    bool usingMidiPresets_;                     // true when presets use MIDI events for selection
+
+    // Pending MIDI CC / program change events to send via kLegacyMIDICCOutEvent
+    struct PendingMidiCC {
+        uint8_t controlNumber;  // ControllerNumbers enum value
+        int8_t  channel;        // MIDI channel 0-15
+        int8_t  value;          // 0-127
+        int8_t  value2;         // 0-127 (for pitch bend / poly pressure)
+    };
+    std::vector<PendingMidiCC> pendingMidiCCs_;
 
     // Render-once-per-cycle caching
     fixed *cachedOutputBuffer_;
@@ -208,6 +244,7 @@ private:
     // Pre-allocated scratch vectors for audio thread
     std::vector<PendingNoteEvent> renderLocalNotes_;
     std::vector<PendingParamChange> renderLocalParams_;
+    std::vector<PendingMidiCC> renderLocalMidiCCs_;
 
     bool isActive_;
     bool isProcessing_;
@@ -217,6 +254,9 @@ private:
     void cleanupPlugin();
     void discoverParameters();
     void discoverPresets();
+    void discoverPresetFiles();
+    void discoverPatchManagerPresets();
+    bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes);
     void setupProcessing(int bufferSize);
 };
 

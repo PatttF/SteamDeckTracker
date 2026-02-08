@@ -735,6 +735,14 @@ void InstrumentView::fillVST3Parameters() {
 			UIIntVarField *bf = new UIIntVarField(position, *bv, "bank: %2.2X", 0, maxBank, 1, 0x10);
 			T_SimpleList<UIField>::Insert(bf);
 			position._y += 1;
+
+			// Show bank name
+			int bankIdx = instrument->GetCurrentBank();
+			const char *bankName = instrument->GetBankName(bankIdx);
+			snprintf(vst3BankLabel_, sizeof(vst3BankLabel_), "  [%s]", bankName);
+			UIStaticField *bsf = new UIStaticField(position, vst3BankLabel_);
+			T_SimpleList<UIField>::Insert(bsf);
+			position._y += 1;
 		}
 
 		// Preset selector
