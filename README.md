@@ -46,3 +46,383 @@ In Steam search for SDTracker control layout in community to correctly map your 
 
 <img width="550" height="272" alt="image" src="https://github.com/user-attachments/assets/8f0bb008-fc26-4c2a-be48-0aec7d03e610" />
 
+
+---
+
+## Command Reference
+
+Commands are entered in the phrase and table editors. Each command uses the format **`CMD:aabb`** where `aa` is typically a speed or modifier parameter and `bb` is the target value. All values are hexadecimal.
+
+Commands are processed in two stages: the **Player** handles global/playback commands first, then the remaining commands are forwarded to the active **Instrument** for audio-level processing.
+
+### Instrument Compatibility Key
+
+| Symbol | Meaning |
+|--------|---------|
+| **S** | Sample Instrument |
+| **SF** | SoundFont Instrument |
+| **LV2** | LV2 Plugin Instrument |
+| **All** | All instrument types |
+| **Player** | Handled by the player engine (instrument-independent) |
+
+---
+
+### Playback & Flow Control
+
+#### KILL — Kill Note
+**Format:** `KILL:--bb`  
+**Support:** Player  
+Stops the note playing on the current channel after `bb` ticks. Use `KILL:0000` to cut immediately on the next tick. The tick counter decrements each table tick, so higher values give a longer fade-out window before the hard stop.
+
+#### STOP — Stop Playback
+**Format:** `STOP:0000`  
+**Support:** Player  
+Immediately stops song playback. In **Song mode**, stops the entire song. In **Live mode**, stops the current channel only. Takes no parameters.
+
+#### HOP — Hop to Position
+**Format:** `HOP:aabb`  
+**Support:** Player  
+Jumps playback to step `bb` in the current phrase.
+
+- `aa` = loop count: how many times to execute the hop before falling through.
+  - `00` = infinite loop (always jumps).
+  - `01`–`FE` = jump that many times, then continue past the HOP on the next encounter.
+- `bb` = target step (`00`–`0F`).
+
+Example: `HOP:0308` jumps to step 08 three times, then on the fourth encounter continues past without hopping.
+
+#### DLAY — Delay Note
+**Format:** `DLAY:--bb`  
+**Support:** Player  
+Delays the triggering of the note on the current step by `bb` ticks. The note data is held and only played after the specified number of ticks have elapsed.
+
+#### TABL — Trigger Table
+**Format:** `TABL:--bb`  
+**Support:** Player  
+Activates table `bb` on the current channel. Tables are independent sequencer lanes that run commands at a faster rate (controlled by the table tick ratio). Useful for creating rapid arpeggios, filter sweeps, or other automated modulations.
+
+#### GROV — Set Groove
+**Format:** `GROV:aabb`  
+**Support:** Player  
+Sets groove pattern `bb` on the current channel. If `aa` is non-zero, the groove is applied to **all** channels simultaneously. Grooves define variable tick lengths per step to create swing or shuffle feels.
+
+#### RAND — Random Probability
+**Format:** `RAND:--bb`  
+**Support:** Player  
+Sets the probability that the current note will play.
+
+- `bb` = chance out of 256.
+  - `00` = note never plays.
+  - `80` = ~50% chance.
+  - `FF` = note always plays (guaranteed).
+
+When the probability check fails, the note is killed. Useful for creating generative, evolving patterns.
+
+---
+
+### Volume & Panning
+
+#### VOLM — Volume
+**Format:** `VOLM:aabb`  
+**Support:** S  
+Smoothly ramps the channel volume toward `bb` at speed `aa`.
+
+- `bb` = target volume (`00`–`FF`, where `FF` is maximum).
+- `aa` = ramp speed (`00` = instant, higher = slower ramp).
+
+Example: `VOLM:0080` instantly sets volume to 50%. `VOLM:1000` fades to silence slowly.
+
+#### PAN — Panning
+**Format:** `PAN:aabb`  
+**Support:** S  
+Pans the channel toward position `bb` at speed `aa`.
+
+- `bb` = pan position (`00` = hard left, `7F` = center, `FE` = hard right).
+- `aa` = ramp speed (`00` = instant, higher = slower).
+
+#### TRML — Tremolo
+**Format:** `TRML:aabb`  
+**Support:** S, SF, LV2  
+Applies a volume LFO (tremolo) to the channel.
+
+- `aa` = oscillation speed (`01`–`FF`, higher = faster wobble).
+- `bb` = depth (`00` = off, `FF` = maximum volume swing).
+
+The LFO uses a sine wave. On Sample instruments it's applied as an additive offset to volume at the k-rate update. On SoundFont and LV2 instruments, it's applied per-sample as a multiplicative modulation: `volume × (1.0 + sin(phase) × depth)`.
+
+---
+
+### Pitch & Tuning
+
+#### PTCH — Pitch Slide
+**Format:** `PTCH:aabb`  
+**Support:** S  
+Slides pitch toward `bb` semitones (relative) at speed `aa`.
+
+- `bb` = target pitch offset in semitones (signed: `01`–`7F` = up, `80`–`FF` = down).
+- `aa` = ramp speed (`00` = instant, higher = slower glide).
+
+#### LEGA — Legato
+**Format:** `LEGA:aabb`  
+**Support:** S  
+Slides from the **previous note's pitch** to the current note without retriggering. Creates smooth portamento between notes.
+
+- `bb` = semitone offset. If `00`, slides to the last played note on the channel.
+- `aa` = slide speed (`00` = instant, higher = slower).
+
+#### PFIN — Pitch Fine Tune
+**Format:** `PFIN:aabb`  
+**Support:** S  
+Fine-tunes pitch by a fractional semitone amount.
+
+- `bb` = fine pitch target (`00`–`FF`, where `80` = no change, `00` = -1 semitone, `FF` = +1 semitone).
+- `aa` = ramp speed (`00` = instant, higher = slower).
+
+Useful for subtle detuning, microtuning, or smooth vibrato-like sweeps with precise control.
+
+#### ARPG — Arpeggio
+**Format:** `ARPG:abcd`  
+**Support:** S  
+Rapidly cycles through relative pitch offsets from the base note each tick.
+
+- `a`, `b`, `c`, `d` = semitone offsets (each is a single hex digit, `0`–`F`).
+
+The arpeggiator cycles: base → +a → +b → +c → +d → base → ... Unused trailing values of `0` are skipped. Example: `ARPG:3700` creates a minor chord arpeggio (root, +3, +7).
+
+#### VIBR — Vibrato
+**Format:** `VIBR:aabb`  
+**Support:** S, SF, LV2  
+Applies a pitch LFO (vibrato) to the channel.
+
+- `aa` = oscillation speed (`01`–`FF`, higher = faster).
+- `bb` = depth (`00` = off, `FF` = maximum ±4 semitone swing).
+
+Uses a sine wave oscillator. Modulates pitch via `pow(2, sin(phase) × depth × 4/12)`, giving a musically-scaled pitch wobble up to ±4 semitones at full depth.
+
+---
+
+### Filter
+
+#### FLTR — Filter & Resonance (Instant)
+**Format:** `FLTR:aabb`  
+**Support:** S  
+Instantly sets both filter cutoff and resonance simultaneously.
+
+- `aa` = cutoff frequency (`00` = fully closed, `FF` = fully open / bypass).
+- `bb` = resonance / Q (`00` = no resonance, `FF` = maximum).
+
+Default (no filter) is `FF00`. This command replaces any active FCUT or FRES ramp.
+
+#### FCUT — Filter Cutoff (Ramp)
+**Format:** `FCUT:aabb`  
+**Support:** S  
+Smoothly ramps the filter cutoff to `bb` at speed `aa`.
+
+- `bb` = target cutoff (`00`–`FF`).
+- `aa` = ramp speed (`00` = instant, higher = slower sweep).
+
+#### FRES — Filter Resonance (Ramp)
+**Format:** `FRES:aabb`  
+**Support:** S  
+Smoothly ramps filter resonance to `bb` at speed `aa`.
+
+- `bb` = target resonance (`00`–`FF`).
+- `aa` = ramp speed (`00` = instant, higher = slower).
+
+#### LFOF — LFO Filter
+**Format:** `LFOF:aabb`  
+**Support:** S, SF  
+Oscillates the filter cutoff with a sine-wave LFO.
+
+- `aa` = oscillation speed (`01`–`FF`, higher = faster).
+- `bb` = depth (`00` = off, `FF` = full cutoff range sweep).
+
+Creates auto-wah and filter wobble effects. On SoundFont instruments, modulation is applied per-sample.
+
+---
+
+### Sample Manipulation
+
+#### LPOF — Loop Offset
+**Format:** `LPOF:aabb`  
+**Support:** S  
+Shifts both the loop start and loop end points by `aabb` samples.
+
+- Positive values shift the loop window forward in the sample.
+- Values above `8000` are treated as negative (shift backward).
+
+Useful for scanning through different parts of a looping waveform in real time.
+
+#### PLOF — Play Offset
+**Format:** `PLOF:aabb`  
+**Support:** S  
+Jumps the playback position within the sample.
+
+- `aa` = absolute position jump. The sample is divided into 256 chunks; `aa` jumps to that chunk (`00` = no absolute jump, `01` = near start, `FF` = near end).
+- `bb` = relative offset. Signed value (`00`–`7F` = forward, `80`–`FF` = backward) in chunk-sized steps.
+
+Both absolute and relative offsets can be combined in a single command.
+
+#### CRSH — Drive & Crush
+**Format:** `CRSH:aa-b`  
+**Support:** S  
+Applies distortion and bit-crushing effects.
+
+- `aa` = drive amount (`00` = no change, `01`–`FF` = increasing distortion).
+- `b` = bit crush (lower nibble only, `0` = no change, `1`–`F` = decreasing bit depth).
+
+Values of `0` for either parameter leave that effect unchanged from its current state.
+
+#### RTRG — Retrigger
+**Format:** `RTRG:aabb`  
+**Support:** S  
+Retriggers the sample in a loop from its current position.
+
+- `bb` = loop length in ticks (number of ticks before each retrigger).
+- `aa` = speed/offset applied at each retrigger cycle.
+
+Creates stuttering, glitch, and drum-roll effects. Set `bb` to `00` to disable retriggering.
+
+#### IRTG — Instrument Retrigger
+**Format:** `IRTG:aabb`  
+**Support:** Player  
+Retriggers the current instrument and transposes it.
+
+- `aa` = retrigger speed.
+- `bb` = transpose amount.
+
+Unlike RTRG which loops from the current position, IRTG fully retriggers the instrument as if a new note was played.
+
+---
+
+### Feedback (Sample Instrument)
+
+#### FBMX — Feedback Mix
+**Format:** `FBMX:aabb`  
+**Support:** S  
+Ramps the feedback mix level to `bb` at speed `aa`.
+
+- `bb` = target feedback mix amount (`00`–`FF`).
+- `aa` = ramp speed (`00` = instant, higher = slower).
+
+Controls how much of the feedback buffer is mixed into the output.
+
+#### FBTN — Feedback Tune
+**Format:** `FBTN:aabb`  
+**Support:** S  
+Ramps the feedback tuning to `bb` at speed `aa`.
+
+- `bb` = target feedback tune (`00`–`FF`).
+- `aa` = ramp speed (`00` = instant, higher = slower).
+
+Adjusts the pitch/delay-length of the feedback loop, creating comb-filter and Karplus-Strong style timbral changes.
+
+---
+
+### Effects
+
+#### FXSN — Effect Send
+**Format:** `FXSN:aabb`  
+**Support:** Player  
+Routes the channel's audio through an LV2 effect loaded on the Effects page.
+
+- `aa` = effect slot number (`00`–`0F`, corresponding to the 16 effect slots).
+- `bb` = wet/dry mix (`00` = fully dry, `FF` = fully wet).
+
+Use `FXSN:FF00` or any slot ≥ `10` to clear the effect assignment from the channel. Effects must be loaded on the Effects page before they can be assigned.
+
+#### REVB — Reverb
+**Format:** `REVB:aabb`  
+**Support:** S, LV2  
+Configures the built-in reverb send for the channel. Uses a nibble-based format:
+
+- `a` (high nibble of `aa`) = decay amount (`0`–`F`, maps to 0–90% feedback).
+- `a` (low nibble of `aa`) = damping (`0`–`F`, maps to 0–85% high-frequency absorption).
+- `bb` = send amount (`00`–`FF`, how much signal is sent to the reverb).
+
+Example: `REVB:F080` = maximum decay, no damping, 50% send. `REVB:8840` = medium decay, medium damping, 25% send.
+
+The reverb uses a 6-tap multi-delay with cross-channel diffusion and configurable damping for a rich stereo wash.
+
+---
+
+### MIDI
+
+#### MDCC — MIDI CC
+**Format:** `MDCC:aabb`  
+**Support:** S  
+Sends a MIDI Continuous Controller message.
+
+- `aa` = CC number (`00`–`7F`).
+- `bb` = CC value (`00`–`7F`).
+
+Useful for controlling external MIDI hardware or software parameters.
+
+#### MDPG — MIDI Program Change
+**Format:** `MDPG:--bb`  
+**Support:** S  
+Sends a MIDI Program Change message on the current channel.
+
+- `bb` = program number.
+
+#### MVEL — MIDI Velocity
+**Format:** `MVEL:--bb`  
+**Support:** S  
+Sets the MIDI velocity for the current step.
+
+- `bb` = velocity value (`00`–`FF`).
+
+Affects the note-on velocity of MIDI output and can influence sample playback volume on velocity-sensitive instruments.
+
+---
+
+### Tempo
+
+#### TMPO — Tempo
+**Format:** `TMPO:--bb`  
+**Support:** Player  
+Sets the global playback tempo.
+
+- `bb` = tempo in BPM (hex). Valid range: 41–399 BPM (hex `29`–`018F`).
+
+Example: `TMPO:0078` sets tempo to 120 BPM. `TMPO:00A0` sets tempo to 160 BPM.
+
+---
+
+### Quick Reference Table
+
+| Command | Format | Description | Support |
+|---------|--------|-------------|---------|
+| `ARPG` | `abcd` | Arpeggio cycle through pitch offsets | S |
+| `CRSH` | `aa-b` | Drive & bit crush | S |
+| `DLAY` | `--bb` | Delay note by bb ticks | Player |
+| `FBMX` | `aabb` | Feedback mix ramp | S |
+| `FBTN` | `aabb` | Feedback tune ramp | S |
+| `FCUT` | `aabb` | Filter cutoff ramp | S |
+| `FLTR` | `aabb` | Instant filter cutoff + resonance | S |
+| `FRES` | `aabb` | Filter resonance ramp | S |
+| `FXSN` | `aabb` | Route to LV2 effect slot | Player |
+| `GROV` | `aabb` | Set groove pattern | Player |
+| `HOP`  | `aabb` | Hop to phrase position | Player |
+| `IRTG` | `aabb` | Instrument retrigger + transpose | Player |
+| `KILL` | `--bb` | Kill note after bb ticks | Player |
+| `LEGA` | `aabb` | Legato/portamento slide | S |
+| `LFOF` | `aabb` | LFO filter modulation | S, SF |
+| `LPOF` | `aabb` | Loop start/end offset | S |
+| `MDCC` | `aabb` | Send MIDI CC | S |
+| `MDPG` | `--bb` | Send MIDI Program Change | S |
+| `MVEL` | `--bb` | Set MIDI velocity | S |
+| `PAN`  | `aabb` | Pan position ramp | S |
+| `PFIN` | `aabb` | Pitch fine tune ramp | S |
+| `PLOF` | `aabb` | Playback position offset | S |
+| `PTCH` | `aabb` | Pitch slide ramp | S |
+| `RAND` | `--bb` | Probability note plays | Player |
+| `REVB` | `aabb` | Reverb decay/damp/send | S, LV2 |
+| `RTRG` | `aabb` | Retrigger from position | S |
+| `STOP` | `----` | Stop playback | Player |
+| `TABL` | `--bb` | Trigger table | Player |
+| `TMPO` | `--bb` | Set tempo (BPM in hex) | Player |
+| `TRML` | `aabb` | Tremolo (volume LFO) | S, SF, LV2 |
+| `VIBR` | `aabb` | Vibrato (pitch LFO) | S, SF, LV2 |
+| `VOLM` | `aabb` | Volume ramp | S |
+
