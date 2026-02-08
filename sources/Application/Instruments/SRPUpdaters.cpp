@@ -405,7 +405,11 @@ void Tremolo::UpdateSRP(struct RUParams &rup) {
 	float depthF = fp2fl(depth_) ;
 	// Modulate volume: sineVal -1..1, depth 1.0 = full mute at trough
 	// Scale to volume units (0-255 range matches baseVolume scale)
-	fixed volMod = fl2fp(sineVal * depthF * 255.0f) ;
+	float volModF = sineVal * depthF * 255.0f ;
+	// Clamp to prevent fixed-point overflow in downstream fp_mul chains
+	if (volModF > 255.0f) volModF = 255.0f ;
+	if (volModF < -255.0f) volModF = -255.0f ;
+	fixed volMod = fl2fp(volModF) ;
 	rup.volumeOffset_ = fp_add(rup.volumeOffset_, volMod) ;
 } ;
 

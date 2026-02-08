@@ -693,6 +693,7 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
             break ;
 		case I_CMD_TABL:
 			{
+				if (!instr) return true ;
 				TableHolder *th=TableHolder::GetInstance() ;
 				TablePlayback &tpb=TablePlayback::GetTablePlayback(channel) ;
 				param=param&0x7F ;
@@ -918,7 +919,7 @@ void Player::updatePhrasePos(int pos,int channel) {
 
 	cc=viewData_->song_->phrase_->cmd2_[phrase*16+pos] ;
 	if (cc==I_CMD_DLAY) {
-		ushort param=viewData_->song_->phrase_->param1_[phrase*16+pos] ;
+		ushort param=viewData_->song_->phrase_->param2_[phrase*16+pos] ;
 		timeToStart_[channel]=(param&0x0F)+1 ;
 	}
 }

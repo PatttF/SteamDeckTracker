@@ -295,6 +295,10 @@ void SDLGUIWindowImp::DrawChar(const char c, GUIPoint &pos, GUITextProperties &p
 		}
 
 	} else {
+		// Bounds-check the character index to prevent out-of-bounds font access
+		unsigned int fontID = (unsigned char)c;
+		if (fontID >= FONT_COUNT) return;
+
 		// prepare bg & fg pixel ptr
         int pixelSize=surface_->format->BytesPerPixel ;
 		unsigned char *bgPtr=(unsigned char *)&backgroundColor_ ;
@@ -303,7 +307,7 @@ void SDLGUIWindowImp::DrawChar(const char c, GUIPoint &pos, GUITextProperties &p
 		bgPtr+=(4-pixelSize) ;
 		fgPtr+=(4-pixelSize) ;
 #endif
-		const unsigned char *src=font+c*8 ;
+		const unsigned char *src=font+fontID*8 ;
         unsigned char *dest=((unsigned char *)surface_->pixels) + (yy*surface_->pitch) + xx*pixelSize;
 
 		for (int y = 0; y < 8; y++) {
@@ -377,6 +381,10 @@ void SDLGUIWindowImp::DrawString(const char *string,GUIPoint &pos,GUITextPropert
 		} 
     else
     {
+			// Bounds-check the character index to prevent out-of-bounds font access
+			unsigned int fontID = (unsigned char)string[l];
+			if (fontID >= FONT_COUNT) { xx+=8*mult_; continue; }
+
 			// prepare bg & fg pixel ptr
             int pixelSize=surface_->format->BytesPerPixel ;
 			unsigned char *bgPtr=(unsigned char *)&backgroundColor_ ;
@@ -385,7 +393,7 @@ void SDLGUIWindowImp::DrawString(const char *string,GUIPoint &pos,GUITextPropert
 			bgPtr+=(4-pixelSize) ;
 			fgPtr+=(4-pixelSize) ;
 #endif
-			const unsigned char *src=font+(string[l]*8) ;
+			const unsigned char *src=font+(fontID*8) ;
             unsigned char *dest=((unsigned char *)surface_->pixels) + (yy*surface_->pitch) + xx*pixelSize;
 
 			for (int y = 0; y < 8; y++) {

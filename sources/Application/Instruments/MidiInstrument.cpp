@@ -41,6 +41,7 @@ void MidiInstrument::OnStart() {
 
 bool MidiInstrument::Start(int c,unsigned char note,bool retrigger) {
 
+	if (c < 0 || c >= SONG_CHANNEL_COUNT) return false ;
 	first_[c]=true ;
 	lastNote_[c]=note ;
 
@@ -74,6 +75,7 @@ bool MidiInstrument::Start(int c,unsigned char note,bool retrigger) {
 
 void MidiInstrument::Stop(int c) {
 
+	if (c < 0 || c >= SONG_CHANNEL_COUNT) return ;
 	Variable *v=FindVariable(MIP_CHANNEL) ;
 	int channel=v->GetInt() ;
 
@@ -156,7 +158,9 @@ void MidiInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
             }
 			break ;
 		case I_CMD_MVEL: {
-			velocity_ = floor(static_cast<float>(value / 2));
+			int vel = value / 2;
+			if (vel > 127) vel = 127;
+			velocity_ = (char)vel;
 		}; break;
 
 		case I_CMD_VOLM:

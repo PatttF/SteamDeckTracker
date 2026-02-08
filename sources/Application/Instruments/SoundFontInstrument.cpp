@@ -495,16 +495,23 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
         }
 
         if (v.active) anyActive = true;
+
+        // Preserve the per-sample advanced LFO phases from this voice
+        // so they carry over correctly to the next Render() call.
+        tremoloPhase = tPhase;
+        vibratoPhase = vPhase;
     }
 
-    // Save LFO phases back (use the last voice's phase progression)
+    // Save LFO phases back from the last voice's per-sample progression
     if (cs.tremolo.active) {
-        cs.tremolo.phase = tremoloPhase + cs.tremolo.speed * size;
+        cs.tremolo.phase = tremoloPhase;
         while (cs.tremolo.phase >= 256.0f) cs.tremolo.phase -= 256.0f;
+        while (cs.tremolo.phase < 0.0f) cs.tremolo.phase += 256.0f;
     }
     if (cs.vibrato.active) {
-        cs.vibrato.phase = vibratoPhase + cs.vibrato.speed * size;
+        cs.vibrato.phase = vibratoPhase;
         while (cs.vibrato.phase >= 256.0f) cs.vibrato.phase -= 256.0f;
+        while (cs.vibrato.phase < 0.0f) cs.vibrato.phase += 256.0f;
     }
 
     // Apply de-click fade out if requested

@@ -836,6 +836,8 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
 }
 
 void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
+
     // Handle REVB command for reverb effect
     if (cc == I_CMD_REVB) {
         // REVB:aabb - a=decay (0-F), a=damping (0-F), bb=send amount (0-FF)

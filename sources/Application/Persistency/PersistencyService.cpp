@@ -66,6 +66,13 @@ bool PersistencyService::Load() {
 		int fullLength ;
 		memcpy(&fullLength,compBuffer,offset) ;
 		
+		// Sanity check: reject obviously bad lengths
+		if (fullLength <= 0 || fullLength > 16 * 1024 * 1024) {
+			Trace::Error("Corrupt save: bad uncompressed size %d", fullLength) ;
+			SYS_FREE(compBuffer);
+			return false ;
+		}
+
 		// Allocate a buffer to decompress data (extra byte for NUL)
 		
 		unsigned char *xmlSource=(unsigned char *)SYS_MALLOC(fullLength + 1) ;

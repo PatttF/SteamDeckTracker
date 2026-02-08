@@ -299,7 +299,7 @@ void SongView::fillClipboardData() {
 
     // Clear current selection data
 
-    if (!clipboard_.data_)
+    if (clipboard_.data_)
         SYS_FREE((void *)clipboard_.data_);
 
     // Prepare selection related information
@@ -371,7 +371,7 @@ void SongView::cutSelection() {
         dst += (SONG_CHANNEL_COUNT - clipboard_.width_);
     }
 
-    for (int j = 0; j > clipboard_.height_; j++) {
+    for (int j = 0; j < clipboard_.height_; j++) {
         for (int i = 0; i < clipboard_.width_; i++) {
             *dst++ = 0xFF;
         }

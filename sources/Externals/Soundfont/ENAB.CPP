@@ -73,6 +73,7 @@ RIFFClass              riff;
 SoundFontNavigator      navit;
 
 HydraClass *GetHydraPtr(int bankID) {
+	if (bankID < 0 || bankID >= MAXLOADEDBANKS) return NULL;
 	return bankNodes[bankID].pHydra; 
 }
 
@@ -206,14 +207,18 @@ SFSAMPLEHDRPTR  &sfGetSampHdrs( sfBankID fromBank, WORD  *cnt )
 //
 //-***************************************************************************
 {
-/*  if ((fromBank >= MAXLOADEDBANKS) || ( fromBank < 0 )) { 
+  if ((fromBank >= MAXLOADEDBANKS) || ( fromBank < 0 )) { 
     omega = enaENOSUCHBANK; 
-    return NULL; 
+    *cnt = 0;
+    static SFSAMPLEHDRPTR nullPtr = NULL;
+    return nullPtr; 
   }
   if(bankNodes[fromBank].pHydra == NULL) { 
     omega = enaWBANKNOTLOADED; 
-    return NULL; 
-  } */
+    *cnt = 0;
+    static SFSAMPLEHDRPTR nullPtr2 = NULL;
+    return nullPtr2; 
+  }
   *cnt = bankNodes[fromBank].pHydra->awStructSize[sampHdr] -1; 
   return bankNodes[fromBank].pHydra->pSHdr; 
 

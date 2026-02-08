@@ -610,6 +610,11 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 				rp->volume_=rp->baseVolume_+rup.volumeOffset_ ;
 				rp->speed_=fp_mul(rp->baseSpeed_,rup.speedOffset_) ;
 				rp->pan_=rp->basePan_+rup.panOffset_ ;
+
+				// Clamp to safe ranges (matches k-rate clamping)
+				if (rp->volume_ < 0) rp->volume_ = 0;
+				if (rp->pan_ < 0) rp->pan_ = 0;
+				if (rp->pan_ > i2fp(254)) rp->pan_ = i2fp(254);
 			}
 
 		// Process retrig
@@ -1386,6 +1391,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 				float baseVolume=fp2fl(rp->baseVolume_) ;
                 
 				int sampleCount=int(4*SyncMaster::GetInstance()->GetTickSampleCount()) ;
+				if (sampleCount < 1) sampleCount = 1 ;
 				speed=(speed==0)?0:fabs(targetVolume-startVolume)*KRATE_SAMPLE_COUNT/float(speed)/sampleCount ;
 				rp->volumeRamp_.SetData(targetVolume-baseVolume,speed,startVolume-baseVolume) ;
 				if (!rp->volumeRamp_.Enabled()) {
@@ -1405,6 +1411,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 				float speed=float(value>>8) ;
 				float startPan=fp2fl(rp->pan_) ;
 				int sampleCount=int(4*SyncMaster::GetInstance()->GetTickSampleCount()) ;
+				if (sampleCount < 1) sampleCount = 1 ;
 				speed=(speed==0)?0:fabs(targetPan-startPan)*KRATE_SAMPLE_COUNT/float(speed)/sampleCount ;
 				rp->panner_.SetData(targetPan-basePan,speed,startPan-basePan) ;
 				if (!rp->panner_.Enabled()) {
@@ -1421,6 +1428,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
                 float start=fp2fl(rp->cutoff_) ;
                 float baseCut=fp2fl(rp->baseFCut_) ;
 				int sampleCount=int(4*SyncMaster::GetInstance()->GetTickSampleCount()) ;
+				if (sampleCount < 1) sampleCount = 1 ;
 				speed=(speed==0)?0:fabs(target-start)*KRATE_SAMPLE_COUNT/float(speed)/sampleCount ;
  				rp->cutRamp_.SetData(target-baseCut,speed,start-baseCut) ;
 				if (!rp->cutRamp_.Enabled()) {
@@ -1437,6 +1445,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
                 float start=fp2fl(rp->reso_) ;
 				float baseRes=fp2fl(rp->baseFRes_) ;                
 				int sampleCount=int(4*SyncMaster::GetInstance()->GetTickSampleCount()) ;
+				if (sampleCount < 1) sampleCount = 1 ;
 				speed=(speed==0)?0:fabs(target-start)*KRATE_SAMPLE_COUNT/float(speed)/sampleCount ;
  				rp->resRamp_.SetData(target-baseRes,speed,start-baseRes) ;
 				if (!rp->resRamp_.Enabled()) {
@@ -1455,6 +1464,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
                 float start=fp2fl(rp->fbMix_) ;
 				float baseMix=fp2fl(rp->baseFbMix_) ;                
 				int sampleCount=int(4*SyncMaster::GetInstance()->GetTickSampleCount()) ;
+				if (sampleCount < 1) sampleCount = 1 ;
 				speed=(speed==0)?0:fabs(target-start)*KRATE_SAMPLE_COUNT/float(speed)/sampleCount ;
  				rp->fbMixRamp_.SetData(target-baseMix,speed,start-baseMix) ;
 				if (!rp->fbMixRamp_.Enabled()) {
@@ -1473,6 +1483,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
                 float start=fp2fl(rp->fbTun_) ;
 				float baseTune=fp2fl(rp->baseFbTun_) ;                
 				int sampleCount=int(4*SyncMaster::GetInstance()->GetTickSampleCount()) ;
+				if (sampleCount < 1) sampleCount = 1 ;
 				speed=(speed==0)?0:fabs(target-start)*KRATE_SAMPLE_COUNT/float(speed)/sampleCount ;
  				rp->fbTunRamp_.SetData(target-baseTune,speed,start-baseTune) ;
 				if (!rp->fbTunRamp_.Enabled()) {
@@ -1491,7 +1502,9 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 			 // Target speed for the ramp
 			 
 				float targetSpeed=float(pow(2.0,(pitch)/12.0)) ;
-				float srcSpeed=fp2fl(rp->speed_)/fp2fl(rp->baseSpeed_) ;
+				float baseSpeedF=fp2fl(rp->baseSpeed_) ;
+				if (baseSpeedF == 0.0f) baseSpeedF = 1.0f ;
+				float srcSpeed=fp2fl(rp->speed_)/baseSpeedF ;
 
 			// speed of ramp
 			
@@ -1526,7 +1539,9 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
         } 
         else
         {
-          initSpeed=fp2fl(rp->speed_)/fp2fl(rp->baseSpeed_) ;
+          float baseSpeedF=fp2fl(rp->baseSpeed_) ;
+          if (baseSpeedF == 0.0f) baseSpeedF = 1.0f ;
+          initSpeed=fp2fl(rp->speed_)/baseSpeedF ;
           targetSpeed=float(pow(2.0f,pitch/12.0f)) ;                    
         }
                 

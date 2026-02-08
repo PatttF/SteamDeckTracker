@@ -894,7 +894,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
         }
     }
 
-    UIIntVarField *field = (UIIntVarField *)GetFocus();
+    UIIntVarField *field = dynamic_cast<UIIntVarField *>(GetFocus());
     if (field) {
         lastFocusID_=field->GetVariableID() ;
     }

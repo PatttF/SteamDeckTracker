@@ -71,11 +71,9 @@ void ImportSampleDialog::DrawView() {
 				props.invert_=false ;
 			}
 			if (!current.IsDirectory()) {
-				strcpy(buffer,p.c_str()) ;
+				snprintf(buffer,sizeof(buffer),"%s",p.c_str()) ;
 			} else {
-				buffer[0]='[' ;
-				strcpy(buffer+1,p.c_str()) ;
-				strcat(buffer,"]") ;
+				snprintf(buffer,sizeof(buffer),"[%s]",p.c_str()) ;
 			}
 			buffer[LIST_WIDTH-1]=0 ;
 			DrawString(x,y,buffer,props) ;
@@ -154,6 +152,7 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		if (mask&EPBM_DOWN) warpToNextSample(1) ;
 
 		Path *element = getImportElement();
+		if (!element) return;
 		setCurrent(element, mask);
 
 		switch(selected_) {
@@ -176,6 +175,7 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		if (mask&EPBM_UP) warpToNextSample(-1);
 		if (mask&EPBM_DOWN) warpToNextSample(1);
 		Path *element = getImportElement();
+		if (!element) return;
 		setCurrent(element, mask);
 		if(!element->IsDirectory()) {
 			preview(*element);
@@ -224,6 +224,7 @@ Path* ImportSampleDialog::getImportElement() {
 			return &it->CurrentItem();
 		}
 	}
+	return 0;
 }
 
 void ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {

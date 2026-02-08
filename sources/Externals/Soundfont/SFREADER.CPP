@@ -1215,7 +1215,7 @@ FillSampleBucket(BYTE *pbyBucket, DWORD * pdwSize)
 
   SHORT iReadSize;
   SHORT iReadSizeAct;
-  WORD uiNdx = 0;//, uiCount;
+  DWORD uiNdx = 0;//, uiCount;
   DWORD dwThisBucketSize = *pdwSize;
 
   if (dwSampleBytesCollected >= dwSampleSize)

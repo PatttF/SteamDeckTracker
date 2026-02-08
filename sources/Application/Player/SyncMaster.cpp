@@ -9,7 +9,12 @@
 #endif
 
 SyncMaster::SyncMaster() {
+	tempo_=120 ;
+	currentSlice_=0 ;
 	tableRatio_=1 ;
+	beatCount_=0 ;
+	playSampleCount_=0.0f ;
+	tickSampleCount_=0.0f ;
 }
 
 void SyncMaster::Start() {
@@ -21,6 +26,7 @@ void SyncMaster::Stop() {
 } ;
 
 void SyncMaster::SetTempo(int tempo) {
+	if (tempo < 1) tempo = 1 ;
 	tempo_=tempo ;
 	int driverRate=Audio::GetInstance()->GetSampleRate() ;
     playSampleCount_=60.0f*driverRate*2.0f/tempo_/8.0f/float(AUDIO_SLICES_PER_STEP)  ;
@@ -68,10 +74,12 @@ float SyncMaster::GetTickSampleCount() {
 //xx/driverRate*1000 msecs
 
 float SyncMaster::GetTickTime() {
-	return 60.0f*2.0f/tempo_/8.0f/AUDIO_SLICES_PER_STEP*1000.0f  ;
+	int t = (tempo_ > 0) ? tempo_ : 1 ;
+	return 60.0f*2.0f/t/8.0f/AUDIO_SLICES_PER_STEP*1000.0f  ;
 } ;
 
 void SyncMaster::SetTableRatio(int ratio) {
+	if (ratio < 1) ratio = 1 ;
 	tableRatio_=ratio ;
 }
 

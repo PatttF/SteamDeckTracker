@@ -57,6 +57,7 @@ void AudioDriver::AddBuffer(short *buffer,int samplecount) {
 
   if (len>SOUND_BUFFER_MAX) {
       Trace::Error("Alert: buffer size exceeded") ;
+      return ;
   }
 
   if (pool_[poolQueuePosition_].buffer_!=0) {

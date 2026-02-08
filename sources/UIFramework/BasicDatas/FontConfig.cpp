@@ -42,12 +42,14 @@ void FontConfig(){
 					TiXmlNode *node = rootelement->FirstChildElement() ;
 					if (node) {
 						TiXmlElement *element = node->ToElement();
+						int j = 0;
+						const int fontSize = 8*8*128;
 						while (element) {
 							const char *elem=element->Value() ; // sould be DATA but we don't really care
 							const char *font_data=element->Attribute("value") ;
 							if (font_data) {
-								int i = 0, j = 0;
-								while (font_data[i] != '\0') {
+								int i = 0;
+								while (font_data[i] != '\0' && j < fontSize) {
 									if (font_data[i] == '1') {
 										font[j++] = 1;
 									} else if (font_data[i] == '0') {

@@ -12,7 +12,7 @@ Groove::~Groove() {
 
 void Groove::Clear() {
 	// Init all grooves with basic datas
-	memset(data_,NO_GROOVE_DATA,MAX_GROOVES*0xF) ;
+	memset(data_,NO_GROOVE_DATA,MAX_GROOVES*16) ;
 	for (int i=0;i<MAX_GROOVES;i++) {
 		data_[i][0]=6 ;
 		data_[i][1]=6 ;

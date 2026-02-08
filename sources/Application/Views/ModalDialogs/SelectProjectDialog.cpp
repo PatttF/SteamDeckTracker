@@ -151,6 +151,8 @@ void SelectProjectDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
                     count++;
                 }
 
+					if (!current) break ; // Guard against empty directory
+
 					//check if folder is a project, indicated by 'lgpt' being the first 4 characters of the folder name
 					std::string name = current->GetName() ;
 					std::string firstFourChars = name.substr(0,4);
