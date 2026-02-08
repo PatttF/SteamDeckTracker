@@ -83,18 +83,22 @@ void TableHolder::SaveContent(TiXmlNode *node) {
 		Table &table=table_[i] ;
 		if (!table.IsEmpty()) {
 			TiXmlNode *dataNode=node->InsertEndChild(data) ;
+			// Swap into temp arrays to avoid corrupting live data
+			unsigned short tmpParam1[TABLE_STEPS];
+			unsigned short tmpParam2[TABLE_STEPS];
+			unsigned short tmpParam3[TABLE_STEPS];
 			for (int i=0; i<16; i++)
 			{
-				table.param1_[i] = Swap16(table.param1_[i]);
-				table.param2_[i] = Swap16(table.param2_[i]);
-				table.param3_[i] = Swap16(table.param3_[i]);
+				tmpParam1[i] = Swap16(table.param1_[i]);
+				tmpParam2[i] = Swap16(table.param2_[i]);
+				tmpParam3[i] = Swap16(table.param3_[i]);
 			}
 			saveHexBuffer(dataNode,"CMD1",table.cmd1_,TABLE_STEPS) ;
-			saveHexBuffer(dataNode,"PARAM1",table.param1_,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"PARAM1",tmpParam1,TABLE_STEPS) ;
 			saveHexBuffer(dataNode,"CMD2",table.cmd2_,TABLE_STEPS) ;
-			saveHexBuffer(dataNode,"PARAM2",table.param2_,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"PARAM2",tmpParam2,TABLE_STEPS) ;
 			saveHexBuffer(dataNode,"CMD3",table.cmd3_,TABLE_STEPS) ;
-			saveHexBuffer(dataNode,"PARAM3",table.param3_,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"PARAM3",tmpParam3,TABLE_STEPS) ;
 		}
 	}
 } ;
@@ -149,15 +153,14 @@ void TableHolder::RestoreContent(TiXmlElement *element) {
 					restoreHexBuffer(sub,(unsigned char *)table.param3_) ;
 				} ;
 				
-				for (int i=0; i<16; i++)
-				{
-					table.param1_[i] = Swap16(table.param1_[i]);
-					table.param2_[i] = Swap16(table.param2_[i]);
-					table.param3_[i] = Swap16(table.param3_[i]);
-				}
-
-				
 				sub=sub->NextSiblingElement() ;
+			}
+			// Byte-swap params once after all children are loaded
+			for (int i=0; i<16; i++)
+			{
+				table.param1_[i] = Swap16(table.param1_[i]);
+				table.param2_[i] = Swap16(table.param2_[i]);
+				table.param3_[i] = Swap16(table.param3_[i]);
 			}
 			allocation_[id]=!table.IsEmpty() ;
 		}
@@ -168,6 +171,7 @@ void TableHolder::RestoreContent(TiXmlElement *element) {
 void TableHolder::SetUsed(int i) {
 	if (i>=TABLE_COUNT) {
 		NAssert(i<128) ;
+		return ;
 	}
 	allocation_[i]=true ;
 } ;

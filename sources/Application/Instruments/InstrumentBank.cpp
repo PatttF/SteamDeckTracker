@@ -337,8 +337,9 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 							break ;
 						case IT_VST3:
 							instr=new VST3Instrument() ;
-							break ;
-					}
+							break ;					default:
+						instr=new SampleInstrument() ;
+						break ;					}
 					instrument_[id]=instr ;
 				// Ensure 'type' Variable exists on restored/replaced instruments so the UI binds correctly
 				int typeInit = 0;
@@ -359,6 +360,11 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 				while (param) {
 					const char *name=param->Attribute("NAME") ;
 					const char *value=param->Attribute("VALUE") ;
+
+					if (!name || !value) {
+						param=param->NextSiblingElement() ;
+						continue ;
+					}
 
           // Convert old filter dist to newer filter mode
 

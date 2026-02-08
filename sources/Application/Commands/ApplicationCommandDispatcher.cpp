@@ -41,9 +41,11 @@ void ApplicationCommandDispatcher::OnQueueRow() {
 
 #define TEMPO_NUDGE 3
 void ApplicationCommandDispatcher::OnNudgeDown() {
+	if (!project_) return ;
 	project_->NudgeTempo(-TEMPO_NUDGE) ;
 } ;
 
 void ApplicationCommandDispatcher::OnNudgeUp() {
+	if (!project_) return ;
 	project_->NudgeTempo(TEMPO_NUDGE) ;
 } ;

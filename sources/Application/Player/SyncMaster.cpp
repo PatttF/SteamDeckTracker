@@ -81,6 +81,11 @@ float SyncMaster::GetTickTime() {
 void SyncMaster::SetTableRatio(int ratio) {
 	if (ratio < 1) ratio = 1 ;
 	tableRatio_=ratio ;
+	// Recalculate tick sample count with new ratio
+	int driverRate=Audio::GetInstance()->GetSampleRate() ;
+	if (tempo_ > 0 && driverRate > 0) {
+		tickSampleCount_=60.0f*driverRate*2.0f/tempo_/8.0f/float(AUDIO_SLICES_PER_STEP)*tableRatio_ ;
+	}
 }
 
 int SyncMaster::GetTableRatio() {

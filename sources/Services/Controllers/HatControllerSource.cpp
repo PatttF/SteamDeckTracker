@@ -12,6 +12,7 @@ Channel *HatControllerSource::GetChannel(const char *url) {
 	if (strlen(url)<3) return 0 ;
 	int which=url[0]-'0' ;
 	int axis=url[2]-'0' ;
+	if (which < 0 || which >= MAX_HAT_CHANNELS || axis < 0 || axis >= 4) return 0 ;
 	return channel_+which*4+axis ;
 	//int bitmask=(url[1]=='+')?1:0 ;
 	//return channel_+axis*2+side ;
@@ -20,6 +21,7 @@ Channel *HatControllerSource::GetChannel(const char *url) {
 // value = -1 -> 1
 
 void HatControllerSource::SetHat(int which,int bitmask) {
+	if (which < 0 || which >= MAX_HAT_CHANNELS) return ;
 	int base=which*4 ;
 
 	channel_[base].SetValue(bitmask&0x01?1.0f:0.0f) ;

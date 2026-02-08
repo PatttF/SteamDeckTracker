@@ -24,21 +24,25 @@ Song::~Song() {
 } ;
 
 void Song::SaveContent(TiXmlNode *node) {
+	// Swap into temp arrays to avoid corrupting live phrase data
+	unsigned short *tmpParam1 = new unsigned short[PHRASE_COUNT*16];
+	unsigned short *tmpParam2 = new unsigned short[PHRASE_COUNT*16];
 	for (int i=0; i<PHRASE_COUNT*16; i++)
 	{
-		phrase_->param1_[i] = Swap16(phrase_->param1_[i]);
-		phrase_->param2_[i] = Swap16(phrase_->param2_[i]);
-	}	
+		tmpParam1[i] = Swap16(phrase_->param1_[i]);
+		tmpParam2[i] = Swap16(phrase_->param2_[i]);
+	}
 	saveHexBuffer(node,"SONG",data_,SONG_ROW_COUNT*SONG_CHANNEL_COUNT) ;
 	saveHexBuffer(node,"CHAINS",chain_->data_,CHAIN_COUNT*16) ;
 	saveHexBuffer(node,"TRANSPOSES",chain_->transpose_,CHAIN_COUNT*16) ;
 	saveHexBuffer(node,"NOTES",phrase_->note_,PHRASE_COUNT*16) ;
 	saveHexBuffer(node,"INSTRUMENTS",phrase_->instr_,PHRASE_COUNT*16) ;
 	saveHexBuffer(node,"COMMAND1",phrase_->cmd1_,PHRASE_COUNT*16) ;
-	saveHexBuffer(node,"PARAM1",phrase_->param1_,PHRASE_COUNT*16) ;
+	saveHexBuffer(node,"PARAM1",tmpParam1,PHRASE_COUNT*16) ;
 	saveHexBuffer(node,"COMMAND2",phrase_->cmd2_,PHRASE_COUNT*16) ;
-	saveHexBuffer(node,"PARAM2",phrase_->param2_,PHRASE_COUNT*16) ;
-
+	saveHexBuffer(node,"PARAM2",tmpParam2,PHRASE_COUNT*16) ;
+	delete[] tmpParam1;
+	delete[] tmpParam2;
 } ;
 
 void Song::RestoreContent(TiXmlElement *element) {
@@ -74,15 +78,15 @@ void Song::RestoreContent(TiXmlElement *element) {
 			restoreHexBuffer(current,(uchar *)phrase_->param2_) ;
 		} ;
 		
-		
-		for (int i=0; i<PHRASE_COUNT*16; i++)
-		{
-			phrase_->param1_[i] = Swap16(phrase_->param1_[i]);
-			phrase_->param2_[i] = Swap16(phrase_->param2_[i]);
-		}
-		
 		current=current->NextSiblingElement() ;
 	} ;
+
+	// Byte-swap params once after all children are loaded
+	for (int i=0; i<PHRASE_COUNT*16; i++)
+	{
+		phrase_->param1_[i] = Swap16(phrase_->param1_[i]);
+		phrase_->param2_[i] = Swap16(phrase_->param2_[i]);
+	}
 	
 	Status::Set("Restoring allocation") ;
 

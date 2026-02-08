@@ -595,6 +595,7 @@ void Player::Update(Observable &o,I_ObservableData *d) {
 							while (note>127) {
 								note-=12 ;
 							} ;
+							if (note<0) note=0 ;
 							mixer_->StopInstrument(i) ;
 							mixer_->StartInstrument(i,instr,note,false) ;
 						} ;
@@ -969,16 +970,15 @@ void Player::playCursorPosition(int channel) {
 				int chain=viewData_->currentPlayChain_[channel] ;
 				int chainPos=viewData_->chainPlayPos_[channel] ;
 				unsigned char *trsp=viewData_->song_->chain_->transpose_+(16*chain+chainPos) ;
-				note+=*trsp ;
-				note+=project_->GetTranspose() ;
+				int finalNote = note + *trsp + project_->GetTranspose() ;
 				instrumentOnChannel_[channel][0] = (instr/16)>9?'A'-10+(instr/16):'0'+(instr/16);
 				instrumentOnChannel_[channel][1] = (instr%16)>9?'A'-10+(instr%16):'0'+(instr%16);
 				instrumentOnChannel_[channel][2] = '\0';
 
 				// Check if note is in acceptable midi range
 
-				if (note<128) {
-					mixer_->StartInstrument(channel,instrument,note,newInstrument) ;
+				if (finalNote>=0 && finalNote<128) {
+					mixer_->StartInstrument(channel,instrument,finalNote,newInstrument) ;
 					int instrTable=instrument->GetTable() ;
 	
 					// If an instrument number has been specified && instrument has table,
@@ -1054,7 +1054,6 @@ void Player::moveToNextStep()
           liveTriggered = true ;
           updateSongPos(liveQueuePosition_[i],i,liveQueueChainPosition_[i]) ;
         }
-        return ;
         break ;
       case QM_PHRASESTART:
       case QM_PHRASESTOP:

@@ -86,6 +86,8 @@ void EventDispatcher::Execute(FourCC id,float value) {
 				mapping=EPBT_PGFWD;
 				break ;
 				//	EPBT_SELECT
+			default:
+				return ;
 		}
 
 		// Compute mask and repeat if needed
@@ -93,7 +95,7 @@ void EventDispatcher::Execute(FourCC id,float value) {
 		if (value>0.5) {
 			eventMask_|=(1<<mapping) ;
 		} else {
-			eventMask_^=(1<<mapping) ;
+			eventMask_&=~(1<<mapping) ;
 		}
 
 		// Dispatch event to window

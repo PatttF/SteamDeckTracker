@@ -12,7 +12,7 @@ KeyboardControllerSource::~KeyboardControllerSource() {
 
 Channel *KeyboardControllerSource::GetChannel(const char *url) {
 	int key=I_GUIWindowFactory::GetInstance()->GetEventManager()->GetKeyCode(url) ;
-	if (key>0) {
+	if (key>0 && key<MAX_KEY) {
 		if (!channel_[key]) {
 			channel_[key]=new Channel(url) ;
 		}
@@ -23,7 +23,7 @@ Channel *KeyboardControllerSource::GetChannel(const char *url) {
 
 void KeyboardControllerSource::SetKey(int key,bool value) {
 
-  if (channel_[key])
+  if (key >= 0 && key < MAX_KEY && channel_[key])
   {
 		channel_[key]->SetValue(value?1.0f:0.0f) ;
 		channel_[key]->NotifyObservers() ;

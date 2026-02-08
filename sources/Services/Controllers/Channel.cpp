@@ -5,6 +5,7 @@
 #include <assert.h>
 Channel::Channel() {
 	name_="unnamed" ;
+	value_=0.0F ;
 } ;
 
 Channel::Channel(const char *name) {

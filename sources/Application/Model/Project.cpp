@@ -493,7 +493,7 @@ void Project::buildMidiDeviceList() {
 	it->Begin() ;
 	for (int i=0;i<midiDeviceListSize_;i++) {
 		std::string deviceName=it->CurrentItem().GetName() ;
-		midiDeviceList_[i]=(char *)malloc(sizeof(char *)*deviceName.size()+1);
+		midiDeviceList_[i]=(char *)malloc(deviceName.size()+1);
 		strcpy(midiDeviceList_[i],deviceName.c_str()) ;
 		it->Next() ;
 	} ;
