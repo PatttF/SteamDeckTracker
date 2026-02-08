@@ -324,6 +324,12 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
     lastNote_[channel] = note;
     playing_[channel] = true;
 
+    // Reset LFO modulation on new note
+    tremoloLFO_[channel].active = false;
+    tremoloLFO_[channel].phase = 0;
+    vibratoLFO_[channel].active = false;
+    vibratoLFO_[channel].phase = 0;
+
     return true;
 }
 
@@ -717,6 +723,24 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
         memset(buffer, 0, size * 2 * sizeof(fixed));
     }
 
+    // Apply per-channel tremolo modulation (volume LFO)
+    if (tremoloLFO_[channel].active) {
+        float phase = tremoloLFO_[channel].phase;
+        float speed = tremoloLFO_[channel].speed;
+        float depth = tremoloLFO_[channel].depth;
+        for (int i = 0; i < size; i++) {
+            float sine = sinf(phase * 2.0f * 3.14159265f / 256.0f);
+            float volMul = 1.0f + sine * depth;
+            if (volMul < 0.0f) volMul = 0.0f;
+            fixed mul = fl2fp(volMul);
+            buffer[i * 2]     = fp_mul(buffer[i * 2], mul);
+            buffer[i * 2 + 1] = fp_mul(buffer[i * 2 + 1], mul);
+            phase += speed;
+            if (phase >= 256.0f) phase -= 256.0f;
+        }
+        tremoloLFO_[channel].phase = phase;
+    }
+
     // Apply per-channel reverb effect if enabled
     if (reverbSend_[channel] > 0 && reverbBuffer_[channel]) {
            fixed *reverbBuf = reverbBuffer_[channel];
@@ -823,8 +847,19 @@ void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
         reverbDecay_[channel] = fl2fp((decayNibble / 15.0f) * 0.9f);
         reverbDamp_[channel] = fl2fp((dampNibble / 15.0f) * 0.85f);
         reverbSend_[channel] = fl2fp(sendAmount / 255.0f);
+    } else if (cc == I_CMD_TRML) {
+        unsigned char speed = (value >> 8) & 0xFF;
+        unsigned char depth = value & 0xFF;
+        tremoloLFO_[channel].speed = (speed * 2.0f) / 100.0f; // per sample (100=KRATE)
+        tremoloLFO_[channel].depth = depth / 255.0f;
+        tremoloLFO_[channel].active = true;
+    } else if (cc == I_CMD_VIBR) {
+        unsigned char speed = (value >> 8) & 0xFF;
+        unsigned char depth = value & 0xFF;
+        vibratoLFO_[channel].speed = (speed * 2.0f) / 100.0f;
+        vibratoLFO_[channel].depth = depth / 255.0f;
+        vibratoLFO_[channel].active = true;
     }
-    // TODO: Handle other commands like volume, pan, etc.
 }
 
 bool LV2Instrument::IsInitialized() {

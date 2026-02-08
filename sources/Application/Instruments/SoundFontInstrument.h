@@ -80,6 +80,15 @@ struct SFVoice {
     int velocity;
 };
 
+// Per-channel LFO state for modulation commands (TRML/VIBR/LFOF)
+struct SFLFOState {
+    float phase;    // 0..256
+    float speed;    // phase increment per sample
+    float depth;    // 0..1 normalized depth
+    bool active;
+    SFLFOState() : phase(0), speed(0), depth(0), active(false) {}
+};
+
 // Per-channel rendering state
 struct SFChannelState {
     bool finished;
@@ -90,6 +99,11 @@ struct SFChannelState {
     // Fade out for click prevention
     int fadeOutSamples;
     int fadeOutTotal;
+
+    // LFO modulation
+    SFLFOState tremolo;
+    SFLFOState vibrato;
+    SFLFOState lfoFilter;
 };
 
 class SoundFontInstrument : public I_Instrument, public I_Observer {

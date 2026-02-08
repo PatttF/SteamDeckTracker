@@ -352,8 +352,8 @@ void Arp::UpdateSRP(struct RUParams &rup) {
 //
 
 void Vibrato::SetData(unsigned char speed, unsigned char depth) {
-	speed_ = fl2fp(speed / 2.0f) ;  // phase increment per k-rate tick
-	depth_ = fl2fp(depth / 255.0f) ; // max semitone deviation
+	speed_ = fl2fp(speed * 2.0f) ;   // phase increment per k-rate tick
+	depth_ = fl2fp(depth / 255.0f) ; // max deviation (0..1)
 	// Don't reset phase_ so vibrato continues smoothly when re-triggered
 } ;
 
@@ -373,9 +373,9 @@ void Vibrato::UpdateSRP(struct RUParams &rup) {
 	// Compute sine from phase (0..255 maps to 0..2*PI)
 	float phaseF = fp2fl(phase_) ;
 	float sineVal = sinf(phaseF * 2.0f * 3.14159265f / 256.0f) ;
-	// Convert depth to pitch multiplier: depth of 1.0 = 1 semitone
+	// Convert depth to pitch multiplier: depth of 1.0 = 4 semitones
 	float depthF = fp2fl(depth_) ;
-	float pitchMul = powf(2.0f, sineVal * depthF / 12.0f) ;
+	float pitchMul = powf(2.0f, sineVal * depthF * 4.0f / 12.0f) ;
 	rup.speedOffset_ = fp_mul(rup.speedOffset_, fl2fp(pitchMul)) ;
 } ;
 
@@ -384,7 +384,7 @@ void Vibrato::UpdateSRP(struct RUParams &rup) {
 //
 
 void Tremolo::SetData(unsigned char speed, unsigned char depth) {
-	speed_ = fl2fp(speed / 2.0f) ;  // phase increment per k-rate tick
+	speed_ = fl2fp(speed * 2.0f) ;   // phase increment per k-rate tick (faster)
 	depth_ = fl2fp(depth / 255.0f) ; // max volume deviation (0..1)
 } ;
 
@@ -403,8 +403,9 @@ void Tremolo::UpdateSRP(struct RUParams &rup) {
 	float phaseF = fp2fl(phase_) ;
 	float sineVal = sinf(phaseF * 2.0f * 3.14159265f / 256.0f) ;
 	float depthF = fp2fl(depth_) ;
-	// Modulate volume: sineVal ranges -1..1, scale by depth * baseVolume
-	fixed volMod = fl2fp(sineVal * depthF * 128.0f) ; // scale to volume range
+	// Modulate volume: sineVal -1..1, depth 1.0 = full mute at trough
+	// Scale to volume units (0-255 range matches baseVolume scale)
+	fixed volMod = fl2fp(sineVal * depthF * 255.0f) ;
 	rup.volumeOffset_ = fp_add(rup.volumeOffset_, volMod) ;
 } ;
 
@@ -413,7 +414,7 @@ void Tremolo::UpdateSRP(struct RUParams &rup) {
 //
 
 void LFOFilter::SetData(unsigned char speed, unsigned char depth) {
-	speed_ = fl2fp(speed / 2.0f) ;  // phase increment per k-rate tick
+	speed_ = fl2fp(speed * 2.0f) ;   // phase increment per k-rate tick
 	depth_ = fl2fp(depth / 255.0f) ; // modulation depth (0..1 of cutoff range)
 } ;
 
@@ -433,7 +434,8 @@ void LFOFilter::UpdateSRP(struct RUParams &rup) {
 	float sineVal = sinf(phaseF * 2.0f * 3.14159265f / 256.0f) ;
 	float depthF = fp2fl(depth_) ;
 	// Modulate filter cutoff: depth scales how much the cutoff sweeps
-	fixed cutMod = fl2fp(sineVal * depthF * 0.5f) ; // ±0.5 of cutoff range at full depth
+	// Full depth (1.0) sweeps the entire cutoff range
+	fixed cutMod = fl2fp(sineVal * depthF) ; // ±1.0 of cutoff range at full depth
 	rup.cutOffset_ = fp_add(rup.cutOffset_, cutMod) ;
 } ;
 

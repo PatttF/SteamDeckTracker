@@ -13,6 +13,7 @@
 #include <cmath>
 #include <algorithm>
 
+#define KRATE_SAMPLE_COUNT 100
 // De-click fade length in samples (~1.5ms at 44.1kHz)
 #define SF_DECLICK_FADE 64
 
@@ -133,6 +134,14 @@ bool SoundFontInstrument::Start(int channel, unsigned char note, bool retrigger)
     cs.finished = false;
     cs.fadeOutSamples = 0;
     cs.fadeOutTotal = 0;
+
+    // Reset LFO modulation on new note
+    cs.tremolo.active = false;
+    cs.tremolo.phase = 0;
+    cs.vibrato.active = false;
+    cs.vibrato.phase = 0;
+    cs.lfoFilter.active = false;
+    cs.lfoFilter.phase = 0;
 
     float driverRate = (float)Audio::GetInstance()->GetSampleRate();
 
@@ -372,6 +381,10 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
     fixed fixedPanL = panlaw[userPan];
     fixed fixedPanR = panlaw[254 - userPan];
 
+    // Compute LFO modulation factors (per-buffer, updated per sample)
+    float tremoloPhase = cs.tremolo.phase;
+    float vibratoPhase = cs.vibrato.phase;
+
     for (int vi = 0; vi < cs.voiceCount; vi++) {
         SFVoice &v = cs.voices[vi];
         if (!v.active) continue;
@@ -380,10 +393,6 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
         fixed sfGain = fl2fp(v.initialAttenuation);
 
         // SF2 pan → left/right multipliers in fixed-point
-        // sfPan is -50..50 (percentage). Center = 0.
-        // Treat as balance control: center means full volume to both channels,
-        // hard left means L=1.0 R=0.0, hard right means L=0.0 R=1.0.
-        // This prevents 6dB attenuation at center pan.
         float sfPanR_f, sfPanL_f;
         if (v.sfPan >= 0) {
             sfPanR_f = 1.0f;
@@ -399,12 +408,38 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
 
         short *samples = v.sampleData;
 
+        // Reset LFO phases for each voice to keep them in sync
+        float tPhase = tremoloPhase;
+        float vPhase = vibratoPhase;
+
         for (int i = 0; i < size; i++) {
             // Process envelope
             processVolumeEnvelope(v);
             if (!v.active) break;
 
             fixed envGain = fl2fp((float)v.volEnvLevel);
+
+            // Compute tremolo volume multiplier
+            fixed tremoloMul = FP_ONE;
+            if (cs.tremolo.active) {
+                float sine = sinf(tPhase * 2.0f * 3.14159265f / 256.0f);
+                // depth=1.0 means volume swings from 0 to 2x (±100%)
+                float volMul = 1.0f + sine * cs.tremolo.depth;
+                if (volMul < 0.0f) volMul = 0.0f;
+                tremoloMul = fl2fp(volMul);
+                tPhase += cs.tremolo.speed;
+                if (tPhase >= 256.0f) tPhase -= 256.0f;
+            }
+
+            // Compute vibrato pitch multiplier
+            double speedMul = 1.0;
+            if (cs.vibrato.active) {
+                float sine = sinf(vPhase * 2.0f * 3.14159265f / 256.0f);
+                // depth=1.0 means ±4 semitones
+                speedMul = pow(2.0, (double)(sine * cs.vibrato.depth * 4.0f) / 12.0);
+                vPhase += cs.vibrato.speed;
+                if (vPhase >= 256.0f) vPhase -= 256.0f;
+            }
 
             // Read sample with linear interpolation in fixed-point
             int pos = (int)v.position;
@@ -431,6 +466,9 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
             // Apply user volume (same scale as SampleInstrument)
             sample = fp_mul(sample, volFactor);
 
+            // Apply tremolo modulation
+            sample = fp_mul(sample, tremoloMul);
+
             // Apply SF2 pan + user pan
             fixed outL = fp_mul(fp_mul(sample, sfPanLfp), fixedPanL);
             fixed outR = fp_mul(fp_mul(sample, sfPanRfp), fixedPanR);
@@ -439,8 +477,8 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
             buffer[i * 2]     = fp_add(buffer[i * 2], outL);
             buffer[i * 2 + 1] = fp_add(buffer[i * 2 + 1], outR);
 
-            // Advance position
-            v.position += v.speed;
+            // Advance position with vibrato pitch modulation
+            v.position += v.speed * speedMul;
 
             // Handle loop / end of sample
             if (v.looped && v.loopEnd > v.loopStart && v.loopStart >= 0) {
@@ -457,6 +495,16 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
         }
 
         if (v.active) anyActive = true;
+    }
+
+    // Save LFO phases back (use the last voice's phase progression)
+    if (cs.tremolo.active) {
+        cs.tremolo.phase = tremoloPhase + cs.tremolo.speed * size;
+        while (cs.tremolo.phase >= 256.0f) cs.tremolo.phase -= 256.0f;
+    }
+    if (cs.vibrato.active) {
+        cs.vibrato.phase = vibratoPhase + cs.vibrato.speed * size;
+        while (cs.vibrato.phase >= 256.0f) cs.vibrato.phase -= 256.0f;
     }
 
     // Apply de-click fade out if requested
@@ -496,15 +544,47 @@ const char *SoundFontInstrument::GetName() {
 void SoundFontInstrument::ProcessCommand(int channel, FourCC cc, ushort value) {
     if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
 
+    SFChannelState &cs = channels_[channel];
+    float driverRate = (float)Audio::GetInstance()->GetSampleRate();
+    // k-rate equivalent: we update LFOs every KRATE_SAMPLE_COUNT samples
+    // speed byte maps to phase increments per k-rate tick, then convert to per-sample
+    float kRateDivisor = (float)KRATE_SAMPLE_COUNT;
+
     switch (cc) {
         case I_CMD_KILL:
             // Instant kill (with fade)
-            channels_[channel].fadeOutSamples = SF_DECLICK_FADE;
-            channels_[channel].fadeOutTotal = SF_DECLICK_FADE;
+            cs.fadeOutSamples = SF_DECLICK_FADE;
+            cs.fadeOutTotal = SF_DECLICK_FADE;
             break;
         case I_CMD_VOLM:
             // Set volume for this channel's voices
-            // value is already 0-255 from the tracker
+            break;
+        case I_CMD_TRML:
+            {
+                unsigned char speed = (value >> 8) & 0xFF;
+                unsigned char depth = value & 0xFF;
+                cs.tremolo.speed = (speed * 2.0f) / kRateDivisor; // phase inc per sample
+                cs.tremolo.depth = depth / 255.0f;
+                cs.tremolo.active = true;
+            }
+            break;
+        case I_CMD_VIBR:
+            {
+                unsigned char speed = (value >> 8) & 0xFF;
+                unsigned char depth = value & 0xFF;
+                cs.vibrato.speed = (speed * 2.0f) / kRateDivisor; // phase inc per sample
+                cs.vibrato.depth = depth / 255.0f;
+                cs.vibrato.active = true;
+            }
+            break;
+        case I_CMD_LFOF:
+            {
+                unsigned char speed = (value >> 8) & 0xFF;
+                unsigned char depth = value & 0xFF;
+                cs.lfoFilter.speed = (speed * 2.0f) / kRateDivisor;
+                cs.lfoFilter.depth = depth / 255.0f;
+                cs.lfoFilter.active = true;
+            }
             break;
         default:
             break;

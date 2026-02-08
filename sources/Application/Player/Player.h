@@ -152,6 +152,7 @@ public:
 	unsigned int timeToStart_[SONG_CHANNEL_COUNT] ;
 	// realtime expiry clock for time-to-live in milliseconds (0 = none)
 	unsigned long timeToLiveClock_[SONG_CHANNEL_COUNT] ;
+	unsigned char phraseHopCount_[SONG_CHANNEL_COUNT] ; // HOP loop countdown per channel
 
 	bool retrigAllImmediate_ ;
 	unsigned char retrigPos_ ;

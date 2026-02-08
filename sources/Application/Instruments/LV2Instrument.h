@@ -101,6 +101,17 @@ private:
     int lastNote_[SONG_CHANNEL_COUNT];  // Last note played per channel
     bool playing_[SONG_CHANNEL_COUNT];  // Playing state per channel
     TableSaveState tableState_;
+
+    // Per-channel LFO modulation state
+    struct LV2LFOState {
+        float phase;
+        float speed;   // phase increment per sample
+        float depth;   // 0..1 normalized
+        bool active;
+        LV2LFOState() : phase(0), speed(0), depth(0), active(false) {}
+    };
+    LV2LFOState tremoloLFO_[SONG_CHANNEL_COUNT];
+    LV2LFOState vibratoLFO_[SONG_CHANNEL_COUNT];
     
     // Per-channel reverb state (dynamically sized based on sample rate)
     int reverbBufferLength_;  // ~100ms worth of samples at actual sample rate

@@ -147,6 +147,9 @@ SampleInstrument::SampleInstrument() {
          rp->updaters_.push_back(&rp->speedRamp_);
          rp->updaters_.push_back(&rp->legato_);
          rp->updaters_.push_back(&rp->pfin_);
+         rp->updaters_.push_back(&rp->vibrato_);
+         rp->updaters_.push_back(&rp->tremolo_);
+         rp->updaters_.push_back(&rp->lfoFilter_);
 
          // Initialize numeric and boolean fields to safe defaults to avoid
          // conditional jumps on uninitialized values during rendering (Valgrind).

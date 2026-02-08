@@ -108,6 +108,7 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
 		timeToLive_[i]=0 ;
 		timeToLiveClock_[i]=0 ;
 		timeToStart_[i]=0 ;
+		phraseHopCount_[i]=0 ;
 		TablePlayback &tpb=TablePlayback::GetTablePlayback(i) ;
 		tpb.Stop();
   }
@@ -756,10 +757,37 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 			{
 				// RAND:--bb - bb=probability note plays (00=never, FF=always)
 				unsigned char chance = param & 0xFF ;
-				if ((rand() & 0xFF) >= chance) {
+				if (chance < 0xFF && (rand() % 256) >= chance) {
 					// Failed probability check - kill this note
 					if (instr) {
 						mixer_->StopInstrument(channel) ;
+					}
+				}
+				return true ;
+			}
+		case I_CMD_HOP:
+			{
+				// HOP:aabb - aa=loop count (00=infinite), bb=target position in phrase
+				// We set phrasePlayPos to target-1 because moveToNextStep will +1
+				unsigned char count = (param >> 8) & 0xFF ;
+				int target = (int)(param & 0x0F) - 1 ;
+				
+				if (count == 0) {
+					// Infinite loop — always jump
+					viewData_->phrasePlayPos_[channel] = target ;
+				} else if (phraseHopCount_[channel] != 0xFF) {
+					// Counted loop (0xFF = exhausted sentinel, skip)
+					if (phraseHopCount_[channel] == 0) {
+						// First encounter — initialize countdown
+						phraseHopCount_[channel] = count ;
+					}
+					phraseHopCount_[channel]-- ;
+					if (phraseHopCount_[channel] > 0) {
+						// Still looping — jump to target
+						viewData_->phrasePlayPos_[channel] = target ;
+					} else {
+						// Countdown done — mark exhausted so we don't re-init
+						phraseHopCount_[channel] = 0xFF ;
 					}
 				}
 				return true ;
@@ -1048,22 +1076,7 @@ void Player::moveToNextStep()
           int pos=(viewData_->phrasePlayPos_[i])+1 ;
           if (pos!=16)
           {
-            int hop=getChannelHop(i,pos) ;
-            if (hop>=0)
-            {
-              if (mode_!=PM_PHRASE)
-              {
-                moveToNextPhrase(i,hop) ;
-              }
-              else
-              {
-                updatePhrasePos(hop,i) ;
-              }
-            }
-            else
-            {
-                updatePhrasePos(pos,i) ;
-            }
+              updatePhrasePos(pos,i) ;
           }
           else
           { // HOP.. something should be done so that if
@@ -1095,6 +1108,9 @@ void Player::moveToNextStep()
  ********************************************************/
 
 void Player::moveToNextPhrase(int channel,int hop) {
+
+    // Reset hop counter when moving to a new phrase
+    phraseHopCount_[channel] = 0 ;
 
     // First check if we're in live mode and the channel
     // has been trigged in immediate mode. In which case we
