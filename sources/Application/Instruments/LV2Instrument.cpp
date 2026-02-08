@@ -22,6 +22,9 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <fstream>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "Foundation/Variables/WatchedVariable.h"
 
@@ -174,6 +177,12 @@ LV2Instrument::LV2Instrument() {
     cachedOutputSize_ = 0;
     renderChannelMask_ = 0;
     cachedVolVar_ = nullptr;
+
+    // Preset state
+    currentBank_ = 0;
+    currentPreset_ = 0;
+    usingFilePresets_ = false;
+    usingMidiPresets_ = false;
 
     // Initialize options array entries so plugins can read block-size options
     init_options_array();
@@ -1035,6 +1044,8 @@ void LV2Instrument::SetPlugin(const char *uri) {
         // from processing MIDI events.
         Trace::Debug("LV2Instrument: Plugin loaded with %zu parameters (defaults from plugin's own init)", parameters_.size());
 
+        // Discover presets (file-based for Surge XT/Vital, patchmanager for gearmulator)
+        discoverPresets();
 
         // Update the 'plugin' Variable so the value is saved with the project
         Variable *pv = FindVariable(LV2IP_PLUGIN);
@@ -1943,4 +1954,679 @@ std::string LV2Instrument::GetParameterScalePointLabel(int paramIndex, float val
     }
     
     return ""; // No scale points defined
+}
+
+// ====================================================================
+// Preset/program accessors
+// ====================================================================
+
+const char *LV2Instrument::GetBankName(int bankIdx) const {
+    if (bankIdx >= 0 && bankIdx < (int)programLists_.size()) {
+        return programLists_[bankIdx].name.c_str();
+    }
+    return "---";
+}
+
+void LV2Instrument::SetCurrentBank(int bankIdx) {
+    if (bankIdx >= 0 && bankIdx < (int)programLists_.size()) {
+        currentBank_ = bankIdx;
+        currentPreset_ = 0;
+    }
+}
+
+int LV2Instrument::GetPresetCount() const {
+    if (currentBank_ >= 0 && currentBank_ < (int)programLists_.size()) {
+        return (int)programLists_[currentBank_].programs.size();
+    }
+    return 0;
+}
+
+int LV2Instrument::GetPresetCountForBank(int bankIdx) const {
+    if (bankIdx >= 0 && bankIdx < (int)programLists_.size()) {
+        return (int)programLists_[bankIdx].programs.size();
+    }
+    return 0;
+}
+
+const char *LV2Instrument::GetPresetName(int presetIdx) const {
+    if (currentBank_ >= 0 && currentBank_ < (int)programLists_.size()) {
+        const LV2ProgramList &pl = programLists_[currentBank_];
+        if (presetIdx >= 0 && presetIdx < (int)pl.programs.size()) {
+            return pl.programs[presetIdx].c_str();
+        }
+    }
+    return "---";
+}
+
+// Table of known LV2 plugin-to-preset-directory mappings
+static const LV2PluginPresetMapping lv2KnownPresetMappings[] = {
+    // Surge XT: .fxp files with 60-byte FXP header to skip
+    // Uses JUCE string state: <pluginURI>:StateString + JUCE proprietary base64
+    {
+        "Surge XT",
+        {
+            "/usr/share/surge-xt/patches_factory",
+            "/usr/share/surge-xt/patches_3rdparty",
+            nullptr
+        },
+        ".fxp",
+        60,
+        false  // useStateBinary = false (JUCE string state)
+    },
+    // Vital / Vitalium: .vital JSON files, no header to skip
+    // Uses JUCE binary state: <urn:juce:stateBinary> + atom:Chunk + standard base64
+    {
+        "Vital",
+        {
+            nullptr
+        },
+        ".vital",
+        0,
+        true   // useStateBinary = true (JUCE binary state)
+    },
+    // Sentinel
+    { nullptr, {nullptr}, nullptr, 0, false }
+};
+
+// ====================================================================
+// SetPreset: select a preset
+// ====================================================================
+void LV2Instrument::SetPreset(int presetIdx) {
+    if (currentBank_ < 0 || currentBank_ >= (int)programLists_.size()) return;
+    const LV2ProgramList &pl = programLists_[currentBank_];
+    if (presetIdx < 0 || presetIdx >= (int)pl.programs.size()) return;
+
+    currentPreset_ = presetIdx;
+
+    // --- File-based preset loading (Surge XT .fxp, Vital .vital) ---
+    if (usingFilePresets_) {
+        if (currentBank_ < (int)filePresetsByBank_.size() &&
+            presetIdx < (int)filePresetsByBank_[currentBank_].size()) {
+
+            const LV2FilePreset &fp = filePresetsByBank_[currentBank_][presetIdx];
+
+            // Determine headerSkipBytes and useStateBinary from known mappings
+            int headerSkip = 0;
+            bool useStateBinary = false;
+            for (int m = 0; lv2KnownPresetMappings[m].pluginNameSubstring != nullptr; m++) {
+                if (strstr(name_, lv2KnownPresetMappings[m].pluginNameSubstring) != nullptr) {
+                    headerSkip = lv2KnownPresetMappings[m].headerSkipBytes;
+                    useStateBinary = lv2KnownPresetMappings[m].useStateBinary;
+                    break;
+                }
+            }
+
+            if (loadPresetFromFile(fp.filePath, headerSkip, useStateBinary)) {
+                Trace::Log("LV2", "Loaded file preset %d ('%s') from bank '%s'",
+                    presetIdx, fp.name.c_str(), pl.name.c_str());
+            }
+        }
+        return;
+    }
+
+    // --- MIDI-based preset selection (gearmulator/OsTIrus) ---
+    // Send bank select LSB (CC#32) + program change as raw MIDI bytes
+    // via the atom input port. JUCE converts these to MidiBuffer entries.
+    if (usingMidiPresets_) {
+        int bankVal = currentBank_;
+        if (bankVal < 0) bankVal = 0;
+        if (bankVal > 127) bankVal = 127;
+
+        int progVal = presetIdx;
+        if (progVal < 0) progVal = 0;
+        if (progVal > 127) progVal = 127;
+
+        MidiEvent bankCC;
+        bankCC.data[0] = 0xB0;            // Control Change, channel 0
+        bankCC.data[1] = 32;              // CC#32 = Bank Select LSB
+        bankCC.data[2] = (uint8_t)bankVal;
+        bankCC.size = 3;
+
+        MidiEvent progChg;
+        progChg.data[0] = 0xC0;            // Program Change, channel 0
+        progChg.data[1] = (uint8_t)progVal;
+        progChg.data[2] = 0;
+        progChg.size = 2;
+
+        {
+            SysMutexLocker lock(pendingEventsMutex_);
+            pendingMidiEvents_.push_back(bankCC);
+            pendingMidiEvents_.push_back(progChg);
+        }
+
+        Trace::Log("LV2", "MIDI preset: bank %d ('%s') preset %d ('%s')",
+            currentBank_, pl.name.c_str(), presetIdx,
+            GetPresetName(presetIdx));
+        return;
+    }
+}
+
+// ====================================================================
+// loadPresetFromFile: load state data from a preset file via lilv_state
+// ====================================================================
+bool LV2Instrument::loadPresetFromFile(const std::string &filePath, int headerSkipBytes, bool useStateBinary) {
+    if (!pluginInstance_ || !world_ || !plugin_) return false;
+
+    // Use POSIX I/O (avoid project fopen macro)
+    int fd = open(filePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        Trace::Error("LV2: Cannot open preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    off_t fileSize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+
+    if (fileSize <= headerSkipBytes) {
+        Trace::Error("LV2: Preset file too small (%ld bytes): %s", (long)fileSize, filePath.c_str());
+        close(fd);
+        return false;
+    }
+
+    // Skip the header (e.g. 60-byte FXP header for Surge XT)
+    if (headerSkipBytes > 0) {
+        lseek(fd, headerSkipBytes, SEEK_SET);
+    }
+
+    long dataSize = (long)fileSize - headerSkipBytes;
+    std::vector<uint8_t> data(dataSize);
+    ssize_t bytesRead = read(fd, &data[0], dataSize);
+    close(fd);
+
+    if (bytesRead != dataSize) {
+        Trace::Error("LV2: Short read on preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    // Get the plugin URI for the state TTL
+    const LilvPlugin* lplug = (const LilvPlugin*)plugin_;
+    const LilvNode* plugUri = lilv_plugin_get_uri(lplug);
+    const char* plugUriStr = lilv_node_as_uri(plugUri);
+
+    std::string stateTtl;
+
+    if (useStateBinary) {
+        // ============================================================
+        // JUCE Binary State path (used by Vital)
+        // ============================================================
+        // Vital's presets.ttl uses:
+        //   <urn:juce:stateBinary> [ a atom:Chunk ;
+        //       rdf:value "...standard_base64..."^^xsd:base64Binary ; ]
+        //
+        // The raw file data is encoded with STANDARD RFC 4648 base64.
+
+        static const char stdB64Table[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        // Standard base64 encoding
+        std::string b64;
+        b64.reserve(((dataSize + 2) / 3) * 4);
+        for (long i = 0; i < dataSize; i += 3) {
+            uint32_t n = ((uint32_t)data[i]) << 16;
+            if (i + 1 < dataSize) n |= ((uint32_t)data[i + 1]) << 8;
+            if (i + 2 < dataSize) n |= ((uint32_t)data[i + 2]);
+
+            b64 += stdB64Table[(n >> 18) & 0x3F];
+            b64 += stdB64Table[(n >> 12) & 0x3F];
+            b64 += (i + 1 < dataSize) ? stdB64Table[(n >> 6) & 0x3F] : '=';
+            b64 += (i + 2 < dataSize) ? stdB64Table[n & 0x3F] : '=';
+        }
+
+        // Construct TTL matching Vital's presets.ttl structure
+        stateTtl += "@prefix atom:  <http://lv2plug.in/ns/ext/atom#> .\n";
+        stateTtl += "@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .\n";
+        stateTtl += "@prefix pset:  <http://lv2plug.in/ns/ext/presets#> .\n";
+        stateTtl += "@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n";
+        stateTtl += "@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .\n";
+        stateTtl += "@prefix state: <http://lv2plug.in/ns/ext/state#> .\n";
+        stateTtl += "@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .\n\n";
+        stateTtl += "[] a pset:Preset ;\n";
+        stateTtl += "    lv2:appliesTo <";
+        stateTtl += plugUriStr;
+        stateTtl += "> ;\n";
+        stateTtl += "    state:state [\n";
+        stateTtl += "        <urn:juce:stateBinary> [\n";
+        stateTtl += "            a atom:Chunk ;\n";
+        stateTtl += "            rdf:value \"";
+        stateTtl += b64;
+        stateTtl += "\"^^xsd:base64Binary ;\n";
+        stateTtl += "        ] ;\n";
+        stateTtl += "    ] .\n";
+    } else {
+        // ============================================================
+        // JUCE String State path (used by Surge XT)
+        // ============================================================
+        // JUCE's LV2 wrapper stores state under the URI:
+        //   <JucePlugin_LV2URI>:StateString   (colon separator, "StateString" suffix)
+        // with type atom:String (LV2_ATOM__String).
+        //
+        // The data is encoded using JUCE's proprietary MemoryBlock::toBase64Encoding()
+        // format:  "<decimal_byte_count>.<juce_base64_chars>"
+        // The charset is: .ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+
+        // (note: starts with '.' at index 0, NOT standard RFC 4648 base64)
+
+        static const char juceB64Table[] =
+            ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+";
+
+        // Helper: read numBits bits from the data bit-stream starting at bitStart.
+        // This replicates JUCE's MemoryBlock::getBitRange() which uses LSB-first
+        // bit ordering within each byte and packs bits LSB-first into the result.
+        auto getBitRange = [&](const uint8_t* buf, long bufSize, long bitStart, int numBits) -> int {
+            int res = 0;
+            long byte = bitStart >> 3;
+            long offsetInByte = bitStart & 7;
+            int bitsSoFar = 0;
+
+            while (numBits > 0 && byte < bufSize) {
+                int bitsThisTime = numBits < (int)(8 - offsetInByte) ? numBits : (int)(8 - offsetInByte);
+                int mask = (0xff >> (8 - bitsThisTime)) << offsetInByte;
+                res |= (((buf[byte] & mask) >> offsetInByte) << bitsSoFar);
+                bitsSoFar += bitsThisTime;
+                numBits -= bitsThisTime;
+                ++byte;
+                offsetInByte = 0;
+            }
+            return res;
+        };
+
+        // Encode using JUCE's format: "<size>.<encoded_chars>"
+        long numChars = ((dataSize * 8) + 5) / 6;
+        std::string juceB64;
+        juceB64 = std::to_string(dataSize);
+        juceB64 += '.';
+        juceB64.reserve(juceB64.size() + numChars + 1);
+        for (long i = 0; i < numChars; i++) {
+            int sixBits = getBitRange(&data[0], dataSize, i * 6, 6);
+            juceB64 += juceB64Table[sixBits & 0x3F];
+        }
+
+        // Construct a minimal Turtle state string.
+        // JUCE LV2 state URI = <pluginURI>:StateString
+        // JUCE LV2 state type = atom:String (LV2_ATOM__String)
+        stateTtl += "@prefix atom: <http://lv2plug.in/ns/ext/atom#> .\n";
+        stateTtl += "@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n";
+        stateTtl += "@prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n";
+        stateTtl += "@prefix state: <http://lv2plug.in/ns/ext/state#> .\n\n";
+        stateTtl += "[] a pset:Preset ;\n";
+        stateTtl += "    lv2:appliesTo <";
+        stateTtl += plugUriStr;
+        stateTtl += "> ;\n";
+        stateTtl += "    state:state [\n";
+        stateTtl += "        <";
+        stateTtl += plugUriStr;
+        stateTtl += ":StateString> \"";
+        stateTtl += juceB64;
+        // NOTE: Do NOT add ^^atom:String here!  sratom treats typed literals
+        // (with ^^<type>) differently from plain literals.  A typed literal with
+        // atom:String would be read by sratom as forge.Literal (since atom:String
+        // doesn't match any of sratom's known XSD types), but JUCE expects
+        // forge.String.  A plain untyped literal causes sratom to call
+        // lv2_atom_forge_string(), producing the correct atom type (forge.String =
+        // URID for LV2_ATOM__String), which is what JUCE checks for in its
+        // retrieve() callback.
+        stateTtl += "\"\n";
+        stateTtl += "    ] .\n";
+    }
+
+    LilvWorld* world = (LilvWorld*)world_;
+    LilvState* state = lilv_state_new_from_string(world, &g_uridMapFeature, stateTtl.c_str());
+    if (!state) {
+        Trace::Error("LV2: Failed to parse state TTL for preset: %s", filePath.c_str());
+        return false;
+    }
+
+    LilvInstance* instance = (LilvInstance*)pluginInstance_;
+    lilv_state_restore(state, instance, NULL, NULL, 0, NULL);
+    lilv_state_free(state);
+
+    Trace::Log("LV2", "Loaded preset from file: %s (%ld bytes, skipped %d)",
+        filePath.c_str(), dataSize, headerSkipBytes);
+    return true;
+}
+
+// ====================================================================
+// discoverPresets: main preset discovery entry point
+// ====================================================================
+void LV2Instrument::discoverPresets() {
+    programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = false;
+    usingMidiPresets_ = false;
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    // Try file-based preset scanning (Surge XT .fxp, Vital .vital)
+    discoverPresetFiles();
+
+    // If no file presets found, try patchmanager cache (gearmulator)
+    if (!usingFilePresets_) {
+        discoverPatchManagerPresets();
+    }
+}
+
+// ====================================================================
+// discoverPresetFiles: scan filesystem for native preset files
+// ====================================================================
+
+// Helper: recursively find files with a given extension in a directory
+static void lv2FindPresetFiles(const std::string &dir, const char *extension,
+                               const std::string &category,
+                               std::map<std::string, std::vector<LV2FilePreset>> &bankMap) {
+    DIR *d = opendir(dir.c_str());
+    if (!d) return;
+    struct dirent *ent;
+    size_t extLen = strlen(extension);
+
+    while ((ent = readdir(d)) != nullptr) {
+        if (ent->d_name[0] == '.') continue;
+        std::string name(ent->d_name);
+        std::string full = dir + "/" + name;
+        struct stat st;
+        if (stat(full.c_str(), &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            std::string subCat = category.empty() ? name : category + "/" + name;
+            lv2FindPresetFiles(full, extension, subCat, bankMap);
+        } else if (S_ISREG(st.st_mode)) {
+            if (name.size() > extLen &&
+                name.substr(name.size() - extLen) == extension) {
+                LV2FilePreset fp;
+                fp.name = name.substr(0, name.size() - extLen);
+                fp.filePath = full;
+                std::string bankName = category.empty() ? "Presets" : category;
+                bankMap[bankName].push_back(fp);
+            }
+        }
+    }
+    closedir(d);
+}
+
+void LV2Instrument::discoverPresetFiles() {
+    const LV2PluginPresetMapping *mapping = nullptr;
+    for (int i = 0; lv2KnownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, lv2KnownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &lv2KnownPresetMappings[i];
+            break;
+        }
+    }
+
+    if (!mapping) {
+        Trace::Log("LV2", "No known preset file mapping for '%s'", name_);
+        return;
+    }
+
+    Trace::Log("LV2", "Scanning preset files for '%s' (ext: %s, skip: %d)",
+        name_, mapping->extension, mapping->headerSkipBytes);
+
+    std::string homeDir;
+    const char *home = getenv("HOME");
+    if (home) homeDir = home;
+
+    std::vector<std::string> scanDirs;
+    for (int i = 0; i < 6 && mapping->directories[i] != nullptr; i++) {
+        scanDirs.push_back(mapping->directories[i]);
+    }
+
+    // Add user-specific directories
+    if (!homeDir.empty()) {
+        if (strstr(name_, "Surge XT") != nullptr) {
+            scanDirs.push_back(homeDir + "/Documents/Surge XT/Patches");
+        } else if (strstr(name_, "Vital") != nullptr) {
+            scanDirs.push_back(homeDir + "/Documents/Vital");
+            scanDirs.push_back(homeDir + "/.vital/User/Presets");
+            scanDirs.push_back(homeDir + "/Music/Vital");
+        }
+    }
+
+    std::map<std::string, std::vector<LV2FilePreset>> bankMap;
+    for (size_t i = 0; i < scanDirs.size(); i++) {
+        lv2FindPresetFiles(scanDirs[i], mapping->extension, "", bankMap);
+    }
+
+    if (bankMap.empty()) {
+        Trace::Log("LV2", "No preset files found for '%s'", name_);
+        return;
+    }
+
+    programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = true;
+
+    for (std::map<std::string, std::vector<LV2FilePreset>>::iterator it = bankMap.begin();
+         it != bankMap.end(); ++it) {
+        LV2ProgramList pl;
+        pl.listId = (int32_t)programLists_.size();
+        pl.name = it->first;
+
+        std::vector<LV2FilePreset> bankFilePresets;
+        for (size_t j = 0; j < it->second.size(); j++) {
+            pl.programs.push_back(it->second[j].name);
+            bankFilePresets.push_back(it->second[j]);
+        }
+
+        programLists_.push_back(pl);
+        filePresetsByBank_.push_back(bankFilePresets);
+    }
+
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    Trace::Log("LV2", "File presets: %d bank(s)", (int)programLists_.size());
+    for (size_t i = 0; i < programLists_.size(); i++) {
+        Trace::Log("LV2", "  Bank '%s': %d presets",
+            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
+    }
+}
+
+// ====================================================================
+// discoverPatchManagerPresets: parse gearmulator patchmanager cache
+// for OsTIrus/Osirus/etc. LV2 plugins
+// ====================================================================
+
+struct LV2PatchManagerMapping {
+    const char *pluginNameSubstring;
+    const char *cacheDirSuffix;
+};
+
+static const LV2PatchManagerMapping lv2PatchManagerMappings[] = {
+    { "OsTIrus",  "OsTIrus" },
+    { "Osirus",   "Osirus" },
+    { "Vavra",    "Vavra" },
+    { "Xenia",    "Xenia" },
+    { nullptr, nullptr }
+};
+
+void LV2Instrument::discoverPatchManagerPresets() {
+    const LV2PatchManagerMapping *mapping = nullptr;
+    for (int i = 0; lv2PatchManagerMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, lv2PatchManagerMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &lv2PatchManagerMappings[i];
+            break;
+        }
+    }
+    if (!mapping) return;
+
+    const char *home = getenv("HOME");
+    if (!home) return;
+
+    std::string cachePath = std::string(home) +
+        "/.local/share/The Usual Suspects/" +
+        mapping->cacheDirSuffix +
+        "/patchmanager/patchmanagerdb.cache";
+
+    Trace::Log("LV2", "Looking for patchmanager cache: %s", cachePath.c_str());
+
+    int fd = open(cachePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        Trace::Log("LV2", "No patchmanager cache found for '%s'", name_);
+        return;
+    }
+
+    off_t fileSize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+
+    if (fileSize < 28) {
+        Trace::Error("LV2: Patchmanager cache too small (%ld bytes)", (long)fileSize);
+        close(fd);
+        return;
+    }
+
+    std::vector<uint8_t> data(fileSize);
+    ssize_t bytesRead = read(fd, &data[0], fileSize);
+    close(fd);
+
+    if (bytesRead != fileSize) {
+        Trace::Error("LV2: Short read on patchmanager cache");
+        return;
+    }
+
+    const uint8_t *buf = &data[0];
+    size_t total = (size_t)fileSize;
+    size_t pos = 0;
+
+    auto readU32 = [&](uint32_t &val) -> bool {
+        if (pos + 4 > total) return false;
+        val = (uint32_t)buf[pos] | ((uint32_t)buf[pos+1] << 8) |
+              ((uint32_t)buf[pos+2] << 16) | ((uint32_t)buf[pos+3] << 24);
+        pos += 4;
+        return true;
+    };
+    auto readU16 = [&](uint16_t &val) -> bool {
+        if (pos + 2 > total) return false;
+        val = (uint16_t)buf[pos] | ((uint16_t)buf[pos+1] << 8);
+        pos += 2;
+        return true;
+    };
+    auto readTag = [&](char tag[5]) -> bool {
+        if (pos + 4 > total) return false;
+        tag[0] = buf[pos]; tag[1] = buf[pos+1];
+        tag[2] = buf[pos+2]; tag[3] = buf[pos+3]; tag[4] = '\0';
+        pos += 4;
+        return true;
+    };
+
+    // Parse file header: Pmpm + version + totalSize
+    char tag[5];
+    uint32_t ver, sz;
+    if (!readTag(tag) || strcmp(tag, "Pmpm") != 0) {
+        Trace::Error("LV2: Invalid patchmanager cache header");
+        return;
+    }
+    if (!readU32(ver) || !readU32(sz)) return;
+
+    // Parse PmDs container
+    if (!readTag(tag) || strcmp(tag, "PmDs") != 0) {
+        Trace::Error("LV2: Expected PmDs container in patchmanager cache");
+        return;
+    }
+    uint32_t pmdsVer, pmdsSize, bankCount;
+    if (!readU32(pmdsVer) || !readU32(pmdsSize) || !readU32(bankCount)) return;
+
+    Trace::Log("LV2", "Patchmanager cache: %d banks", (int)bankCount);
+
+    if (bankCount > 256) {
+        Trace::Error("LV2: Unreasonable bank count %d", (int)bankCount);
+        return;
+    }
+
+    programLists_.clear();
+    filePresetsByBank_.clear();
+
+    for (uint32_t b = 0; b < bankCount; b++) {
+        if (!readTag(tag) || strcmp(tag, "DatS") != 0) {
+            Trace::Error("LV2: Expected DatS at bank %d, got '%s'", (int)b, tag);
+            return;
+        }
+        uint32_t dsVer, dsSize;
+        if (!readU32(dsVer) || !readU32(dsSize)) return;
+        size_t payloadStart = pos;
+
+        uint16_t flag, nameLen, pad16;
+        if (!readU16(flag) || !readU16(nameLen) || !readU16(pad16)) {
+            pos = payloadStart + dsSize;
+            continue;
+        }
+
+        char bankNameBuf[64];
+        if (nameLen > 63) nameLen = 63;
+        if (pos + nameLen > total) {
+            pos = payloadStart + dsSize;
+            continue;
+        }
+        memcpy(bankNameBuf, buf + pos, nameLen);
+        bankNameBuf[nameLen] = '\0';
+        for (int i = (int)nameLen - 1; i >= 0 && (bankNameBuf[i] == '\0' || bankNameBuf[i] == ' '); i--)
+            bankNameBuf[i] = '\0';
+        pos += nameLen;
+
+        uint32_t pad32, patchCount;
+        if (!readU32(pad32) || !readU32(patchCount)) {
+            pos = payloadStart + dsSize;
+            continue;
+        }
+
+        LV2ProgramList pl;
+        pl.listId = (int32_t)b;
+        pl.name = bankNameBuf;
+
+        for (uint32_t p = 0; p < patchCount && pos < total; p++) {
+            if (!readTag(tag) || strcmp(tag, "Patc") != 0) {
+                Trace::Error("LV2: Expected Patc at bank %d patch %d, got '%s'", (int)b, (int)p, tag);
+                pos = payloadStart + dsSize;
+                break;
+            }
+            uint32_t pVer, pSize;
+            if (!readU32(pVer) || !readU32(pSize)) {
+                pos = payloadStart + dsSize;
+                break;
+            }
+            size_t pPayload = pos;
+
+            uint32_t pNameLen;
+            if (!readU32(pNameLen)) {
+                pos = pPayload + pSize;
+                continue;
+            }
+            char patchNameBuf[32];
+            uint32_t copyLen = pNameLen;
+            if (copyLen > 31) copyLen = 31;
+            if (pos + copyLen > total) {
+                pos = pPayload + pSize;
+                continue;
+            }
+            memcpy(patchNameBuf, buf + pos, copyLen);
+            patchNameBuf[copyLen] = '\0';
+            for (int i = (int)copyLen - 1; i >= 0 && (patchNameBuf[i] == '\0' || patchNameBuf[i] == ' '); i--)
+                patchNameBuf[i] = '\0';
+
+            pl.programs.push_back(patchNameBuf);
+            pos = pPayload + pSize;
+        }
+
+        if (pl.programs.size() > 0) {
+            programLists_.push_back(pl);
+        }
+
+        pos = payloadStart + dsSize;
+    }
+
+    if (programLists_.empty()) {
+        Trace::Log("LV2", "No patches found in patchmanager cache");
+        return;
+    }
+
+    // Preset selection via MIDI bank select + program change
+    usingMidiPresets_ = true;
+    currentBank_ = 0;
+    currentPreset_ = 0;
+
+    Trace::Log("LV2", "Patchmanager presets: %d bank(s), will use MIDI for selection",
+        (int)programLists_.size());
+    for (size_t i = 0; i < programLists_.size() && i < 5; i++) {
+        Trace::Log("LV2", "  Bank '%s': %d presets",
+            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
+    }
+    if (programLists_.size() > 5) {
+        Trace::Log("LV2", "  ... and %d more banks", (int)(programLists_.size() - 5));
+    }
 }

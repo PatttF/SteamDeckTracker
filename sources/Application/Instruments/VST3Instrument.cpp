@@ -1666,6 +1666,7 @@ void VST3Instrument::discoverPresetFiles() {
         if (strstr(name_, "Surge XT") != nullptr) {
             scanDirs.push_back(homeDir + "/Documents/Surge XT/Patches");
         } else if (strstr(name_, "Vital") != nullptr) {
+            scanDirs.push_back(homeDir + "/Documents/Vital");
             scanDirs.push_back(homeDir + "/.vital/User/Presets");
             scanDirs.push_back(homeDir + "/Music/Vital");
         }

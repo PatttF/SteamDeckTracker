@@ -41,6 +41,8 @@ private:
 	int lv2ScrollOffset_ ;  // For scrolling LV2 parameters
 	char lv2PluginLabel_[80];  // Persistent storage for plugin label
 	char lv2ParamText_[40][40];  // Storage for parameter labels (2 cols x 20 rows)
+	char lv2BankLabel_[80];  // Storage for LV2 bank name display
+	char lv2PresetLabel_[80];  // Storage for LV2 preset name display
 	// Action field for loading LV2 list (clickable)
 	UIActionField *lv2LoadField_ ;
 	// Action field for loading SF2 browser (clickable)

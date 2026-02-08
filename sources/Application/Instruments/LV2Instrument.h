@@ -16,6 +16,31 @@
 #define LV2IP_PAN           MAKE_FOURCC('P','A','N',' ')
 #define LV2IP_TABLE         MAKE_FOURCC('T','A','B','L')
 #define LV2IP_TABLEAUTO     MAKE_FOURCC('T','B','L','A')
+#define LV2IP_BANK          MAKE_FOURCC('L','B','N','K')
+#define LV2IP_PRESET        MAKE_FOURCC('L','P','R','S')
+
+// Info about a single program list (bank) for LV2 preset support
+struct LV2ProgramList {
+    int32_t listId;                     // Bank index
+    std::string name;                   // Bank/category name
+    std::vector<std::string> programs;  // Program (preset) names
+};
+
+// File-based preset entry for LV2 plugins
+struct LV2FilePreset {
+    std::string name;       // display name (filename without extension)
+    std::string filePath;   // full filesystem path to preset file
+};
+
+// Known plugin preset directory mapping for LV2
+struct LV2PluginPresetMapping {
+    const char *pluginNameSubstring;  // substring to match in plugin name
+    const char *directories[6];       // directories to scan (nullptr terminated)
+    const char *extension;            // file extension to match
+    int headerSkipBytes;              // bytes to skip at start of file
+    bool useStateBinary;              // true = urn:juce:stateBinary + atom:Chunk + std base64
+                                      // false = <pluginURI>:StateString + JUCE proprietary base64
+};
 
 struct LV2ScalePoint {
     float value;
@@ -94,6 +119,17 @@ public:
     std::string GetParameterScalePointLabel(int paramIndex, float value) const;
     // Store a variable value read from project file when variable doesn't yet exist
     void StorePendingVariable(const char *name, const char *value);
+
+    // Preset/program support
+    int GetBankCount() const { return (int)programLists_.size(); }
+    const char *GetBankName(int bankIdx) const;
+    int GetCurrentBank() const { return currentBank_; }
+    void SetCurrentBank(int bankIdx);
+    int GetPresetCount() const;
+    int GetPresetCountForBank(int bankIdx) const;
+    const char *GetPresetName(int presetIdx) const;
+    int GetCurrentPreset() const { return currentPreset_; }
+    void SetPreset(int presetIdx);
 
 private:
     char name_[80];                     // Instrument name
@@ -199,11 +235,23 @@ private:
     std::vector<PendingAtomEvent> renderLocalAtom_;
     std::vector<PendingAtomEvent> renderPatchEvents_;
 
+    // Preset/program data
+    std::vector<LV2ProgramList> programLists_;   // banks/lists of presets
+    std::vector<std::vector<LV2FilePreset>> filePresetsByBank_; // file paths for file-based presets
+    int currentBank_;
+    int currentPreset_;
+    bool usingFilePresets_;  // true when presets are loaded from files
+    bool usingMidiPresets_;  // true when presets use MIDI bank select + program change
+
     // Helper methods
     void discoverParameters();
     void loadPlugin();
     void cleanupPlugin();
     void connectPorts(int bufferSize);
+    void discoverPresets();
+    void discoverPresetFiles();
+    void discoverPatchManagerPresets();
+    bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes, bool useStateBinary);
     
 };
 

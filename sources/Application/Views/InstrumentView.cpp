@@ -429,7 +429,68 @@ void InstrumentView::fillLV2Parameters() {
     lv2LoadField_ = af;
 
     position._y+=1;
-	
+
+	// Show bank/preset selectors if plugin has presets
+	if (!instrument->IsEmpty() && instrument->GetBankCount() > 0) {
+		// Bank selector (if more than one bank)
+		if (instrument->GetBankCount() > 1) {
+			Variable *bv = instrument->FindVariable(LV2IP_BANK);
+			if (!bv) {
+				WatchedVariable *wbv = new WatchedVariable("bank", LV2IP_BANK, 0);
+				wbv->AddObserver(*this);
+				instrument->Insert(wbv);
+				bv = wbv;
+			}
+			if (WatchedVariable *wbv = dynamic_cast<WatchedVariable *>(bv)) {
+				wbv->RemoveObserver(*this);
+				wbv->AddObserver(*this);
+			}
+			int maxBank = instrument->GetBankCount() - 1;
+			if (maxBank < 0) maxBank = 0;
+			UIIntVarField *bf = new UIIntVarField(position, *bv, "bank: %2.2X", 0, maxBank, 1, 0x10);
+			T_SimpleList<UIField>::Insert(bf);
+			position._y += 1;
+
+			// Show bank name
+			int bankIdx = instrument->GetCurrentBank();
+			const char *bankName = instrument->GetBankName(bankIdx);
+			snprintf(lv2BankLabel_, sizeof(lv2BankLabel_), "  [%s]", bankName);
+			UIStaticField *bsf = new UIStaticField(position, lv2BankLabel_);
+			T_SimpleList<UIField>::Insert(bsf);
+			position._y += 1;
+		}
+
+		// Preset selector
+		Variable *pv = instrument->FindVariable(LV2IP_PRESET);
+		if (!pv) {
+			WatchedVariable *wpv = new WatchedVariable("preset", LV2IP_PRESET, 0);
+			wpv->AddObserver(*this);
+			instrument->Insert(wpv);
+			pv = wpv;
+		}
+		if (WatchedVariable *wpv = dynamic_cast<WatchedVariable *>(pv)) {
+			wpv->RemoveObserver(*this);
+			wpv->AddObserver(*this);
+		}
+		// Sync variable to actual preset
+		if (pv->GetInt() != instrument->GetCurrentPreset()) {
+			pv->SetInt(instrument->GetCurrentPreset());
+		}
+		int maxPreset = instrument->GetPresetCount() - 1;
+		if (maxPreset < 0) maxPreset = 0;
+		UIIntVarField *pf = new UIIntVarField(position, *pv, "preset: %2.2X", 0, maxPreset, 1, 0x10);
+		T_SimpleList<UIField>::Insert(pf);
+		position._y += 1;
+
+		// Show preset name
+		int presetIdx = instrument->GetCurrentPreset();
+		const char *presetName = instrument->GetPresetName(presetIdx);
+		snprintf(lv2PresetLabel_, sizeof(lv2PresetLabel_), "  [%s]", presetName);
+		UIStaticField *sf = new UIStaticField(position, lv2PresetLabel_);
+		T_SimpleList<UIField>::Insert(sf);
+		position._y += 1;
+	}
+
 	// Show parameters if plugin is loaded
 	if (!instrument->IsEmpty()) {
 		int paramCount = instrument->GetParameterCount();
@@ -1296,6 +1357,28 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
             Variable *pv = vst3->FindVariable(VST3IP_PRESET);
             if (pv && vst3->GetCurrentPreset() != pv->GetInt()) {
                 vst3->SetPreset(pv->GetInt());
+                onInstrumentChange();
+                isDirty_ = true;
+                return;
+            }
+        }
+
+        // Handle LV2 bank/preset changes
+        if (instr->GetType() == IT_LV2) {
+            LV2Instrument *lv2 = (LV2Instrument *)instr;
+            Variable *bv = lv2->FindVariable(LV2IP_BANK);
+            if (bv && lv2->GetCurrentBank() != bv->GetInt()) {
+                lv2->SetCurrentBank(bv->GetInt());
+                Variable *pv = lv2->FindVariable(LV2IP_PRESET);
+                if (pv) pv->SetInt(0);
+                lv2->SetPreset(0);
+                onInstrumentChange();
+                isDirty_ = true;
+                return;
+            }
+            Variable *pv = lv2->FindVariable(LV2IP_PRESET);
+            if (pv && lv2->GetCurrentPreset() != pv->GetInt()) {
+                lv2->SetPreset(pv->GetInt());
                 onInstrumentChange();
                 isDirty_ = true;
                 return;
