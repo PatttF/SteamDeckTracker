@@ -87,9 +87,12 @@ void LV2Effect::Purge() {
             if (wv) wv->RemoveObserver(*this);
         }
     }
+    // Lock while modifying plugin state to prevent audio thread access
+    pluginMutex_.Lock();
     cleanupPlugin();
     pluginURI_[0] = '\0';
     strcpy(name_, "Effect");
+    pluginMutex_.Unlock();
     parameters_.clear();
     controlValues_.clear();
 }
@@ -99,7 +102,7 @@ void LV2Effect::SetForcedOutputChannels(int count) {
 }
 
 void LV2Effect::SetPlugin(const char *uri) {
-    // Clean up any existing plugin
+    // Clean up any existing plugin (Purge locks internally)
     Purge();
 
     strncpy(pluginURI_, uri, sizeof(pluginURI_) - 1);
@@ -226,7 +229,7 @@ void LV2Effect::loadPlugin() {
         audioOutCount = 2;
     }
 
-    Trace::Debug("LV2Effect: %s has %d audio in, %d audio out, midiIn=%d",
+    Trace::Log("LV2Effect", "%s has %d audio in, %d audio out, midiIn=%d",
         pluginURI_, audioInCount, audioOutCount, midiInputPort_);
 
     // Set up features array
@@ -241,7 +244,7 @@ void LV2Effect::loadPlugin() {
 
     // Instantiate the plugin with actual audio driver sample rate
     double pluginRate = (double)Audio::GetInstance()->GetSampleRate();
-    Trace::Debug("LV2Effect: Instantiating plugin at %.0f Hz: %s", pluginRate, pluginURI_);
+    Trace::Log("LV2Effect", "Instantiating plugin at %.0f Hz: %s", pluginRate, pluginURI_);
     LilvInstance *instance = lilv_plugin_instantiate(plugin, pluginRate, features);
     if (!instance) {
         Trace::Error("LV2Effect: Failed to instantiate plugin: %s", pluginURI_);
@@ -286,11 +289,18 @@ void LV2Effect::loadPlugin() {
 
     connectPorts(bufferSize_);
 
-    // Activate
+    // Activate under lock — this is the point where ProcessAudio
+    // transitions from seeing an empty plugin to a live one
+    pluginMutex_.Lock();
     lilv_instance_activate(instance);
     isActivated_ = true;
+    pluginMutex_.Unlock();
 
-    Trace::Debug("LV2Effect: Loaded and activated: %s (%s)", name_, pluginURI_);
+    Trace::Log("LV2Effect", "Loaded and activated: %s (%s)", name_, pluginURI_);
+    Trace::Log("LV2Effect", "  audioInL=%d audioInR=%d audioOutL=%d audioOutR=%d",
+        audioInputPortL_, audioInputPortR_, audioOutputPortL_, audioOutputPortR_);
+    Trace::Log("LV2Effect", "  bufferSize=%d midiPort=%d paramCount=%d",
+        bufferSize_, midiInputPort_, (int)parameters_.size());
 }
 
 void LV2Effect::cleanupPlugin() {
@@ -646,17 +656,26 @@ void LV2Effect::discoverParameters() {
 }
 
 bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
+    // Try to acquire the plugin mutex — if the UI thread is loading/unloading,
+    // skip processing for this buffer (pass through dry signal)
+    if (!pluginMutex_.TryLock()) {
+        return true;  // return true so dry signal passes through unchanged
+    }
+
     if (!pluginInstance_ || !audioBufferL_ || !audioBufferR_ || !audioInputL_ || !audioInputR_) {
+        pluginMutex_.Unlock();
         Trace::Log("LV2Effect", "ProcessAudio: null check failed inst=%p bL=%p bR=%p iL=%p iR=%p",
             pluginInstance_, audioBufferL_, audioBufferR_, audioInputL_, audioInputR_);
         return false;
     }
 
     if (!buffer || sampleCount <= 0) {
+        pluginMutex_.Unlock();
         return false;
     }
 
     if (!isActivated_) {
+        pluginMutex_.Unlock();
         Trace::Log("LV2Effect", "ProcessAudio: plugin not activated");
         return false;
     }
@@ -685,9 +704,13 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
     if (runSize > sampleCount) runSize = sampleCount;
 
     // Deinterleave input from fixed-point stereo interleaved to float L/R
+    // Q15 fixed-point stores full-scale 16-bit audio as ±~1 billion (i2fp).
+    // fp2fl converts that to ±32768.0 float, but LV2 plugins expect ±1.0,
+    // so we divide by 32768 to normalize.
+    const float toFloat = 1.0f / (32768.0f * 32768.0f);  // combined fp2fl + normalize
     for (int i = 0; i < runSize; i++) {
-        audioInputL_[i] = fp2fl(buffer[i * 2]);
-        audioInputR_[i] = fp2fl(buffer[i * 2 + 1]);
+        audioInputL_[i] = (float)buffer[i * 2] * toFloat;
+        audioInputR_[i] = (float)buffer[i * 2 + 1] * toFloat;
     }
 
     // Clear output buffers before running plugin to prevent stale data artifacts
@@ -781,19 +804,25 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
     }
 
     // Wet/dry mix and convert back to fixed-point stereo interleaved
+    // Plugin output is ±1.0 float; Q15 full-scale is i2fp(32767) ≈ 1 billion.
+    // So multiply by 32768*32768 = 1073741824 to convert back.
+    const float fromFloat = 32768.0f * 32768.0f;
     float wet = wetDry / 255.0f;
     float dry = 1.0f - wet;
 
     for (int i = 0; i < sampleCount; i++) {
-        float dryL = fp2fl(buffer[i * 2]);
-        float dryR = fp2fl(buffer[i * 2 + 1]);
+        float dryL = (float)buffer[i * 2] * toFloat;
+        float dryR = (float)buffer[i * 2 + 1] * toFloat;
         float wetL = audioBufferL_[i];
         float wetR = audioBufferR_[i];
 
-        buffer[i * 2] = fl2fp(dryL * dry + wetL * wet);
-        buffer[i * 2 + 1] = fl2fp(dryR * dry + wetR * wet);
+        float mixL = dryL * dry + wetL * wet;
+        float mixR = dryR * dry + wetR * wet;
+        buffer[i * 2]     = (fixed)(mixL * fromFloat);
+        buffer[i * 2 + 1] = (fixed)(mixR * fromFloat);
     }
 
+    pluginMutex_.Unlock();
     return true;
 }
 

@@ -17,6 +17,7 @@ static FourCC _all[]= {
 	I_CMD_IRTG,
 	I_CMD_KILL,
 	I_CMD_LEGA,
+	I_CMD_LFOF,
 	I_CMD_LPOF,
 	I_CMD_MDCC,
 	I_CMD_MDPG,
@@ -25,11 +26,14 @@ static FourCC _all[]= {
 	I_CMD_PFIN,
 	I_CMD_PLOF,
 	I_CMD_PTCH,
+	I_CMD_RAND,
 	I_CMD_REVB,
 	I_CMD_RTRG,
 	I_CMD_STOP,
 	I_CMD_TABL,
 	I_CMD_TMPO,
+	I_CMD_TRML,
+	I_CMD_VIBR,
 	I_CMD_VOLM
 } ;
 

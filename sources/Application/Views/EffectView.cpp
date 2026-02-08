@@ -51,7 +51,16 @@ void EffectView::onEffectChange() {
 
     fillEffectParameters();
 
-    SetFocus(T_SimpleList<UIField>::GetFirst());
+    // Focus the first non-static field (skip the static help text)
+    UIField *firstFocusable = nullptr;
+    IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
+    for (fit->Begin(); !fit->IsDone(); fit->Next()) {
+        if (!fit->CurrentItem().IsStatic()) {
+            firstFocusable = &fit->CurrentItem();
+            break;
+        }
+    }
+    SetFocus(firstFocusable ? firstFocusable : T_SimpleList<UIField>::GetFirst());
 }
 
 void EffectView::fillEffectParameters() {
@@ -240,15 +249,13 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
         viewMode_ = VM_NORMAL;
     }
 
-    FieldView::ProcessButtonMask(mask);
-
-    // B modifier: navigate between effect slots
+    // B modifier: navigate between effect slots (check BEFORE FieldView)
     if (mask & EPBM_B) {
         if (mask & EPBM_LEFT) warpToNext(-1);
-        if (mask & EPBM_RIGHT) warpToNext(+1);
-        if (mask & EPBM_DOWN) warpToNext(-16);
-        if (mask & EPBM_UP) warpToNext(+16);
-        if (mask & EPBM_A) {
+        else if (mask & EPBM_RIGHT) warpToNext(+1);
+        else if (mask & EPBM_DOWN) warpToNext(-16);
+        else if (mask & EPBM_UP) warpToNext(+16);
+        else if (mask & EPBM_A) {
             // Purge effect
             if (current_ && !current_->IsEmpty()) {
                 current_->Purge();
@@ -256,7 +263,12 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
                 isDirty_ = true;
             }
         }
-    } else {
+        return;
+    }
+
+    FieldView::ProcessButtonMask(mask);
+
+    {
         // A modifier
         if (mask == EPBM_A) {
             UIField *focusField = GetFocus();

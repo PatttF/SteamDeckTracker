@@ -186,14 +186,15 @@ LV2Instrument::LV2Instrument() {
     if (reverbBufferLength_ < 1024) reverbBufferLength_ = 1024;
 
     // Scale tap offsets to actual sample rate (original values tuned for 44100 Hz)
-    // Original taps: {1557, 2801, 4409, 4000} at 44100 Hz
     float rateRatio = (float)sampleRate / 44100.0f;
-    reverbTapOffsets_[0] = (int)(1557.0f * rateRatio);
-    reverbTapOffsets_[1] = (int)(2801.0f * rateRatio);
-    reverbTapOffsets_[2] = (int)(4409.0f * rateRatio);
-    reverbTapOffsets_[3] = (int)(4000.0f * rateRatio);
+    reverbTapOffsets_[0] = (int)(743.0f * rateRatio);
+    reverbTapOffsets_[1] = (int)(1557.0f * rateRatio);
+    reverbTapOffsets_[2] = (int)(2311.0f * rateRatio);
+    reverbTapOffsets_[3] = (int)(2801.0f * rateRatio);
+    reverbTapOffsets_[4] = (int)(3571.0f * rateRatio);
+    reverbTapOffsets_[5] = (int)(4409.0f * rateRatio);
     // Clamp tap offsets to buffer length
-    for (int t = 0; t < 4; t++) {
+    for (int t = 0; t < 6; t++) {
         if (reverbTapOffsets_[t] >= reverbBufferLength_) {
             reverbTapOffsets_[t] = reverbBufferLength_ - 1;
         }
@@ -207,6 +208,9 @@ LV2Instrument::LV2Instrument() {
         memset(reverbBuffer_[i], 0, reverbBufferLength_ * 2 * sizeof(fixed));
         reverbDecay_[i] = 0;
         reverbSend_[i] = 0;
+        reverbDamp_[i] = 0;
+        reverbDampL_[i] = 0;
+        reverbDampR_[i] = 0;
         reverbPos_[i] = 0;
     }
 
@@ -719,12 +723,16 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
            int reverbPos = reverbPos_[channel];
         fixed decay = reverbDecay_[channel];
         fixed send = reverbSend_[channel];
+        fixed damp = reverbDamp_[channel];
+        fixed dampInv = fp_sub(FP_ONE, damp);
+        fixed dampStateL = reverbDampL_[channel];
+        fixed dampStateR = reverbDampR_[channel];
         
-        // Tap offsets scaled to actual sample rate (computed in constructor)
-        static const fixed tapGains[4] = {fl2fp(0.35f), fl2fp(0.25f), fl2fp(0.18f), fl2fp(0.12f)};
+        // 6 taps with cross-channel diffusion
+        static const fixed tapGains[6] = {fl2fp(0.25f), fl2fp(0.30f), fl2fp(0.20f),
+                                           fl2fp(0.18f), fl2fp(0.14f), fl2fp(0.10f)};
 
-        // Feedback position offset: scale 100 samples from 44100 Hz to current rate
-        // Hoisted out of the inner loop since it's constant for the entire render call
+        // Feedback position offset scaled to sample rate
         const int fbSamples = (int)(100.0f * (float)reverbBufferLength_ / 4410.0f);
         
         fixed *outPtr = buffer;
@@ -732,22 +740,34 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
             fixed dryL = *outPtr;
             fixed dryR = *(outPtr + 1);
             
-            // Read from delay taps and sum
+            // Read from delay taps with cross-channel spread
             fixed wetL = 0;
             fixed wetR = 0;
-            for (int t = 0; t < 4; t++) {
+            for (int t = 0; t < 6; t++) {
                     int readPos = reverbPos - reverbTapOffsets_[t];
                 if (readPos < 0) readPos += reverbBufferLength_;
                 
-                wetL = fp_add(wetL, fp_mul(reverbBuf[readPos * 2], tapGains[t]));
-                wetR = fp_add(wetR, fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]));
+                fixed tapL = fp_mul(reverbBuf[readPos * 2], tapGains[t]);
+                fixed tapR = fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]);
+                if (t & 1) {
+                    wetL = fp_add(wetL, tapR);
+                    wetR = fp_add(wetR, tapL);
+                } else {
+                    wetL = fp_add(wetL, tapL);
+                    wetR = fp_add(wetR, tapR);
+                }
             }
             
-            // Write input + decayed feedback to delay line
+            // Feedback with damping lowpass
             int fb_pos = reverbPos - reverbBufferLength_ + fbSamples;
             if (fb_pos < 0) fb_pos += reverbBufferLength_;
-            fixed fbL = fp_mul(reverbBuf[fb_pos * 2], decay);
-            fixed fbR = fp_mul(reverbBuf[fb_pos * 2 + 1], decay);
+            fixed rawFbL = reverbBuf[fb_pos * 2];
+            fixed rawFbR = reverbBuf[fb_pos * 2 + 1];
+            
+            dampStateL = fp_add(fp_mul(rawFbL, dampInv), fp_mul(dampStateL, damp));
+            dampStateR = fp_add(fp_mul(rawFbR, dampInv), fp_mul(dampStateR, damp));
+            fixed fbL = fp_mul(dampStateL, decay);
+            fixed fbR = fp_mul(dampStateR, decay);
 
             reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
             reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
@@ -769,6 +789,8 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
                 }
         }
         reverbPos_[channel] = reverbPos;
+        reverbDampL_[channel] = dampStateL;
+        reverbDampR_[channel] = dampStateR;
     }
 
     // If note is no longer active, check if plugin output is silent
@@ -792,12 +814,14 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
 void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
     // Handle REVB command for reverb effect
     if (cc == I_CMD_REVB) {
-        // REVB:aabb - aa=decay (0-FF), bb=send amount (0-FF)
-        unsigned char decayVal = (value >> 8) & 0xFF;
+        // REVB:aabb - a=decay (0-F), a=damping (0-F), bb=send amount (0-FF)
+        unsigned char decayNibble = (value >> 12) & 0x0F;
+        unsigned char dampNibble = (value >> 8) & 0x0F;
         unsigned char sendAmount = value & 0xFF;
         
         // Set per-channel reverb parameters
-        reverbDecay_[channel] = fl2fp((decayVal / 255.0f) * 0.9f);
+        reverbDecay_[channel] = fl2fp((decayNibble / 15.0f) * 0.9f);
+        reverbDamp_[channel] = fl2fp((dampNibble / 15.0f) * 0.85f);
         reverbSend_[channel] = fl2fp(sendAmount / 255.0f);
     }
     // TODO: Handle other commands like volume, pan, etc.

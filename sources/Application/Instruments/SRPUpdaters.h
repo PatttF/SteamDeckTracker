@@ -125,14 +125,43 @@ private:
 } ;
 
 
-/*class Vibrato: public I_SRPUpdater {
+class Vibrato: public I_SRPUpdater {
 public:
-	Vibrato() {} ;
+	Vibrato() : phase_(0), speed_(0), depth_(0) {} ;
 	virtual ~Vibrato() {} ;
-	void SetData() ;
+	void SetData(unsigned char speed, unsigned char depth) ;
 	virtual void Trigger(bool tableTick) ;
 	virtual void UpdateSRP(struct RUParams &rup) ;
 private:
+	fixed phase_ ;   // Current LFO phase (fixed point, wraps at 2*PI)
+	fixed speed_ ;   // Phase increment per k-rate tick
+	fixed depth_ ;   // Depth of pitch modulation
 } ;
-*/
+
+class Tremolo: public I_SRPUpdater {
+public:
+	Tremolo() : phase_(0), speed_(0), depth_(0) {} ;
+	virtual ~Tremolo() {} ;
+	void SetData(unsigned char speed, unsigned char depth) ;
+	virtual void Trigger(bool tableTick) ;
+	virtual void UpdateSRP(struct RUParams &rup) ;
+private:
+	fixed phase_ ;   // Current LFO phase (fixed point, wraps at 2*PI)
+	fixed speed_ ;   // Phase increment per k-rate tick
+	fixed depth_ ;   // Depth of volume modulation
+} ;
+
+class LFOFilter: public I_SRPUpdater {
+public:
+	LFOFilter() : phase_(0), speed_(0), depth_(0) {} ;
+	virtual ~LFOFilter() {} ;
+	void SetData(unsigned char speed, unsigned char depth) ;
+	virtual void Trigger(bool tableTick) ;
+	virtual void UpdateSRP(struct RUParams &rup) ;
+private:
+	fixed phase_ ;   // Current LFO phase (fixed point, wraps at 256)
+	fixed speed_ ;   // Phase increment per k-rate tick
+	fixed depth_ ;   // Depth of filter cutoff modulation
+} ;
+
 #endif

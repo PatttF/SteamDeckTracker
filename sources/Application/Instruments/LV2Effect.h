@@ -115,6 +115,9 @@ private:
     std::vector<float> portControlStorage_;
     bool isActivated_;
 
+    // Mutex protecting plugin lifecycle (load/unload vs audio processing)
+    SysMutex pluginMutex_;
+
     // Pending variable values from project load
     std::map<std::string, std::string> pendingParamValues_;
 

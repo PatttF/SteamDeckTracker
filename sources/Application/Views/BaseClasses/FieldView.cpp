@@ -153,11 +153,12 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					if (next==0) {
 						next=first ;
 					}
-
-					focus_->ClearFocus() ;
-					focus_=next ;
-					focus_->SetFocus() ;
-					isDirty_=true ;
+					if (next) {
+						focus_->ClearFocus() ;
+						focus_=next ;
+						focus_->SetFocus() ;
+						isDirty_=true ;
+					}
 				}
 
 
@@ -203,11 +204,12 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					if (prev==0) {
 						prev=last ;
 					}
-
-					focus_->ClearFocus() ;
- 					focus_=prev ;
-					focus_->SetFocus() ;
-					isDirty_=true ;
+					if (prev) {
+						focus_->ClearFocus() ;
+ 						focus_=prev ;
+						focus_->SetFocus() ;
+						isDirty_=true ;
+					}
 				}
 
 				if (mask&EPBM_RIGHT) {
@@ -244,11 +246,12 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					if (next==0) {
 						next=first ;
 					}
-
-					focus_->ClearFocus() ;
-					focus_=next ;
-					focus_->SetFocus() ;
-					isDirty_=true ;
+					if (next) {
+						focus_->ClearFocus() ;
+						focus_=next ;
+						focus_->SetFocus() ;
+						isDirty_=true ;
+					}
 				}
 
 				if (mask&EPBM_LEFT){
@@ -284,11 +287,12 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					if (prev==0) {
 						prev=last ;
 					}
-
-					focus_->ClearFocus() ;
- 					focus_=prev ;
-					focus_->SetFocus() ;
-					isDirty_=true ;
+					if (prev) {
+						focus_->ClearFocus() ;
+ 						focus_=prev ;
+						focus_->SetFocus() ;
+						isDirty_=true ;
+					}
 				}
 			}
 		}

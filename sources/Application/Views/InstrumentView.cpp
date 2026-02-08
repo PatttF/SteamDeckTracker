@@ -19,6 +19,7 @@
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
 #include "System/Console/Trace.h"
+#include "Application/Player/Player.h"
 #include <map>
 #include <vector>
 #include <string>
@@ -83,12 +84,32 @@ void InstrumentView::onInstrumentChange() {
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	current_=bank->GetInstrument(i) ;
 
-	if (current_!=old && old!=0) {
-		old->RemoveObserver(*this) ;
-	} ;
+	// Always clean up WatchedVariable observers before rebuilding fields,
+	// whether switching instruments or just refreshing the same one.
+	// This prevents stale observers from re-triggering onInstrumentChange().
+	if (old!=0) {
+		Variable *oldTv = old->FindVariable(MAKE_FOURCC('I','T','Y','P'));
+		if (oldTv) {
+			if (WatchedVariable *wtv = dynamic_cast<WatchedVariable*>(oldTv))
+				wtv->RemoveObserver(*this);
+		}
+		if (old->GetType() == IT_SOUNDFONT) {
+			Variable *oldPv = old->FindVariable(SFIP_PRESET);
+			if (oldPv) {
+				if (WatchedVariable *wpv = dynamic_cast<WatchedVariable*>(oldPv))
+					wpv->RemoveObserver(*this);
+			}
+		}
+		if (current_!=old) {
+			old->RemoveObserver(*this) ;
+		}
+	}
 	T_SimpleList<UIField>::Empty() ;
+	lv2LoadField_ = nullptr;
+	sf2LoadField_ = nullptr;
 
 	InstrumentType it=getInstrumentType() ;
+	Trace::Log("IVIEW", "onInstrumentChange: inst=%d type=%d current=%p old=%p", i, (int)it, current_, old);
 
     switch (it) {
 		case IT_MIDI:
@@ -378,11 +399,10 @@ void InstrumentView::fillLV2Parameters() {
     GUIPoint helpPos(helpX, 0);
     UIStaticField *helpField = new UIStaticField(helpPos, helpText);
     T_SimpleList<UIField>::Insert(helpField);
-    position._y += 1;
 
     // Display the plugin selector as a clickable action (opens LV2 browser)
     if (instrument->IsEmpty()) {
-        strcpy(lv2PluginLabel_, "load list");
+        strcpy(lv2PluginLabel_, "plugin: ---");
     } else {
         snprintf(lv2PluginLabel_, 80, "plugin: %s", instrument->GetName());
     }
@@ -554,9 +574,9 @@ void InstrumentView::fillSoundFontParameters() {
 
 	// Display the SF2 loader as a clickable action field
 	if (instrument->IsEmpty()) {
-		strcpy(sf2Label_, "load sf2...");
+		strcpy(sf2Label_, "soundfont: ---");
 	} else {
-		snprintf(sf2Label_, sizeof(sf2Label_), "sf2: %s", instrument->GetName());
+		snprintf(sf2Label_, sizeof(sf2Label_), "soundfont: %s", instrument->GetName());
 	}
 	UIActionField *af = new UIActionField(sf2Label_, ACTION_LOAD_SF2, position);
 	T_SimpleList<UIField>::Insert(af);
@@ -638,23 +658,6 @@ void InstrumentView::warpToNext(int offset) {
 } ;
 
 void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
-
-    // Process any deferred type change request first (safe: executed outside of NotifyObservers)
-    if (pendingTypeInstrumentIdx_ != -1) {
-        int idx = pendingTypeInstrumentIdx_;
-        InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
-        if (idx >= 0 && idx < MAX_INSTRUMENT_COUNT) {
-            bank->SetInstrumentType(idx, pendingType_);
-            // Update our current_ pointer to avoid dereferencing a deleted old object
-            current_ = bank->GetInstrument(idx);
-            // Do not auto-open the LV2 browser - just switch to lv2 (LV2) type
-            // User can press B to open the plugin list when they want to load a plugin.
-            onInstrumentChange();
-            isDirty_ = true;
-        }
-        pendingTypeInstrumentIdx_ = -1;
-        // Continue processing (do not return, let this button press still be handled)
-    }
 
 	if (!pressed) return ;
 
@@ -900,6 +903,28 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
 void InstrumentView::DrawView() {
 
+	// Process any pending type switch before drawing to avoid showing stale UI
+	if (pendingTypeInstrumentIdx_ != -1) {
+		int idx = pendingTypeInstrumentIdx_;
+		pendingTypeInstrumentIdx_ = -1;
+		Trace::Log("IVIEW", "DrawView: processing pending type switch idx=%d type=%d", idx, (int)pendingType_);
+		// Stop playback before switching type to prevent crash from
+		// the audio thread rendering a deleted instrument
+		Player *player = Player::GetInstance();
+		if (player && player->IsRunning()) {
+			player->Stop();
+		}
+		InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+		if (idx >= 0 && idx < MAX_INSTRUMENT_COUNT) {
+			bank->SetInstrumentType(idx, pendingType_);
+			// Old instrument is now deleted. Clear current_ so onInstrumentChange
+			// treats this as a fresh instrument (old=nullptr, skips stale cleanup,
+			// properly adds observer on the new instrument).
+			current_ = nullptr;
+			onInstrumentChange();
+		}
+	}
+
 	Clear() ;
     View::EnableNotification();
 
@@ -965,19 +990,7 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
     InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
     I_Instrument *instr = bank->GetInstrument(i);
     if (instr) {
-        // Handle SF2 preset changes
-        if (instr->GetType() == IT_SOUNDFONT) {
-            SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
-            Variable *pv = sfi->FindVariable(SFIP_PRESET);
-            if (pv && sfi->GetCurrentPreset() != pv->GetInt()) {
-                Trace::Log("SF2", "Preset change detected: var=%d current=%d", pv->GetInt(), sfi->GetCurrentPreset());
-                sfi->SelectPreset(pv->GetInt());
-                onInstrumentChange();
-                isDirty_ = true;
-                return;
-            }
-        }
-
+        // Check ITYP type switch FIRST — must take priority over preset changes
         Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
         if (tv) {
             int val = tv->GetInt();
@@ -990,11 +1003,32 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 // Defer changing instrument type until outside of the variable notification
                 pendingTypeInstrumentIdx_ = i;
                 pendingType_ = targetType;
+                Trace::Log("IVIEW", "Update: deferring type switch inst=%d from=%d to=%d", i, (int)instr->GetType(), (int)targetType);
+                isDirty_ = true;
+                return;
+            }
+        }
+
+        // Handle SF2 preset changes (only if type is not changing)
+        if (instr->GetType() == IT_SOUNDFONT) {
+            SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
+            Variable *pv = sfi->FindVariable(SFIP_PRESET);
+            if (pv && sfi->GetCurrentPreset() != pv->GetInt()) {
+                Trace::Log("SF2", "Preset change detected: var=%d current=%d", pv->GetInt(), sfi->GetCurrentPreset());
+                sfi->SelectPreset(pv->GetInt());
+                onInstrumentChange();
                 isDirty_ = true;
                 return;
             }
         }
     }
 
-    onInstrumentChange() ;
+    // Only rebuild if the notification came from the instrument itself (not a WatchedVariable)
+    // WatchedVariable notifications for type/preset are handled above; anything else
+    // (e.g. the instrument notifying after load) triggers a rebuild.
+    WatchedVariable *wv = dynamic_cast<WatchedVariable *>(&o);
+    if (!wv) {
+        onInstrumentChange() ;
+        isDirty_ = true;
+    }
 }

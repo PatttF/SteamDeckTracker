@@ -347,3 +347,93 @@ void Arp::UpdateSRP(struct RUParams &rup) {
 	rup.speedOffset_=fp_mul(rup.speedOffset_,current_) ;
 } ;
 
+//
+// Vibrato - periodic pitch oscillation
+//
+
+void Vibrato::SetData(unsigned char speed, unsigned char depth) {
+	speed_ = fl2fp(speed / 2.0f) ;  // phase increment per k-rate tick
+	depth_ = fl2fp(depth / 255.0f) ; // max semitone deviation
+	// Don't reset phase_ so vibrato continues smoothly when re-triggered
+} ;
+
+void Vibrato::Trigger(bool tableTick) {
+	if (!enabled_) return ;
+	if (!tableTick) {
+		phase_ = fp_add(phase_, speed_) ;
+		// Wrap phase at 256 (one full cycle)
+		while (phase_ >= i2fp(256)) {
+			phase_ = fp_sub(phase_, i2fp(256)) ;
+		}
+	}
+} ;
+
+void Vibrato::UpdateSRP(struct RUParams &rup) {
+	if (!enabled_) return ;
+	// Compute sine from phase (0..255 maps to 0..2*PI)
+	float phaseF = fp2fl(phase_) ;
+	float sineVal = sinf(phaseF * 2.0f * 3.14159265f / 256.0f) ;
+	// Convert depth to pitch multiplier: depth of 1.0 = 1 semitone
+	float depthF = fp2fl(depth_) ;
+	float pitchMul = powf(2.0f, sineVal * depthF / 12.0f) ;
+	rup.speedOffset_ = fp_mul(rup.speedOffset_, fl2fp(pitchMul)) ;
+} ;
+
+//
+// Tremolo - periodic volume oscillation
+//
+
+void Tremolo::SetData(unsigned char speed, unsigned char depth) {
+	speed_ = fl2fp(speed / 2.0f) ;  // phase increment per k-rate tick
+	depth_ = fl2fp(depth / 255.0f) ; // max volume deviation (0..1)
+} ;
+
+void Tremolo::Trigger(bool tableTick) {
+	if (!enabled_) return ;
+	if (!tableTick) {
+		phase_ = fp_add(phase_, speed_) ;
+		while (phase_ >= i2fp(256)) {
+			phase_ = fp_sub(phase_, i2fp(256)) ;
+		}
+	}
+} ;
+
+void Tremolo::UpdateSRP(struct RUParams &rup) {
+	if (!enabled_) return ;
+	float phaseF = fp2fl(phase_) ;
+	float sineVal = sinf(phaseF * 2.0f * 3.14159265f / 256.0f) ;
+	float depthF = fp2fl(depth_) ;
+	// Modulate volume: sineVal ranges -1..1, scale by depth * baseVolume
+	fixed volMod = fl2fp(sineVal * depthF * 128.0f) ; // scale to volume range
+	rup.volumeOffset_ = fp_add(rup.volumeOffset_, volMod) ;
+} ;
+
+//
+// LFO Filter - periodic filter cutoff oscillation
+//
+
+void LFOFilter::SetData(unsigned char speed, unsigned char depth) {
+	speed_ = fl2fp(speed / 2.0f) ;  // phase increment per k-rate tick
+	depth_ = fl2fp(depth / 255.0f) ; // modulation depth (0..1 of cutoff range)
+} ;
+
+void LFOFilter::Trigger(bool tableTick) {
+	if (!enabled_) return ;
+	if (!tableTick) {
+		phase_ = fp_add(phase_, speed_) ;
+		while (phase_ >= i2fp(256)) {
+			phase_ = fp_sub(phase_, i2fp(256)) ;
+		}
+	}
+} ;
+
+void LFOFilter::UpdateSRP(struct RUParams &rup) {
+	if (!enabled_) return ;
+	float phaseF = fp2fl(phase_) ;
+	float sineVal = sinf(phaseF * 2.0f * 3.14159265f / 256.0f) ;
+	float depthF = fp2fl(depth_) ;
+	// Modulate filter cutoff: depth scales how much the cutoff sweeps
+	fixed cutMod = fl2fp(sineVal * depthF * 0.5f) ; // ±0.5 of cutoff range at full depth
+	rup.cutOffset_ = fp_add(rup.cutOffset_, cutMod) ;
+} ;
+

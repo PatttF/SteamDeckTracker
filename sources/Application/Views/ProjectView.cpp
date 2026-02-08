@@ -166,7 +166,7 @@ static void InstallSamplesCallback(View &v,ModalView &dialog) {
     pv.SetNotification("Default samples installed");
 } ;
 
-// Callback for installing Mutated Instruments LV2 plugin from GitHub
+// Callback for installing LV2 plugins from GitHub
 static void InstallLV2Callback(View &v,ModalView &dialog) {
     if (dialog.GetReturnCode()!=MBL_YES) return;
 
@@ -187,23 +187,22 @@ static void InstallLV2Callback(View &v,ModalView &dialog) {
     snprintf(createDirCmd, sizeof(createDirCmd), "mkdir -p '%s'", lv2Dir);
     system(createDirCmd);
     
-    // Download and install the Mutated Instruments plugin
+    // Download and install plugins
     char downloadCmd[2048];
     snprintf(downloadCmd, sizeof(downloadCmd), 
         "cd /tmp && "
-        "wget -O mi_mutated.lv2.zip 'https://github.com/PatttF/zynMI/releases/download/BraidsPlaitsMarbles/mi_mutated.lv2.zip' && "
-        "unzip -o mi_mutated.lv2.zip -d '%s' && "
-        "chmod -R 755 '%s'/mi_mutated.lv2 && "
-        "rm -f mi_mutated.lv2.zip && "
-        "rm -f '%s'/mi_mutated.lv2.zip", 
-        lv2Dir, lv2Dir, lv2Dir);
+        "wget -O Plugins.zip 'https://github.com/PatttF/SteamDeckTracker/releases/download/0.2.1/Plugins.zip' && "
+        "unzip -o Plugins.zip -d '%s' && "
+        "chmod -R 755 '%s'/*.lv2 && "
+        "rm -f Plugins.zip", 
+        lv2Dir, lv2Dir);
     
     int result = system(downloadCmd);
     
     if (result == 0) {
-        pv.SetNotification("Mutated Instruments LV2 plugin installed successfully");
+        pv.SetNotification("LV2 plugins installed successfully");
     } else {
-        MessageBox *mb = new MessageBox(pv, "Failed to install Mutated Instruments LV2 plugin", MBBF_OK);
+        MessageBox *mb = new MessageBox(pv, "Failed to install LV2 plugins", MBBF_OK);
         pv.DoModal(mb);
     }
 }
@@ -294,7 +293,7 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
     T_SimpleList<UIField>::Insert(a1);
 
     position._y += 1;
-    a1 = new UIActionField("Install Mutated Instruments LV2 plugin", ACTION_INSTALL_LV2, position);
+    a1 = new UIActionField("Install plugins", ACTION_INSTALL_LV2, position);
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 

@@ -136,8 +136,28 @@ static inline std::string* getHelpLegend(FourCC command) {
 			break;
 		case I_CMD_REVB:
 			result[0].assign("REVerB:aabb");
-			result[1].assign("aa=decay bb=send");
-			result[2].assign("multi-tap delay reverb");
+			result[1].assign("a=decay a=damp");
+			result[2].assign("bb=send amount");
+			break;
+		case I_CMD_LFOF:
+			result[0].assign("LFO Filter:aabb");
+			result[1].assign("oscillate filter cutoff");
+			result[2].assign("aa=speed bb=depth");
+			break;
+		case I_CMD_VIBR:
+			result[0].assign("VIBRato:aabb");
+			result[1].assign("pitch oscillation");
+			result[2].assign("aa=speed bb=depth");
+			break;
+		case I_CMD_TRML:
+			result[0].assign("TReMoLo:aabb");
+			result[1].assign("volume oscillation");
+			result[2].assign("aa=speed bb=depth");
+			break;
+		case I_CMD_RAND:
+			result[0].assign("RANDom:--bb");
+			result[1].assign("probability note plays");
+			result[2].assign("bb=chance (00-FF)");
 			break;
 		default:
 

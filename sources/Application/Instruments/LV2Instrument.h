@@ -107,8 +107,11 @@ private:
     fixed *reverbBuffer_[SONG_CHANNEL_COUNT]; // Stereo delay line per channel (heap-allocated)
     fixed reverbDecay_[SONG_CHANNEL_COUNT];   // Decay amount per channel
     fixed reverbSend_[SONG_CHANNEL_COUNT];    // Send level per channel
+    fixed reverbDamp_[SONG_CHANNEL_COUNT];    // Damping coefficient per channel
+    fixed reverbDampL_[SONG_CHANNEL_COUNT];   // Damping filter state L
+    fixed reverbDampR_[SONG_CHANNEL_COUNT];   // Damping filter state R
     int reverbPos_[SONG_CHANNEL_COUNT];       // Write position per channel
-    int reverbTapOffsets_[4];                 // Early reflection tap offsets (scaled to sample rate)
+    int reverbTapOffsets_[6];                 // Early reflection tap offsets (scaled to sample rate)
 
     // LV2 plugin state
     void *world_;                       // LilvWorld*

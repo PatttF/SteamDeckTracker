@@ -12,6 +12,7 @@
 #include "Application/Model/Groove.h"
 #include <math.h>
 #include <string.h>
+#include <cstdlib>
 #include "Services/Midi/MidiService.h"
 
 // Private constructor - Singleton
@@ -211,6 +212,9 @@ void Player::Stop() {
 
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		mixer_->StopChannel(i) ;
+		// Clear any active LV2 effects on this channel
+		PlayerChannel *ch = mixer_->GetChannel(i);
+		if (ch) ch->ClearEffect();
 	}
 	MidiService::GetInstance()->OnPlayerStop() ;
 	mixer_->OnPlayerStop() ;
@@ -641,6 +645,9 @@ void Player::ProcessCommands() {
                 FourCC cc = viewData_->song_->phrase_->cmd1_[phrase*16+pos];
                 ushort param = viewData_->song_->phrase_->param1_[phrase*16+pos];
 
+                FourCC cc2 = viewData_->song_->phrase_->cmd2_[phrase*16+pos];
+                ushort param2 = viewData_->song_->phrase_->param2_[phrase*16+pos];
+
                 // if there's any command to trigger, first pass it on the player
                 // then pass it on to the instrument
 
@@ -652,12 +659,9 @@ void Player::ProcessCommands() {
 
                 // Now process second command row
 
-                cc = viewData_->song_->phrase_->cmd2_[phrase*16+pos];
-                param = viewData_->song_->phrase_->param2_[phrase*16+pos];
-
-                if (cc!=I_CMD_NONE) {
-                    if (!ProcessChannelCommand(i,cc,param)) {
-                        instrument->ProcessCommand(i,cc,param);
+                if (cc2!=I_CMD_NONE) {
+                    if (!ProcessChannelCommand(i,cc2,param2)) {
+                        instrument->ProcessCommand(i,cc2,param2);
                     }
                 }
             }
@@ -732,17 +736,33 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 				int effectSlot = (param >> 8) & 0xFF;
 				int wetDry = param & 0xFF;
 				Trace::Log("FXSN", "slot=%d wetDry=%d channel=%d", effectSlot, wetDry, channel);
+				PlayerChannel *ch = mixer_->GetChannel(channel);
 				if (effectSlot < MAX_LV2EFFECT_COUNT && project_) {
 					LV2Effect *effect = project_->GetEffect(effectSlot);
-					PlayerChannel *ch = mixer_->GetChannel(channel);
 					Trace::Log("FXSN", "effect=%p ch=%p empty=%d", effect, ch, effect ? effect->IsEmpty() : -1);
 					if (ch && effect && !effect->IsEmpty()) {
 						ch->SetEffect(effect, wetDry);
 					} else if (ch) {
 						ch->ClearEffect();
 					}
+				} else if (ch) {
+					// Slot >= MAX_LV2EFFECT_COUNT (e.g. FXSN FF00) = clear effect
+					Trace::Log("FXSN", "clearing effect on channel %d (slot=0x%02X)", channel, effectSlot);
+					ch->ClearEffect();
 				}
 				return true;
+			}
+		case I_CMD_RAND:
+			{
+				// RAND:--bb - bb=probability note plays (00=never, FF=always)
+				unsigned char chance = param & 0xFF ;
+				if ((rand() & 0xFF) >= chance) {
+					// Failed probability check - kill this note
+					if (instr) {
+						mixer_->StopInstrument(channel) ;
+					}
+				}
+				return true ;
 			}
 		default:
 			break ;

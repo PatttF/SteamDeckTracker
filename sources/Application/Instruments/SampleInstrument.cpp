@@ -192,6 +192,9 @@ SampleInstrument::SampleInstrument() {
          // Initialize reverb state
          rp->reverbDecay_ = 0;
          rp->reverbSend_ = 0;
+         rp->reverbDamp_ = 0;
+         rp->reverbDampL_ = 0;
+         rp->reverbDampR_ = 0;
          rp->reverbPos_ = 0;
     }
 
@@ -413,6 +416,8 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 	// Clear reverb delay line but preserve send/decay settings across notes
 	memset(reverb_[channel],0,REVERB_BUFFER_LENGTH*2*sizeof(fixed)) ;
 	rp->reverbPos_ = 0 ;
+	rp->reverbDampL_ = 0 ;
+	rp->reverbDampR_ = 0 ;
 	// Note: reverbSend_ and reverbDecay_ are NOT reset - they persist from REVB command
 
   // If we do a clean start (there was a instr number on the line)
@@ -1147,33 +1152,53 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 			int reverbPos = rp->reverbPos_;
 			fixed decay = rp->reverbDecay_;
 			fixed send = rp->reverbSend_;
+			fixed damp = rp->reverbDamp_;
+			fixed dampInv = fp_sub(FP_ONE, damp);
+			fixed dampStateL = rp->reverbDampL_;
+			fixed dampStateR = rp->reverbDampR_;
 			
-			// Tap offsets for early reflections (prime-ish for less metallic sound)
-			const int tapOffsets[4] = {1557, 2801, 4409, 4000};
-			const fixed tapGains[4] = {fl2fp(0.35f), fl2fp(0.25f), fl2fp(0.18f), fl2fp(0.12f)};
+			// 6 taps at prime-ish offsets for denser early reflections
+			const int tapOffsets[6] = {743, 1557, 2311, 2801, 3571, 4409};
+			const fixed tapGains[6] = {fl2fp(0.25f), fl2fp(0.30f), fl2fp(0.20f),
+			                            fl2fp(0.18f), fl2fp(0.14f), fl2fp(0.10f)};
 			
 			fixed *outPtr = buffer;
 			for (int i = 0; i < size; i++) {
 				fixed dryL = *outPtr;
 				fixed dryR = *(outPtr + 1);
 				
-				// Read from delay taps and sum
+				// Read from delay taps and sum with cross-channel diffusion
 				fixed wetL = 0;
 				fixed wetR = 0;
-				for (int t = 0; t < 4; t++) {
+				for (int t = 0; t < 6; t++) {
 					int readPos = reverbPos - tapOffsets[t];
 					if (readPos < 0) readPos += REVERB_BUFFER_LENGTH;
 					
-					wetL = fp_add(wetL, fp_mul(reverbBuf[readPos * 2], tapGains[t]));
-					wetR = fp_add(wetR, fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]));
+					fixed tapL = fp_mul(reverbBuf[readPos * 2], tapGains[t]);
+					fixed tapR = fp_mul(reverbBuf[readPos * 2 + 1], tapGains[t]);
+					// Cross-channel spread on alternating taps for width
+					if (t & 1) {
+						wetL = fp_add(wetL, tapR);
+						wetR = fp_add(wetR, tapL);
+					} else {
+						wetL = fp_add(wetL, tapL);
+						wetR = fp_add(wetR, tapR);
+					}
 				}
 				
-				// Write input + decayed feedback to delay line
+				// Feedback with damping lowpass filter
 				int fbPos = reverbPos - REVERB_BUFFER_LENGTH + 100;
 				if (fbPos < 0) fbPos += REVERB_BUFFER_LENGTH;
-				fixed fbL = fp_mul(reverbBuf[fbPos * 2], decay);
-				fixed fbR = fp_mul(reverbBuf[fbPos * 2 + 1], decay);
+				fixed rawFbL = reverbBuf[fbPos * 2];
+				fixed rawFbR = reverbBuf[fbPos * 2 + 1];
 				
+				// One-pole lowpass on feedback: dampState = raw*(1-damp) + dampState*damp
+				dampStateL = fp_add(fp_mul(rawFbL, dampInv), fp_mul(dampStateL, damp));
+				dampStateR = fp_add(fp_mul(rawFbR, dampInv), fp_mul(dampStateR, damp));
+				fixed fbL = fp_mul(dampStateL, decay);
+				fixed fbR = fp_mul(dampStateR, decay);
+				
+				// Write: input*send + decayed/damped feedback
 				reverbBuf[reverbPos * 2] = fp_add(fp_mul(dryL, send), fbL);
 				reverbBuf[reverbPos * 2 + 1] = fp_add(fp_mul(dryR, send), fbR);
 				
@@ -1194,6 +1219,8 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 				}
 			}
 			rp->reverbPos_ = reverbPos;
+			rp->reverbDampL_ = dampStateL;
+			rp->reverbDampR_ = dampStateR;
 		}
 		
 		somethingToMix=true ;
@@ -1597,19 +1624,57 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 			
 		case I_CMD_REVB:
 			{
-				// REVB:aabb - aa=decay (0-FF), bb=send amount (0-FF)
-				// Sets per-channel reverb for this note
-				unsigned char decayVal = (value >> 8) & 0xFF;
+				// REVB:aabb - a=decay (0-F), a=damping (0-F), bb=send amount (0-FF)
+				unsigned char decayNibble = (value >> 12) & 0x0F;
+				unsigned char dampNibble = (value >> 8) & 0x0F;
 				unsigned char sendAmount = value & 0xFF;
 				
-				// Set decay (scale 0-255 to fixed point 0.0-0.9)
-				rp->reverbDecay_ = fl2fp((decayVal / 255.0f) * 0.9f);
-				// Set send amount (scale 0-255 to fixed point 0.0-1.0)
+				// Scale decay: 0-F maps to 0.0-0.9 (limited to prevent infinite feedback)
+				rp->reverbDecay_ = fl2fp((decayNibble / 15.0f) * 0.9f);
+				// Scale damping: 0-F maps to 0.0-0.85 (how much high frequencies are absorbed)
+				rp->reverbDamp_ = fl2fp((dampNibble / 15.0f) * 0.85f);
+				// Scale send: 0-FF maps to 0.0-1.0
 				rp->reverbSend_ = fl2fp(sendAmount / 255.0f);
 				
-				Trace::Log("REVERB", "Sample Channel %d: decay=%d send=%d", channel, decayVal, sendAmount);
+				Trace::Log("REVERB", "Sample Channel %d: decay=%d damp=%d send=%d", channel, decayNibble, dampNibble, sendAmount);
 			}
 			break;
+
+		case I_CMD_VIBR:
+			{
+				unsigned char speed = (value >> 8) & 0xFF ;
+				unsigned char depth = value & 0xFF ;
+				rp->vibrato_.SetData(speed, depth) ;
+				if (!rp->vibrato_.Enabled()) {
+					rp->vibrato_.Enable() ;
+					rp->activeUpdaters_.push_back(&rp->vibrato_) ;
+				}
+			}
+			break ;
+
+		case I_CMD_TRML:
+			{
+				unsigned char speed = (value >> 8) & 0xFF ;
+				unsigned char depth = value & 0xFF ;
+				rp->tremolo_.SetData(speed, depth) ;
+				if (!rp->tremolo_.Enabled()) {
+					rp->tremolo_.Enable() ;
+					rp->activeUpdaters_.push_back(&rp->tremolo_) ;
+				}
+			}
+			break ;
+
+		case I_CMD_LFOF:
+			{
+				unsigned char speed = (value >> 8) & 0xFF ;
+				unsigned char depth = value & 0xFF ;
+				rp->lfoFilter_.SetData(speed, depth) ;
+				if (!rp->lfoFilter_.Enabled()) {
+					rp->lfoFilter_.Enable() ;
+					rp->activeUpdaters_.push_back(&rp->lfoFilter_) ;
+				}
+			}
+			break ;
 
 		default:
 			break;

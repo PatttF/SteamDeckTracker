@@ -2,6 +2,7 @@
 #include "Application/Instruments/LV2Effect.h"
 #include "System/Console/Trace.h"
 #include <cstring>
+#include <string>
 #include <lilv/lilv.h>
 #include <lv2/core/lv2.h>
 
@@ -113,7 +114,24 @@ void ImportLV2EffectDialog::loadPluginList() {
 
         LV2EffectPluginInfo *info = new LV2EffectPluginInfo();
         info->uri = uri;
-        info->name = name ? name : uri;
+        std::string cleanName = name ? name : uri;
+        // Strip channel info patterns from plugin names
+        const char *patterns[] = {
+            " (Mono)", " (Stereo)", " (mono)", " (stereo)",
+            " (1x1)", " (1x2)", " (2x1)", " (2x2)",
+            " (1 In, 1 Out)", " (1 In, 2 Out)",
+            " (2 In, 1 Out)", " (2 In, 2 Out)",
+            " Mono", " Stereo",
+            nullptr
+        };
+        for (const char **p = patterns; *p; p++) {
+            size_t pos = cleanName.rfind(*p);
+            if (pos != std::string::npos && pos + strlen(*p) == cleanName.size()) {
+                cleanName.erase(pos);
+                break;
+            }
+        }
+        info->name = cleanName;
         pluginList_.Insert(*info);
 
         lilv_node_free(name_node);
@@ -134,14 +152,14 @@ void ImportLV2EffectDialog::OnFocus() {
 void ImportLV2EffectDialog::OnPlayerUpdate(PlayerEventType, unsigned int) {}
 
 void ImportLV2EffectDialog::DrawView() {
-    SetWindow(20, 13);
+    SetWindow(62, 24);
 
     GUITextProperties props;
 
     int x = 0;
     int y = 1;
     int count = 0;
-    int displayCount = 18;
+    int displayCount = 22;
 
     IteratorPtr<LV2EffectPluginInfo> it(pluginList_.GetIterator());
     int index = 0;
@@ -181,8 +199,8 @@ void ImportLV2EffectDialog::warpToNext(int dir) {
 
     if (currentPlugin_ < topIndex_) {
         topIndex_ = currentPlugin_;
-    } else if (currentPlugin_ >= topIndex_ + 10) {
-        topIndex_ = currentPlugin_ - 9;
+    } else if (currentPlugin_ >= topIndex_ + 22) {
+        topIndex_ = currentPlugin_ - 21;
     }
 
     isDirty_ = true;

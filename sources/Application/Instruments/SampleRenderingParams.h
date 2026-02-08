@@ -74,6 +74,9 @@ struct renderParams {
 	LogSpeedRamp legato_ ;
 	LogSpeedRamp pfin_ ;
 	Arp arp_ ;
+	Vibrato vibrato_ ;
+	Tremolo tremolo_ ;
+	LFOFilter lfoFilter_ ;
 
 	bool couldClick_ ;
 
@@ -85,6 +88,9 @@ struct renderParams {
 	// Per-channel reverb parameters (set via REVB command)
 	fixed reverbDecay_ ;   // Feedback decay amount (0 = off)
 	fixed reverbSend_ ;    // Send level
+	fixed reverbDamp_ ;    // Damping coefficient for feedback lowpass (0 = no damping)
+	fixed reverbDampL_ ;   // Damping filter state L
+	fixed reverbDampR_ ;   // Damping filter state R
 	int reverbPos_ ;       // Current position in reverb buffer
 } ;
 #endif

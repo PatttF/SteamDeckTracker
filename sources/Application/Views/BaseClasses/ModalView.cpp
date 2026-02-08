@@ -25,14 +25,20 @@ void ModalView::DrawString(int x, int y, const char *txt,
 
 void ModalView::SetWindow(int width, int height) {
 
-    if (width > 36) {
-        width = 36;
+    // Use actual visible columns instead of LOGICAL_COLS
+    int visibleCols = w_.GetRect().Width() / 8;
+    if (visibleCols <= 0 || visibleCols > LOGICAL_COLS)
+        visibleCols = LOGICAL_COLS;
+
+    int maxWidth = visibleCols - 4; // leave room for borders
+    if (width > maxWidth) {
+        width = maxWidth;
     };
     if (height > 26) {
         height = 26;
     };
 
-    left_ = (LOGICAL_COLS / 2) - width / 2;
+    left_ = (visibleCols / 2) - width / 2;
     top_ = (LOGICAL_ROWS / 2) - height / 2;
     if (top_ < 2) {
         top_ = 2;
@@ -42,7 +48,7 @@ void ModalView::SetWindow(int width, int height) {
     SetColor(CD_BORDER);
     GUITextProperties props;
     props.invert_ = true;
-    char line[41];
+    char line[82];
     memset(line, ' ', width + 4);
     line[width + 4] = 0;
     DrawString(-2, -2, line, props);
