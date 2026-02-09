@@ -20,6 +20,10 @@ public:
 	ushort *param1_ ;
 	FourCC *cmd2_ ;
 	ushort *param2_ ;
+	FourCC *cmd3_ ;
+	ushort *param3_ ;
+	FourCC *cmd4_ ;
+	ushort *param4_ ;
 	
 private:
 	bool isUsed_[PHRASE_COUNT] ;

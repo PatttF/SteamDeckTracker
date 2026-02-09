@@ -72,6 +72,10 @@ class PhraseView : public View {
         ushort param1_[16];
         uint cmd2_[16];
         ushort param2_[16];
+        uint cmd3_[16];
+        ushort param3_[16];
+        uint cmd4_[16];
+        ushort param4_[16];
     } clipboard_;
 
     int saveCol_;

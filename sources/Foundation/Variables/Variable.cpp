@@ -272,6 +272,16 @@ int Variable::GetListSize() {
     return listSize_;
 }
 
+void Variable::SetList(char **list, int size) {
+    list_.char_ = list;
+    listSize_ = size;
+    // Clamp current index if it's out of range
+    if (value_.index_ >= size) {
+        value_.index_ = (size > 0) ? 0 : -1;
+        onChange();
+    }
+}
+
 void Variable::Reset() {
     switch (type_) {
     case FLOAT:

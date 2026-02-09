@@ -54,6 +54,88 @@ I_Iterator<MidiInDevice> *MidiService::GetInIterator() {
 	return inList_.GetIterator();
 };
 
+int MidiService::GetOutDeviceCount() {
+	return Size();
+}
+
+const char *MidiService::GetOutDeviceName(int index) {
+	if (index < 0 || index >= Size()) return "";
+	IteratorPtr<MidiOutDevice> it(GetIterator());
+	int i = 0;
+	for (it->Begin(); !it->IsDone(); it->Next(), i++) {
+		if (i == index) {
+			return it->CurrentItem().GetName();
+		}
+	}
+	return "";
+}
+
+void MidiService::SendToDevice(MidiMessage &msg, int deviceIndex) {
+	if (deviceIndex < 0 || deviceIndex >= Size()) {
+		Trace::Log("MidiService", "SendToDevice: deviceIndex=%d out of range (size=%d)", deviceIndex, Size());
+		return;
+	}
+	IteratorPtr<MidiOutDevice> it(GetIterator());
+	int i = 0;
+	for (it->Begin(); !it->IsDone(); it->Next(), i++) {
+		if (i == deviceIndex) {
+			MidiOutDevice &dev = it->CurrentItem();
+			if (!dev.IsRunning()) {
+				if (!dev.Init()) return;
+				if (!dev.Start()) {
+					dev.Close();
+					return;
+				}
+			}
+			dev.SendMessage(msg);
+			return;
+		}
+	}
+	Trace::Log("MidiService", "SendToDevice: deviceIndex=%d not found in iteration", deviceIndex);
+}
+
+void MidiService::StopStartedDevices() {
+	// Stop all devices that were auto-started by SendToDevice
+	IteratorPtr<MidiOutDevice> it(GetIterator());
+	for (it->Begin(); !it->IsDone(); it->Next()) {
+		MidiOutDevice &dev = it->CurrentItem();
+		if (dev.IsRunning()) {
+			dev.Stop();
+			dev.Close();
+		}
+	}
+}
+
+void MidiService::RefreshDevices() {
+	// Stop any running devices before rebuilding list
+	StopStartedDevices();
+	// Clear project-level device pointer (it points into our list)
+	if (device_) {
+		device_ = 0;
+	}
+	// Clear old device list (T_SimpleList owns them, Empty deletes)
+	Empty();
+	inList_.Empty();
+	// Re-query system for current MIDI ports
+	rebuildDriverList();
+	// Rebuild input merger
+	if (merger_) {
+		delete merger_;
+	}
+	merger_ = new MidiInMerger();
+	IteratorPtr<MidiInDevice> it(inList_.GetIterator());
+	for (it->Begin(); !it->IsDone(); it->Next()) {
+		MidiInDevice &current = it->CurrentItem();
+		merger_->Insert(current);
+	}
+	Trace::Log("MidiService", "Refreshed devices: %d output(s)", Size());
+}
+
+void MidiService::rebuildDriverList() {
+	// Default: just call the initial builder
+	buildDriverList();
+}
+
 void MidiService::SelectDevice(const std::string &name) {
 	deviceName_ = name;
 };
@@ -66,7 +148,10 @@ bool MidiService::Start() {
     return true;
 }
 
-void MidiService::Stop() { stopDevice(); }
+void MidiService::Stop() {
+	stopDevice();
+	StopStartedDevices();
+}
 
 #ifdef _FEAT_MIDI_MULTITHREAD
 // For multi-threaded systems we use a concurrentqueue
@@ -172,7 +257,11 @@ void MidiService::startDevice() {
 	for (it->Begin(); !it->IsDone(); it->Next()) {
 		MidiOutDevice &current = it->CurrentItem();
 		if (!strcmp(deviceName_.c_str(), current.GetName())) {
-			if (current.Init()) {
+			// Don't re-start if already running (e.g. started by SendToDevice)
+			if (current.IsRunning()) {
+				device_ = &current;
+				Trace::Log("MidiService", "midi device %s already running", deviceName_.c_str());
+			} else if (current.Init()) {
 				if (current.Start()) {
 					Trace::Log("MidiService", "midi device %s started", deviceName_.c_str());
 					device_ = &current;
@@ -191,8 +280,10 @@ void MidiService::startDevice() {
  */
 void MidiService::stopDevice() {
 	if (device_) {
-		device_->Stop() ;
-		device_->Close() ;
+		if (device_->IsRunning()) {
+			device_->Stop() ;
+			device_->Close() ;
+		}
 	}
 	device_=0 ;
 } ;

@@ -40,6 +40,9 @@
 #define I_CMD_TRML MAKE_FOURCC('T','R','M','L')
 #define I_CMD_RAND MAKE_FOURCC('R','A','N','D')
 #define I_CMD_LFOF MAKE_FOURCC('L','F','O','F')
+#define I_CMD_MCAT MAKE_FOURCC('M','C','A','T')
+#define I_CMD_MPAT MAKE_FOURCC('M','P','A','T')
+#define I_CMD_MBNK MAKE_FOURCC('M','B','N','K')
 
 class CommandList {
 public:

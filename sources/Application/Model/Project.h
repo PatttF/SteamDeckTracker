@@ -59,6 +59,7 @@ public:
   virtual void RestoreContent(TiXmlElement *element);
 
   void LoadFirstGen(const char *root);
+  void RefreshMidiDeviceList();
 
 protected:
   void buildMidiDeviceList();

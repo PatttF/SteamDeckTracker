@@ -83,7 +83,8 @@ void ControlNode::Trigger() {
 void ControlNode::Dump(int level) {
 	char levelst[30] ;
 	strcpy(levelst,"                  ") ;
-	levelst[level]=0 ;
+	if (level >= 0 && level < (int)sizeof(levelst))
+		levelst[level]=0 ;
 	Trace::Debug("%s %s",levelst,name_.c_str()) ;
 	IteratorPtr<ControlNode>it(GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {

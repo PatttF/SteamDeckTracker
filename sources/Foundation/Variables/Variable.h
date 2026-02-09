@@ -44,6 +44,7 @@ public:
   // Not very clean !
   int GetListSize();
   char **GetListPointer();
+  void SetList(char **list, int size);
   void Reset();
   static const int MAX_NAME_LENGTH = 25;
 

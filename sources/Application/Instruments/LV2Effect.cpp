@@ -367,6 +367,10 @@ void LV2Effect::connectPorts(int bufferSize) {
     LilvNode *output_class = lilv_new_uri((LilvWorld *)world_, LILV_URI_OUTPUT_PORT);
     LilvNode *atom_class = lilv_new_uri((LilvWorld *)world_, "http://lv2plug.in/ns/ext/atom#AtomPort");
 
+    // Free any previously allocated atom input buffers before reassigning
+    for (size_t j = 0; j < atomInputBuffers_.size(); ++j) {
+        delete[] atomInputBuffers_[j];
+    }
     atomInputBuffers_.assign(numPorts, nullptr);
     atomInputBufferSizes_.assign(numPorts, 0);
 

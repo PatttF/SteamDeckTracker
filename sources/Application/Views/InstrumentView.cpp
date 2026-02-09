@@ -4,8 +4,10 @@
 #include "Application/Instruments/LV2Instrument.h"
 #include "Application/Instruments/SoundFontInstrument.h"
 #include "Application/Instruments/VST3Instrument.h"
+#include "Application/Instruments/MidiOutInstrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Config.h"
+#include "Services/Midi/MidiService.h"
 #include "BaseClasses/UIBigHexVarField.h"
 #include "BaseClasses/UIIntVarOffField.h"
 #include "BaseClasses/UINoteVarField.h"
@@ -154,6 +156,9 @@ void InstrumentView::onInstrumentChange() {
 		case IT_VST3:
 			fillVST3Parameters() ;
 			break ;
+		case IT_MIDIOUT:
+			fillMidiOutParameters() ;
+			break ;
 	} ;
 
 	SetFocus(T_SimpleList<UIField>::GetFirst()) ;
@@ -181,15 +186,15 @@ void InstrumentView::fillSampleParameters() {
     // Local variables used to create fields
     Variable *v = nullptr;
     UIIntVarField *f1 = nullptr;
-// Type selector: Sample vs LV2 vs SF2 vs VST3 instrument
+// Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 0);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 0);
         instrument->Insert(wtv);
         tv = wtv;
     }
-    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 4, 1, 7);
     T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
 
@@ -384,6 +389,109 @@ void InstrumentView::fillMidiParameters() {
 
 } ;
 
+void InstrumentView::fillMidiOutParameters() {
+
+	// Re-scan MIDI ports for hot-plugged devices (only when not playing
+	// to avoid race conditions with the audio thread)
+	Player *player = Player::GetInstance();
+	if (!player || !player->IsRunning()) {
+		MidiService::GetInstance()->RefreshDevices();
+	}
+
+	int i=viewData_->currentInstrument_ ;
+	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
+	I_Instrument *instr=bank->GetInstrument(i) ;
+	MidiOutInstrument *instrument=(MidiOutInstrument *)instr ;
+	GUIPoint position=GetAnchor() ;
+
+	// Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut
+	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
+	if (!tv) {
+		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 4);
+		instrument->Insert(wtv);
+		tv = wtv;
+	}
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 4, 1, 7);
+	T_SimpleList<UIField>::Insert(typeField);
+	position._y += 1;
+
+	// Observe type variable for changes
+	if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+		wtv->RemoveObserver(*this);
+		wtv->AddObserver(*this);
+	}
+
+	// Device picker
+	Variable *vd = instrument->FindVariable(MOIP_DEVICE) ;
+	if (vd) {
+		int maxDev = instrument->GetDeviceCount() - 1;
+		if (maxDev < 0) maxDev = 0;
+		UIIntVarField *f1 = new UIIntVarField(position, *vd, "device: %d", 0, maxDev, 1, 1) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	// Channel picker (0-15)
+	Variable *vc = instrument->FindVariable(MOIP_CHANNEL) ;
+	if (vc) {
+		UIIntVarField *f1 = new UIIntVarField(position, *vc, "channel: %2.2d", 0, 0x0F, 1, 0x04, 1) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	// Note length
+	Variable *vl = instrument->FindVariable(MOIP_NOTELENGTH) ;
+	if (vl) {
+		UIIntVarField *f1 = new UIIntVarField(position, *vl, "length: %2.2X", 0, 0xFF, 1, 0x10) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	// Transpose
+	Variable *vtr = instrument->FindVariable(MOIP_TRANSPOSE) ;
+	if (vtr) {
+		UIIntVarField *f1 = new UIIntVarField(position, *vtr, "transpose: %3.2d", -48, 48, 1, 0x0C) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	position._y += 1;
+
+	// Send MIDI clock
+	Variable *vck = instrument->FindVariable(MOIP_CLOCK) ;
+	if (vck) {
+		UIIntVarField *f1 = new UIIntVarField(position, *vck, "send clock: %s", 0, 1, 1, 1) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	// Send MIDI transport
+	Variable *vtp = instrument->FindVariable(MOIP_TRANSPORT) ;
+	if (vtp) {
+		UIIntVarField *f1 = new UIIntVarField(position, *vtp, "send transport: %s", 0, 1, 1, 1) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	position._y += 1;
+
+	// Table automation
+	Variable *vta = instrument->FindVariable(MOIP_TABLEAUTO) ;
+	if (vta) {
+		UIIntVarField *f1 = new UIIntVarField(position, *vta, "automation: %s", 0, 1, 1, 1) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+		position._y += 1;
+	}
+
+	// Table
+	Variable *vt = instrument->FindVariable(MOIP_TABLE) ;
+	if (vt) {
+		UIIntVarField *f1 = new UIIntVarOffField(position, *vt, "table: %2.2X", 0, 0x7F, 1, 0x10) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+	}
+}
+
 void InstrumentView::fillLV2Parameters() {
 
 	lv2SaveField_ = nullptr;
@@ -399,15 +507,15 @@ void InstrumentView::fillLV2Parameters() {
 	const int MAX_ROWS = 17;       // Max rows for parameters (leaving room for header + footer)
 	const int PARAMS_PER_PAGE = MAX_ROWS * 2;  // Two columns
 
-    // Type selector: Sample vs LV2 vs SF2 vs VST3 instrument (keep accessible to switch back)
+    // Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut (keep accessible to switch back)
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 1);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 1);
         instrument->Insert(wtv);
         tv = wtv;
     }
-    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 4, 1, 7);
     T_SimpleList<UIField>::Insert(typeField);
     position._y += 1;
 
@@ -656,15 +764,15 @@ void InstrumentView::fillSoundFontParameters() {
 	Variable *v = nullptr;
 	UIIntVarField *f1 = nullptr;
 
-	// Type selector: Sample vs LV2 vs SF2 vs VST3
+	// Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
 	if (!tv) {
-		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
-		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 2);
+		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 2);
 		instrument->Insert(wtv);
 		tv = wtv;
 	}
-	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 4, 1, 7);
 	T_SimpleList<UIField>::Insert(typeField);
 	position._y += 1;
 
@@ -762,12 +870,12 @@ void InstrumentView::fillVST3Parameters() {
 	// Type selector
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
 	if (!tv) {
-		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3" } ;
-		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 4, 3);
+		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 3);
 		instrument->Insert(wtv);
 		tv = wtv;
 	}
-	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 3, 1, 7);
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 4, 1, 7);
 	T_SimpleList<UIField>::Insert(typeField);
 	position._y += 1;
 
@@ -1256,6 +1364,81 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 }
 
 
+void InstrumentView::drawMidiOutHelp() {
+	InstrumentType it = getInstrumentType();
+	if (it != IT_MIDIOUT) return;
+
+	UIField *f = GetFocus();
+	if (!f) return;
+
+	const char *helpLine1 = "";
+	const char *helpLine2 = "";
+
+	UIIntVarField *vf = dynamic_cast<UIIntVarField *>(f);
+	if (vf) {
+		FourCC id = vf->GetVariableID();
+		switch (id) {
+			case MAKE_FOURCC('I','T','Y','P'):
+				helpLine1 = "Instrument type";
+				helpLine2 = "Switch between Sample/LV2/SF2/VST3/MidiOut";
+				break;
+			case MOIP_DEVICE:
+				helpLine1 = "MIDI output device";
+				helpLine2 = "Select which hardware output to use";
+				break;
+			case MOIP_CHANNEL:
+				helpLine1 = "MIDI channel (00-0F)";
+				helpLine2 = "Channel the notes/CCs are sent on";
+				break;
+			case MOIP_NOTELENGTH:
+				helpLine1 = "Auto note-off after N ticks";
+				helpLine2 = "00=infinite (manual stop only)";
+				break;
+			case MOIP_TRANSPOSE:
+				helpLine1 = "Semitone offset applied to notes";
+				helpLine2 = "-48 to +48";
+				break;
+			case MOIP_CLOCK:
+				helpLine1 = "Send MIDI clock (F8) to device";
+				helpLine2 = "Syncs external gear to tracker tempo";
+				break;
+			case MOIP_TRANSPORT:
+				helpLine1 = "Send MIDI start/stop to device";
+				helpLine2 = "FA on play, FC on stop";
+				break;
+			case MOIP_TABLEAUTO:
+				helpLine1 = "Table automation on/off";
+				helpLine2 = "Auto-play table on each note start";
+				break;
+			case MOIP_TABLE:
+				helpLine1 = "Table assignment";
+				helpLine2 = "OFF or 00-7F, press A to pick next free";
+				break;
+		}
+	}
+
+	GUIPoint anchor = GetAnchor();
+	int helpY = anchor._y + 16;
+	GUITextProperties props;
+	SetColor(CD_HILITE1);
+	DrawString(anchor._x, helpY, helpLine1, props);
+	SetColor(CD_NORMAL);
+	DrawString(anchor._x, helpY + 1, helpLine2, props);
+
+	// Draw current device name (updated live each frame)
+	int i = viewData_->currentInstrument_;
+	InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+	I_Instrument *instr = bank->GetInstrument(i);
+	MidiOutInstrument *instrument = (MidiOutInstrument *)instr;
+	Variable *vd = instrument->FindVariable(MOIP_DEVICE);
+	int devIdx = vd ? vd->GetInt() : 0;
+	const char *devName = instrument->GetDeviceName(devIdx);
+	if (devName && devName[0]) {
+		SetColor(CD_HILITE2);
+		DrawString(anchor._x, helpY + 3, devName, props);
+	}
+}
+
 void InstrumentView::DrawView() {
 
 	// Process any pending type switch before drawing to avoid showing stale UI
@@ -1296,6 +1479,7 @@ void InstrumentView::DrawView() {
     // Draw fields
 
     FieldView::Redraw();
+    drawMidiOutHelp();
     drawMap() ;
 }
 
@@ -1424,11 +1608,12 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
         Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
         if (tv) {
             int val = tv->GetInt();
-            // val==0 => Sample, val==1 => LV2, val==2 => SF2, val==3 => VST3
+            // val==0 => Sample, val==1 => LV2, val==2 => SF2, val==3 => VST3, val==4 => MidiOut
             InstrumentType targetType = IT_SAMPLE;
             if (val == 1) targetType = IT_LV2;
             else if (val == 2) targetType = IT_SOUNDFONT;
             else if (val == 3) targetType = IT_VST3;
+            else if (val == 4) targetType = IT_MIDIOUT;
 
             if (instr->GetType() != targetType) {
                 // Defer changing instrument type until outside of the variable notification

@@ -78,7 +78,8 @@ public:
     }
     uint32 PLUGIN_API addRef() override { return ++refCount_; }
     uint32 PLUGIN_API release() override {
-        if (--refCount_ == 0) { delete this; return 0; }
+        // Static instance — never actually delete
+        if (refCount_ > 1) --refCount_;
         return refCount_;
     }
     tresult PLUGIN_API getName(String128 name) override {

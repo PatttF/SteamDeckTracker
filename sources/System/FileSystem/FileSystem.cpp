@@ -202,6 +202,8 @@ int FileSystemService::Copy(const Path &src,const Path &dst)
     Trace::Log("FS","dst open ok");
   else {
     Trace::Log("FS","dst open fail");
+    isrc->Close();
+    delete isrc;
     return nbwrite;
   }
 
@@ -213,6 +215,8 @@ int FileSystemService::Copy(const Path &src,const Path &dst)
 
   isrc->Close();
   idst->Close();
+  delete isrc;
+  delete idst;
   return nbwrite;
 }
 

@@ -34,6 +34,16 @@ public:
 
 	I_Iterator<MidiInDevice> *GetInIterator() ;
 
+	//! multi-device output: count, name, and direct send by index
+
+	int GetOutDeviceCount() ;
+	const char *GetOutDeviceName(int index) ;
+	void SendToDevice(MidiMessage &msg, int deviceIndex) ;
+	void StopStartedDevices() ;
+
+	//! Re-scan MIDI ports for hot-plugged devices
+	void RefreshDevices() ;
+
 	//! player notification
 
 	void OnPlayerStart() ;
@@ -70,6 +80,9 @@ public:
 	//! build the list of available drivers
 
 	virtual void buildDriverList()=0 ;
+
+	//! rebuild driver list for hot-plug detection (stops removed devices)
+	virtual void rebuildDriverList() ;
 
 private:
   void flushOutQueue();

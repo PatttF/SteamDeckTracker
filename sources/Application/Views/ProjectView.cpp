@@ -11,7 +11,6 @@
 #include "BaseClasses/UIIntVarField.h"
 #include "BaseClasses/UIStaticField.h"
 #include "BaseClasses/UITempoField.h"
-#include "Services/Midi/MidiService.h"
 #include "System/System/System.h"
 #include "Application/Instruments/SamplePool.h"
 #include <cstdint>
@@ -296,13 +295,6 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
     a1 = new UIActionField("Install plugins", ACTION_INSTALL_LV2, position);
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
-
-    v = project_->FindVariable(VAR_MIDIDEVICE);
-    NAssert(v);
-    position._y += 2;
-    field = new UIIntVarField(position, *v, "MIDI: %s", 0,
-                              MidiService::GetInstance()->Size(), 1, 1);
-    T_SimpleList<UIField>::Insert(field);
 
     position._y += 2;
     v = project_->FindVariable(VAR_RENDER);

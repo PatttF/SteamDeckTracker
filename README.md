@@ -11,6 +11,8 @@ Key Enhancements:
 
     Professional Audio Routing: Dedicated Mixer page for real-time level management and spatial positioning.
 
+    Expanded Phrase Editor: 4 command columns per phrase step (up from 2), allowing complex per-step automation without needing tables.
+
     Plugin Integration: Support for LV2 plugins, allowing for professional-grade synthesis and effects within the tracker environment. This will be a per plugin process so bare with me while I work through it.
 
     LV2 Effects: A dedicated Effects page (to the right of the Instrument page, accessed via the 'E' legend shortcut) provides 16 effect slots for loading LV2 audio effect plugins. Effects are applied to channels using the FXSN command on the Phrase or Table pages.
@@ -374,6 +376,35 @@ Sets the MIDI velocity for the current step.
 
 Affects the note-on velocity of MIDI output and can influence sample playback volume on velocity-sensitive instruments.
 
+#### MBNK — MIDI Bank Select
+**Format:** `MBNK:aabb`  
+**Support:** S  
+Sends a MIDI Bank Select message (CC0 + CC32) on the current channel.
+
+- `aa` = Bank Select MSB (CC0, `00`–`7F`).
+- `bb` = Bank Select LSB (CC32, `00`–`7F`).
+
+Typically used immediately before an `MDPG` command to select a bank before switching programs. Example: `MBNK:0001` then `MDPG:0005` selects bank 1, program 5.
+
+#### MCAT — MIDI Channel Aftertouch
+**Format:** `MCAT:--bb`  
+**Support:** S  
+Sends a MIDI Channel Aftertouch (Channel Pressure) message.
+
+- `bb` = pressure value (`00`–`7F`).
+
+Applies pressure-based modulation to all notes on the MIDI channel. How it's interpreted depends on the receiving synth's aftertouch routing.
+
+#### MPAT — MIDI Polyphonic Aftertouch
+**Format:** `MPAT:aabb`  
+**Support:** S  
+Sends a MIDI Polyphonic Aftertouch (Key Pressure) message.
+
+- `aa` = note number (`00`–`7F`).
+- `bb` = pressure value (`00`–`7F`).
+
+Applies pressure-based modulation to a specific note. Useful for per-note expression on synths that support poly aftertouch.
+
 ---
 
 ### Tempo
@@ -409,8 +440,11 @@ Example: `TMPO:0078` sets tempo to 120 BPM. `TMPO:00A0` sets tempo to 160 BPM.
 | `LEGA` | `aabb` | Legato/portamento slide | S |
 | `LFOF` | `aabb` | LFO filter modulation | S, SF |
 | `LPOF` | `aabb` | Loop start/end offset | S |
+| `MBNK` | `aabb` | MIDI Bank Select (CC0 + CC32) | S |
+| `MCAT` | `--bb` | MIDI Channel Aftertouch | S |
 | `MDCC` | `aabb` | Send MIDI CC | S |
 | `MDPG` | `--bb` | Send MIDI Program Change | S |
+| `MPAT` | `aabb` | MIDI Polyphonic Aftertouch | S |
 | `MVEL` | `--bb` | Set MIDI velocity | S |
 | `PAN`  | `aabb` | Pan position ramp | S |
 | `PFIN` | `aabb` | Pitch fine tune ramp | S |

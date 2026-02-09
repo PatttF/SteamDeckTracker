@@ -66,6 +66,21 @@ static inline std::string* getHelpLegend(FourCC command) {
 			result[1].assign("Set velocity bb for step");
 			result[2].assign("");
 	    break;
+		case I_CMD_MCAT:
+			result[0].assign("Midi Channel AT:--bb");
+			result[1].assign("channel aftertouch");
+			result[2].assign("pressure bb (00-7F)");
+		break;
+		case I_CMD_MPAT:
+			result[0].assign("Midi Poly AT:aabb");
+			result[1].assign("poly aftertouch note aa");
+			result[2].assign("pressure bb (00-7F)");
+		break;
+		case I_CMD_MBNK:
+			result[0].assign("Midi BaNK:aabb");
+			result[1].assign("bank select MSB aa");
+			result[2].assign("LSB bb (sends CC0+CC32)");
+		break;
 		case I_CMD_PLOF:
 			result[0].assign("PLay OFfset:aabb");
 			result[1].assign("jump abs to aa or");

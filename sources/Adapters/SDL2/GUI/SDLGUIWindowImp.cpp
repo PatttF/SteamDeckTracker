@@ -116,7 +116,11 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
 	appAnchorX_=(screenRect_.Width()-appWidth*mult_)/2 ;
 	appAnchorY_=(screenRect_.Height()-appHeight*mult_)/2 ;
 
-    SDL_SetWindowIcon(window_, SDL_LoadBMP("lgpt_icon.bmp"));
+    SDL_Surface *icon = SDL_LoadBMP("lgpt_icon.bmp");
+    if (icon) {
+        SDL_SetWindowIcon(window_, icon);
+        SDL_FreeSurface(icon);
+    }
     surface_ = SDL_GetWindowSurface(window_);
 
     NAssert(surface_) ;

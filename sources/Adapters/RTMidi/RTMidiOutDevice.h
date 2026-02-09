@@ -6,15 +6,16 @@
 
 class RTMidiOutDevice: public MidiOutDevice {
 public:
-	RTMidiOutDevice(RtMidiOut &out,int index,const char *name) ;
+	RTMidiOutDevice(int index,const char *name) ;
 	virtual ~RTMidiOutDevice() ;
 	virtual bool Init() ;
 	virtual void Close() ;
 	virtual bool Start() ;
 	virtual void Stop();
+	virtual bool IsRunning() { return running_; }
 	virtual void SendMessage(MidiMessage &m);
 private:
-    RtMidiOut rtMidiOut_ ;
+	RtMidiOut rtMidiOut_ ;
 	int index_ ;
 	bool running_ ;
 } ;

@@ -650,6 +650,12 @@ void Player::ProcessCommands() {
                 FourCC cc2 = viewData_->song_->phrase_->cmd2_[phrase*16+pos];
                 ushort param2 = viewData_->song_->phrase_->param2_[phrase*16+pos];
 
+                FourCC cc3 = viewData_->song_->phrase_->cmd3_[phrase*16+pos];
+                ushort param3 = viewData_->song_->phrase_->param3_[phrase*16+pos];
+
+                FourCC cc4 = viewData_->song_->phrase_->cmd4_[phrase*16+pos];
+                ushort param4 = viewData_->song_->phrase_->param4_[phrase*16+pos];
+
                 // if there's any command to trigger, first pass it on the player
                 // then pass it on to the instrument
 
@@ -664,6 +670,22 @@ void Player::ProcessCommands() {
                 if (cc2!=I_CMD_NONE) {
                     if (!ProcessChannelCommand(i,cc2,param2)) {
                         instrument->ProcessCommand(i,cc2,param2);
+                    }
+                }
+
+                // Process third command row
+
+                if (cc3!=I_CMD_NONE) {
+                    if (!ProcessChannelCommand(i,cc3,param3)) {
+                        instrument->ProcessCommand(i,cc3,param3);
+                    }
+                }
+
+                // Process fourth command row
+
+                if (cc4!=I_CMD_NONE) {
+                    if (!ProcessChannelCommand(i,cc4,param4)) {
+                        instrument->ProcessCommand(i,cc4,param4);
                     }
                 }
             }

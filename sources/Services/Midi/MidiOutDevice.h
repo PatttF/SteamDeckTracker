@@ -18,6 +18,7 @@ public:
 	virtual void Close()=0 ;
 	virtual bool Start()=0 ;
 	virtual void Stop()=0 ;
+	virtual bool IsRunning() { return false; }
 
 	/*! Sends a whole queue of messages - default implementation
 		is to send every message one after the other using sendmessage

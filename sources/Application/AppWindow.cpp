@@ -670,7 +670,7 @@ void AppWindow::Print(char *line) {
 
     //	GUIWindow::Clear(View::backgroundColor_,true) ;
     Clear();
-    strcpy(_statusLine, line);
+    snprintf(_statusLine, sizeof(_statusLine), "%s", line);
     // unwrapped for gcc
     int position = LOGICAL_COLS;
     position -= strlen(_statusLine);

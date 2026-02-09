@@ -499,6 +499,18 @@ void Project::buildMidiDeviceList() {
 	} ;
 } ;
 
+void Project::RefreshMidiDeviceList() {
+	// Re-scan MIDI ports for hot-plugged devices
+	MidiService::GetInstance()->RefreshDevices();
+	// Rebuild our local device name list
+	buildMidiDeviceList();
+	// Update the WatchedVariable so the UI sees the new list
+	Variable *v = FindVariable(VAR_MIDIDEVICE);
+	if (v) {
+		v->SetList(midiDeviceList_, midiDeviceListSize_);
+	}
+}
+
 void Project::OnTempoTap() {
 
 	unsigned long now=System::GetInstance()->GetClock() ;

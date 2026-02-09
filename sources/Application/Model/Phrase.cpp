@@ -21,6 +21,16 @@ Phrase::Phrase() {
 	param2_=(unsigned short *)SYS_MALLOC(size*sizeof(short)) ;
 	memset(param2_,0x00,size*sizeof(short)) ;
 
+	cmd3_=(FourCC *)SYS_MALLOC(size*sizeof(FourCC)) ;
+	memset(cmd3_,'-',size*sizeof(FourCC)) ;
+	param3_=(unsigned short *)SYS_MALLOC(size*sizeof(short)) ;
+	memset(param3_,0x00,size*sizeof(short)) ;
+
+	cmd4_=(FourCC *)SYS_MALLOC(size*sizeof(FourCC)) ;
+	memset(cmd4_,'-',size*sizeof(FourCC)) ;
+	param4_=(unsigned short *)SYS_MALLOC(size*sizeof(short)) ;
+	memset(param4_,0x00,size*sizeof(short)) ;
+
 	for (int i=0;i<PHRASE_COUNT;i++) {
 		isUsed_[i]=false ;
 	}
@@ -33,6 +43,10 @@ Phrase::~Phrase() {
 	if (param1_) SYS_FREE(param1_) ;
 	if (cmd2_) SYS_FREE(cmd2_) ;
 	if (param2_) SYS_FREE(param2_) ;
+	if (cmd3_) SYS_FREE(cmd3_) ;
+	if (param3_) SYS_FREE(param3_) ;
+	if (cmd4_) SYS_FREE(cmd4_) ;
+	if (param4_) SYS_FREE(param4_) ;
 } ;
 
 unsigned short Phrase::GetNext() {

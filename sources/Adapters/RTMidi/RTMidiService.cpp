@@ -39,6 +39,8 @@ RTMidiService::RTMidiService() {
 };
 
 RTMidiService::~RTMidiService() {
+	delete rtMidiIn_;
+	delete rtMidiOut_;
 };
 
 /*
@@ -65,7 +67,7 @@ void RTMidiService::buildDriverList() {
 	for (uint i=0; i<nPorts; i++ ) {
 		try {
 			std::string portName = rtMidiOut_->getPortName(i);
-			RTMidiOutDevice *out = new RTMidiOutDevice(*rtMidiOut_,i,portName.c_str());
+			RTMidiOutDevice *out = new RTMidiOutDevice(i,portName.c_str());
 			Trace::Log("RTMidiService", " %s", portName.c_str());
 			Insert(out);
 		} catch (RtError &error) {

@@ -3,9 +3,8 @@
 #include "System/Console/Trace.h"
 
 
-RTMidiOutDevice::RTMidiOutDevice(RtMidiOut &out,int index,const char *name):
+RTMidiOutDevice::RTMidiOutDevice(int index,const char *name):
 	MidiOutDevice(name),
-	rtMidiOut_(out),
 	index_(index),
 	running_(false)
 {
@@ -22,9 +21,14 @@ void RTMidiOutDevice::Close(){
 }  ;
 
 bool RTMidiOutDevice::Start(){
-	rtMidiOut_.openPort( index_ );
-	running_=true ;
-	return true ;
+	try {
+		rtMidiOut_.openPort( index_ );
+		running_=true ;
+		return true ;
+	} catch (RtError &error) {
+		Trace::Log("RTMidiOutDevice", "Failed to open port %d: %s", index_, error.getMessageString());
+		return false ;
+	}
 }  ;
 
 void RTMidiOutDevice::Stop(){
@@ -48,6 +52,11 @@ void RTMidiOutDevice::SendMessage(MidiMessage &msg)
     {
       message.push_back(msg.data2_) ;
     }
+    Trace::Log("MIDI_RAW", "port=%d [%02X %02X %02X] len=%zu",
+               index_, msg.status_,
+               msg.data1_ != MidiMessage::UNUSED_BYTE ? msg.data1_ : 0,
+               msg.data2_ != MidiMessage::UNUSED_BYTE ? msg.data2_ : 0,
+               message.size());
     rtMidiOut_.sendMessage( &message );
   }
 }
