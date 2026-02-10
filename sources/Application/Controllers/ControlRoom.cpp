@@ -131,6 +131,7 @@ void ControlRoom::InstallDefaultMapping() {
 	Attach("/event/b","key:0:a") ;
 	Attach("/event:a","key:0:s") ;
 	Attach("/event:start","key:0:space") ;
+	Attach("/event/select","key:0:e") ;
 	Attach("/event/pgback","key:0:,") ;
 	Attach("/event/pgfwd","key:0:.") ;
 

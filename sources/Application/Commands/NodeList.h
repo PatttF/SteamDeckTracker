@@ -12,6 +12,7 @@
 #define URL_EVENT_LSHOULDER "/event/lshoulder"
 #define URL_EVENT_RSHOULDER "/event/rshoulder"
 #define URL_EVENT_START "/event/start"
+#define URL_EVENT_SELECT "/event/select"
 #define URL_EVENT_PGBACK "/event/pgback"
 #define URL_EVENT_PGFWD "/event/pgfwd"
 
@@ -29,6 +30,7 @@
 #define TRIG_EVENT_LSHOULDER MAKE_FOURCC('E','V','L','S')
 #define TRIG_EVENT_RSHOULDER MAKE_FOURCC('E','V','R','S')
 #define TRIG_EVENT_START MAKE_FOURCC('E','V','S','T')
+#define TRIG_EVENT_SELECT MAKE_FOURCC('E','V','S','L')
 #define TRIG_EVENT_PGBACK MAKE_FOURCC('E','V','P','B')
 #define TRIG_EVENT_PGFWD MAKE_FOURCC('E','V','P','F')
 

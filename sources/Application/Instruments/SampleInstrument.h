@@ -39,6 +39,9 @@ enum SampleInstrumentLoopMode {
 #define SIP_INTERPOLATION   MAKE_FOURCC('I','N','T','P')
 #define SIP_SAMPLE 		    MAKE_FOURCC('S','M','P','L')
 #define SIP_SLICES 		    MAKE_FOURCC('S','L','C','S')
+#define SIP_SLICEPTS	    MAKE_FOURCC('S','L','P','T')
+
+#define MAX_MANUAL_SLICES 48
 #define SIP_FILTMODE		MAKE_FOURCC('F','I','M','O') 
 #define SIP_ATTENUATE		MAKE_FOURCC('F','I','A','T')
 #define SIP_FILTMIX			MAKE_FOURCC('F','M','I','X')
@@ -93,6 +96,16 @@ public:
        int GetLoopEnd();
        virtual const char *GetName() ; // returns sample name until real
 	                                   // namer is implemented
+
+       // Playback position (for playhead display)
+       float GetPlaybackPosition(int channel) ;
+       bool IsPlaybackFinished(int channel) ;
+
+       // Manual slice point accessors
+       int GetSliceCount() ;
+       int GetSlicePoint(int index) ;
+       void SetSliceCount(int count) ;
+       void SetSlicePoint(int index, int frame) ;
  
   static void EnableDownsamplingLegacy();
 
@@ -136,6 +149,10 @@ private:
 	   Variable *loopMode_ ;
 	   Variable *slices_ ;
 	   Variable *interpolation_ ;
+
+	   // Manual slice points storage
+	   int manualSliceCount_ ;
+	   int manualSlicePoints_[MAX_MANUAL_SLICES] ;
        Variable *printFx_;
        Variable *irPad_;
        Variable *irWet_;

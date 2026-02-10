@@ -11,6 +11,7 @@
 #include "Application/Views/NullView.h"
 #include "Application/Views/PhraseView.h"
 #include "Application/Views/ProjectView.h"
+#include "Application/Views/SampleEditorView.h"
 #include "Application/Views/SongView.h"
 #include "Application/Views/TableView.h"
 #include "Application/Views/ViewData.h"
@@ -75,6 +76,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     GrooveView *_grooveView;
     NullView *_nullView;
     MixerView *_mixerView;
+    SampleEditorView *_sampleEditorView;
 
     Path _root;
 

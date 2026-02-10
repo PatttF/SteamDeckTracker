@@ -424,6 +424,14 @@ void SDLGUIWindowImp::DrawRect(GUIRect &r)
   SDL_Rect rect;
   transform(r, &rect);
   SDL_FillRect(surface_, &rect,currentColor_) ;
+
+  // Track update rect so Flush presents these pixels to screen
+  if (!framebuffer_) {
+    if (updateCount_ < MAX_OVERLAYS) {
+      updateRects_[updateCount_] = rect;
+    }
+    updateCount_++;
+  }
 } ;
 
 void SDLGUIWindowImp::Clear(GUIColor &c,bool overlay) 

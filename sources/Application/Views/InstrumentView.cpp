@@ -34,6 +34,7 @@
 #define ACTION_LOAD_SF2 MAKE_FOURCC('S','F','2','L')
 #define ACTION_LOAD_VST3 MAKE_FOURCC('V','3','L','D')
 #define ACTION_SAVE_PRESET MAKE_FOURCC('P','S','A','V')
+#define ACTION_EDIT_SAMPLE MAKE_FOURCC('S','E','D','T')
 
 // Callback for LV2 plugin selection dialog
 static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
@@ -324,23 +325,17 @@ void InstrumentView::fillSampleParameters() {
 	position._y+=1 ;
 
 	v=instrument->FindVariable(SIP_SLICES) ;
-	f1=new UIIntVarField(position,*v,"slices: %2.2X",1,0xFF,1,0x10) ;
+	f1=new UIIntVarField(position,*v,"slices: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
-	position._y+=1 ;
-	v=instrument->FindVariable(SIP_START) ;
-	f1=new UIBigHexVarField(position,*v,7,"start: %7.7X",0,instrument->GetSampleSize()-1,16) ;
-	T_SimpleList<UIField>::Insert(f1) ;
-
-	position._y+=1 ;
-	v=instrument->FindVariable(SIP_LOOPSTART) ;
-	f1=new UIBigHexVarField(position,*v,7,"loop start: %7.7X",0,instrument->GetSampleSize()-1,16) ;
-	T_SimpleList<UIField>::Insert(f1) ;
-
-	position._y+=1 ;
-	v=instrument->FindVariable(SIP_END) ;
-	f1=new UIBigHexVarField(position,*v,7,"loop end: %7.7X",0,instrument->GetSampleSize()-1,16) ;
-	T_SimpleList<UIField>::Insert(f1) ;
+	position._x+=13 ;
+	{
+		GUIPoint editPos = position;
+		UIActionField *editAf = new UIActionField("edit", ACTION_EDIT_SAMPLE, editPos);
+		T_SimpleList<UIField>::Insert(editAf);
+		editAf->AddObserver(*this);
+	}
+	position._x-=13 ;
 
 	v=instrument->FindVariable(SIP_TABLEAUTO) ;
 	position._y+=2 ;
@@ -1594,6 +1589,16 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 if (it == IT_LV2 || it == IT_VST3) {
                     SavePresetDialog *dialog = new SavePresetDialog(*this);
                     DoModal(dialog, SavePresetCallback);
+                }
+                return;
+            }
+            if (fourcc == ACTION_EDIT_SAMPLE) {
+                InstrumentType it = getInstrumentType();
+                if (it == IT_SAMPLE) {
+                    ViewType vt = VT_SAMPLE_EDITOR;
+                    ViewEvent ve(VET_SWITCH_VIEW, &vt);
+                    SetChanged();
+                    NotifyObservers(&ve);
                 }
                 return;
             }

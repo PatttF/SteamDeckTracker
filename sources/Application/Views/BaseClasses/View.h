@@ -43,7 +43,8 @@ enum ViewType {
     VT_TABLE,  // Table screen under phrase
     VT_TABLE2, // Table screen under instrument
     VT_GROOVE,
-    VT_MIXER
+    VT_MIXER,
+    VT_SAMPLE_EDITOR
 };
 
 enum ViewMode {
@@ -104,6 +105,9 @@ class View : public Observable {
     virtual void DrawView() = 0;
     virtual void OnPlayerUpdate(PlayerEventType, unsigned int currentTick) = 0;
     virtual void OnFocus() = 0;
+
+    // Override for pixel-level graphics drawn after text buffer flush
+    virtual void DrawGraphics() {};
 
     void SetDirty(bool dirty);
 

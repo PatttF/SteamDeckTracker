@@ -43,6 +43,10 @@ SampleInstrument::SampleInstrument() {
      source_=0 ;
      dirty_=false ;
      running_=false ;
+     manualSliceCount_=0 ;
+     for (int i=0;i<MAX_MANUAL_SLICES;i++) {
+         manualSlicePoints_[i]=0 ;
+     }
      fxPresets[0] = "room";
      fxPresets[1] = "hall";
      fxPresets[2] = "spring";
@@ -101,7 +105,7 @@ SampleInstrument::SampleInstrument() {
 	 Insert(loopMode_) ;
 	 loopMode_->SetInt(0) ;
 
-	 slices_=new Variable("slices",SIP_SLICES,1) ;
+	 slices_=new Variable("slices",SIP_SLICES,1,0xFF) ;
 	 Insert(slices_) ;
 
 	 loopStart_=new WatchedVariable("loopstart",SIP_LOOPSTART,0) ;
@@ -226,6 +230,26 @@ bool SampleInstrument::Init() {
 			Trace::Log("Init", "Fixed loopEnd: stored=%d, actual=%d", storedEnd, actualSize);
 		}
 	}
+
+	// Restore manual slice points from persisted string variable
+	Variable *slicePtsVar = FindVariable(SIP_SLICEPTS) ;
+	if (slicePtsVar) {
+		const char *str = slicePtsVar->GetString() ;
+		if (str && str[0]) {
+			// Parse "count:pt0:pt1:pt2..."
+			manualSliceCount_ = atoi(str) ;
+			if (manualSliceCount_ > MAX_MANUAL_SLICES) manualSliceCount_ = MAX_MANUAL_SLICES ;
+			if (manualSliceCount_ < 0) manualSliceCount_ = 0 ;
+			const char *p = str ;
+			for (int i = 0 ; i < manualSliceCount_ ; i++) {
+				p = strchr(p, ':') ;
+				if (!p) break ;
+				p++ ;
+				manualSlicePoints_[i] = atoi(p) ;
+			}
+			Trace::Log("Init", "Restored %d manual slice points", manualSliceCount_) ;
+		}
+	}
 	
 	return false ;
 }
@@ -300,9 +324,6 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 
      float driverRate=float(Audio::GetInstance()->GetSampleRate()) ;
      
-	 Trace::Log("Sample", "Start: loopmode=%d, rendLoopStart=%d, rendLoopEnd=%d, loopStart=%d, loopEnd=%d",
-		loopmode, rp->rendLoopStart_, rp->rendLoopEnd_, loopStart_->GetInt(), loopEnd_->GetInt());
-     
 	 switch (loopmode) {
 		 case SILM_ONESHOT:
 		 case SILM_LOOP:
@@ -358,18 +379,43 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
       break ;
 		}
 	case SILM_SLICE: {
-		if (rp->midiNote_ > slices_->GetInt()-1) break; // No sound outside of slice range
-		int note = rp->midiNote_;
-		int wavSize=rp->rendLoopEnd_;
-		int slice = wavSize/slices_->GetInt();
+		int rootNote = rootNote_->GetInt();
+		int note = rp->midiNote_ - rootNote;
+		if (note < 0) note = 0;
+		int wavSize = rp->rendLoopEnd_;
+		int sliceVal = slices_->GetInt();
 
-		Trace::Log("Slice", "wavSize=%d, slices=%d, slice=%d, note=%d, pos=%d, end=%d",
-			wavSize, slices_->GetInt(), slice, note, note*slice, (note+1)*slice);
+		if (sliceVal == 0) {
+			// Manual slice mode: N slice points create N+1 regions
+			// Region 0 = [0..point0], Region 1 = [point0..point1], ..., Region N = [pointN-1..end]
+			int numRegions = manualSliceCount_ + 1;
+			if (note >= numRegions) break;
 
-		rp->position_= float(note*slice);
-		rp->baseSpeed_=fl2fp(source_->GetSampleRate(rp->midiNote_)/driverRate) ;
-		rp->speed_ = rp->baseSpeed_;
-		rp->rendLoopEnd_ = (note+1)*slice;
+			int sliceStart = (note == 0) ? 0 : manualSlicePoints_[note - 1];
+			int sliceEnd = (note < manualSliceCount_)
+			               ? manualSlicePoints_[note]
+			               : wavSize;
+
+			Trace::Log("ManualSlice", "wavSize=%d, points=%d, regions=%d, note=%d, start=%d, end=%d",
+				wavSize, manualSliceCount_, numRegions, note, sliceStart, sliceEnd);
+
+			rp->position_ = float(sliceStart);
+			rp->baseSpeed_ = fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
+			rp->speed_ = rp->baseSpeed_;
+			rp->rendLoopEnd_ = sliceEnd;
+		} else {
+			// Even division slice mode
+			if (note > sliceVal - 1) break;
+			int slice = wavSize / sliceVal;
+
+			Trace::Log("Slice", "wavSize=%d, slices=%d, slice=%d, note=%d, pos=%d, end=%d",
+				wavSize, sliceVal, slice, note, note*slice, (note+1)*slice);
+
+			rp->position_ = float(note * slice);
+			rp->baseSpeed_ = fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
+			rp->speed_ = rp->baseSpeed_;
+			rp->rendLoopEnd_ = (note + 1) * slice;
+		}
 		break ;
 	}
 		case SILM_LAST:
@@ -1274,6 +1320,52 @@ int SampleInstrument::GetSampleSize(int channel) {
 } ;
 
 int SampleInstrument::GetLoopEnd() { return loopEnd_->GetInt(); }
+
+float SampleInstrument::GetPlaybackPosition(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return 0.0f;
+    return renderParams_[channel].position_;
+}
+
+bool SampleInstrument::IsPlaybackFinished(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return true;
+    return renderParams_[channel].finished_;
+}
+
+int SampleInstrument::GetSliceCount() {
+    return manualSliceCount_ ;
+}
+
+int SampleInstrument::GetSlicePoint(int index) {
+    if (index < 0 || index >= MAX_MANUAL_SLICES) return 0 ;
+    return manualSlicePoints_[index] ;
+}
+
+void SampleInstrument::SetSliceCount(int count) {
+    if (count < 0) count = 0 ;
+    if (count > MAX_MANUAL_SLICES) count = MAX_MANUAL_SLICES ;
+    manualSliceCount_ = count ;
+
+    // Persist as a string variable: "count:pt0,pt1,pt2,..."
+    char buf[512] ;
+    char *p = buf ;
+    p += sprintf(p, "%d", manualSliceCount_) ;
+    for (int i = 0 ; i < manualSliceCount_ ; i++) {
+        p += sprintf(p, ":%d", manualSlicePoints_[i]) ;
+    }
+
+    Variable *v = FindVariable(SIP_SLICEPTS) ;
+    if (!v) {
+        v = new Variable("slicepts", SIP_SLICEPTS, buf) ;
+        Insert(v) ;
+    } else {
+        v->SetString(buf) ;
+    }
+}
+
+void SampleInstrument::SetSlicePoint(int index, int frame) {
+    if (index < 0 || index >= MAX_MANUAL_SLICES) return ;
+    manualSlicePoints_[index] = frame ;
+}
 
 bool SampleInstrument::IsInitialized() {
     return (source_!=0) ;

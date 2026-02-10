@@ -21,7 +21,7 @@ Player::Player() {
 
 	isRunning_=false ;
 	viewData_=0 ;
-	mixer_=new PlayerMixer() ;
+	mixer_=PlayerMixer::GetInstance() ;
 
 	lastSongPos_=0 ;
 	mode_=PM_SONG ;

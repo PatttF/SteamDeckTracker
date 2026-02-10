@@ -253,7 +253,7 @@ COMMONFILES := \
 	NewProjectDialog.o \
 	ImportSampleDialog.o ImportLV2Dialog.o ImportLV2EffectDialog.o ImportSoundFontDialog.o ImportVST3Dialog.o SavePresetDialog.o \
 	MixerView.o NullView.o \
-	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o EffectView.o UIController.o \
+	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o EffectView.o SampleEditorView.o UIController.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
 	UIIntVarOffField.o UIIntVarField.o UILV2ParameterField.o UILV2EffectParameterField.o UIVST3ParameterField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \

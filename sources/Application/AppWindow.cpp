@@ -323,6 +323,12 @@ void AppWindow::Flush() {
         pos._x = 0;
     }
     long flushEnd = System::GetInstance()->GetClock();
+
+    // Draw pixel-level graphics on top of text buffer
+    if (_currentView) {
+        _currentView->DrawGraphics();
+    }
+
     GUIWindow::Flush();
     Unlock();
     memcpy(_preScreen, _charScreen, LOGICAL_SIZE);
@@ -418,6 +424,9 @@ void AppWindow::LoadProject(const Path &p) {
     _mixerView = new MixerView((*this), _viewData);
     _mixerView->AddObserver(*this);
 
+    _sampleEditorView = new SampleEditorView((*this), _viewData);
+    _sampleEditorView->AddObserver(*this);
+
     _currentView = _songView;
     _currentView->OnFocus();
 
@@ -454,6 +463,7 @@ void AppWindow::CloseProject() {
     SAFE_DELETE(_instrumentView);
     SAFE_DELETE(_effectView);
     SAFE_DELETE(_tableView);
+    SAFE_DELETE(_sampleEditorView);
 
     UIController *controller = UIController::GetInstance();
     controller->Reset();
@@ -606,6 +616,9 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
             break;
         case VT_MIXER:
             _currentView = _mixerView;
+            break;
+        case VT_SAMPLE_EDITOR:
+            _currentView = _sampleEditorView;
             break;
         }
         if (_currentView) {
