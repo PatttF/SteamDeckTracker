@@ -14,6 +14,7 @@
 #include "Application/Views/SampleEditorView.h"
 #include "Application/Views/SongView.h"
 #include "Application/Views/TableView.h"
+#include "Application/Views/ThemeView.h"
 #include "Application/Views/ViewData.h"
 #include "Foundation/Observable.h"
 #include "System/Process/SysMutex.h"
@@ -77,6 +78,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     NullView *_nullView;
     MixerView *_mixerView;
     SampleEditorView *_sampleEditorView;
+    ThemeView *_themeView;
 
     Path _root;
 
@@ -95,6 +97,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     unsigned char _preScreen[LOGICAL_SIZE];
     unsigned char _preScreenProp[LOGICAL_SIZE];
 
+public:
     static GUIColor backgroundColor_;
     static GUIColor normalColor_;
     static GUIColor borderColor_;
@@ -110,6 +113,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     static GUIColor rownumberColor_;
     static GUIColor rownumber2Color_;
     static GUIColor majorbeatColor_;
+private:
 #define LAST_PROJECT_NAME "root:last_project"
 
     ColorDefinition colorIndex_;

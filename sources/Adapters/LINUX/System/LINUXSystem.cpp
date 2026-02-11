@@ -126,6 +126,7 @@ void LINUXSystem::Boot(int argc,char **argv) {
 			mkdir_recursive(sdPath);
 			mkdir_recursive(sdPath + "/projects");
 			mkdir_recursive(sdPath + "/samplelib");
+			mkdir_recursive(sdPath + "/themes");
 	} else {
 			Path::SetAlias("root",".");
 	}

@@ -24,6 +24,7 @@
 #define ACTION_TEMPO_CHANGED    MAKE_FOURCC('T','E','M','P')
 #define ACTION_INSTALL_SAMPLES  MAKE_FOURCC('I','N','S','T')
 #define ACTION_INSTALL_LV2      MAKE_FOURCC('I','L','V','2')
+#define ACTION_THEME            MAKE_FOURCC('T','H','M','E')
 
 static void SaveAsProjectCallback(View &v,ModalView &dialog) {
 
@@ -296,6 +297,11 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 
+    position._y += 1;
+    a1 = new UIActionField("Theme", ACTION_THEME, position);
+    a1->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(a1);
+
     position._y += 2;
     v = project_->FindVariable(VAR_RENDER);
     NAssert(v);
@@ -436,6 +442,13 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
         case ACTION_INSTALL_LV2: {
             MessageBox *mb = new MessageBox(*this, "Install LV2 packages on this system? (requires sudo)", MBBF_YES | MBBF_NO);
             DoModal(mb, InstallLV2Callback);
+            break;
+        }
+        case ACTION_THEME: {
+            ViewType vt = VT_THEME;
+            ViewEvent ve(VET_SWITCH_VIEW, &vt);
+            SetChanged();
+            NotifyObservers(&ve);
             break;
         }
         case ACTION_QUIT: {

@@ -87,6 +87,7 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     _nullView = 0;
     _mixerView = 0;
     _grooveView = 0;
+    _themeView = 0;
     _closeProject = 0;
     _loadAfterSaveAsProject = 0;
     _loadAfterResume = 0;
@@ -427,6 +428,9 @@ void AppWindow::LoadProject(const Path &p) {
     _sampleEditorView = new SampleEditorView((*this), _viewData);
     _sampleEditorView->AddObserver(*this);
 
+    _themeView = new ThemeView((*this), _viewData);
+    _themeView->AddObserver(*this);
+
     _currentView = _songView;
     _currentView->OnFocus();
 
@@ -464,6 +468,7 @@ void AppWindow::CloseProject() {
     SAFE_DELETE(_effectView);
     SAFE_DELETE(_tableView);
     SAFE_DELETE(_sampleEditorView);
+    SAFE_DELETE(_themeView);
 
     UIController *controller = UIController::GetInstance();
     controller->Reset();
@@ -619,6 +624,9 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
             break;
         case VT_SAMPLE_EDITOR:
             _currentView = _sampleEditorView;
+            break;
+        case VT_THEME:
+            _currentView = _themeView;
             break;
         }
         if (_currentView) {

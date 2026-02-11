@@ -706,8 +706,8 @@ void SampleEditorView::drawHelp() {
         DrawString(1, HELP_Y + 1, "A:Add Slice   B+A:Del", props);
     }
 
-    // "L to exit" at bottom right
-    DrawString(60, HELP_Y + 2, "L to exit", props);
+    // Exit label at bottom right
+    DrawString(53, HELP_Y + 2, "Press B to exit", props);
 }
 
 void SampleEditorView::DrawView() {
@@ -842,8 +842,8 @@ void SampleEditorView::processNormalButtonMask(unsigned short mask) {
         return;
     }
 
-    // L button: back to instrument view
-    if (mask & EPBM_L) {
+    // B alone: exit back to instrument view
+    if (mask == EPBM_B) {
         stopPlayback();
         ViewType vt = VT_INSTRUMENT;
         ViewEvent ve(VET_SWITCH_VIEW, &vt);

@@ -133,6 +133,7 @@ bool Application::Init(GUICreateWindowParams &params) {
         <MAP src="key:0:a" dst="/event/b" />
         <MAP src="key:0:s" dst="/event/a" />
         <MAP src="key:0:space" dst="/event/start" />
+        <MAP src="key:0:e" dst="/event/select" />
         <MAP src="key:0:," dst="/event/pgback" />
         <MAP src="key:0:." dst="/event/pgfwd" />
       <!--
@@ -143,14 +144,14 @@ bool Application::Init(GUICreateWindowParams &params) {
         <MAP src="but:4:4" dst="/event/rshoulder" />
         <MAP src="but:4:5" dst="/event/lshoulder" />
 
-      	<MAP src="hat:0:0" dst="/event/up" />
-      	<MAP src="hat:0:2" dst="/event/down" />
-      	<MAP src="hat:0:3" dst="/event/left" />
-      	<MAP src="hat:0:1" dst="/event/right" />
+        <MAP src="hat:0:0" dst="/event/up" />
+        <MAP src="hat:0:2" dst="/event/down" />
+        <MAP src="hat:0:3" dst="/event/left" />
+        <MAP src="hat:0:1" dst="/event/right" />
 
-      	<MAP src="but:1:1" dst="/event/a" />
-      	<MAP src="but:0:0" dst="/event/b" />
-      	<MAP src="but:3:3" dst="/event/start" />
+        <MAP src="but:1:1" dst="/event/a" />
+        <MAP src="but:0:0" dst="/event/b" />
+        <MAP src="but:3:3" dst="/event/start" />
 
       <!--
       Macro 1

@@ -44,7 +44,8 @@ enum ViewType {
     VT_TABLE2, // Table screen under instrument
     VT_GROOVE,
     VT_MIXER,
-    VT_SAMPLE_EDITOR
+    VT_SAMPLE_EDITOR,
+    VT_THEME
 };
 
 enum ViewMode {
@@ -125,6 +126,7 @@ class View : public Observable {
                             GUITextProperties &props);
 
     void DoModal(ModalView *view, ModalViewCallback cb = 0);
+    bool HasModal() const { return modalView_ != 0; }
 
     void EnableNotification();
     void SetNotification(const char *notification, int offset = 2);
