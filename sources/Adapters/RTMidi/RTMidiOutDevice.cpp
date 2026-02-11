@@ -52,11 +52,6 @@ void RTMidiOutDevice::SendMessage(MidiMessage &msg)
     {
       message.push_back(msg.data2_) ;
     }
-    Trace::Log("MIDI_RAW", "port=%d [%02X %02X %02X] len=%zu",
-               index_, msg.status_,
-               msg.data1_ != MidiMessage::UNUSED_BYTE ? msg.data1_ : 0,
-               msg.data2_ != MidiMessage::UNUSED_BYTE ? msg.data2_ : 0,
-               message.size());
     rtMidiOut_.sendMessage( &message );
   }
 }

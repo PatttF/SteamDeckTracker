@@ -698,13 +698,12 @@ void SampleEditorView::drawHelp() {
     SetColor(CD_NORMAL);
 
     if (mode_ == MODE_NAVIGATE) {
-        DrawString(1, HELP_Y,     "A+L/R:Zoom   B+L/R:Scroll", props);
-        DrawString(1, HELP_Y + 1, "L4:Start   R4:End", props);
-        DrawString(1, HELP_Y + 2, "E:Slice", props);
+        DrawString(1, 24,         "Select:Open Slice Mode", props);
+        DrawString(1, HELP_Y,     "L4:Start Point   R4:End Point", props);
     } else {
-        DrawString(1, HELP_Y,     "A+L/R:Slice(play)", props);
-        DrawString(1, HELP_Y + 1, "A:Add   B+A:Del   L4/R4:Pts", props);
-        DrawString(1, HELP_Y + 2, "E:Nav", props);
+        DrawString(1, 24,         "Select:Open Trim Mode", props);
+        DrawString(1, HELP_Y,     "A+L/R:Slice Navigation", props);
+        DrawString(1, HELP_Y + 1, "A:Add Slice   B+A:Del", props);
     }
 
     // "L to exit" at bottom right
@@ -853,14 +852,14 @@ void SampleEditorView::processNormalButtonMask(unsigned short mask) {
         return;
     }
 
-    // PGBACK: set loop start point
-    if (mask & EPBM_PGBACK) {
+    // PGBACK: set loop start point (navigate/trim mode only)
+    if ((mask & EPBM_PGBACK) && mode_ == MODE_NAVIGATE) {
         setStartPoint();
         return;
     }
 
-    // PGFWD: set loop end point
-    if (mask & EPBM_PGFWD) {
+    // PGFWD: set loop end point (navigate/trim mode only)
+    if ((mask & EPBM_PGFWD) && mode_ == MODE_NAVIGATE) {
         setEndPoint();
         return;
     }

@@ -992,7 +992,23 @@ void Player::playCursorPosition(int channel) {
 				int chain=viewData_->currentPlayChain_[channel] ;
 				int chainPos=viewData_->chainPlayPos_[channel] ;
 				unsigned char *trsp=viewData_->song_->chain_->transpose_+(16*chain+chainPos) ;
-				int finalNote = note + *trsp + project_->GetTranspose() ;
+				int finalNote ;
+				// Skip transpose for slicer instruments - note is a slice index, not a pitch
+				if (instrument->GetType() == IT_SAMPLE) {
+					SampleInstrument *sinst = (SampleInstrument *)instrument;
+					Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+					if (lm && lm->GetInt() == SILM_SLICE) {
+						// Add rootNote so the slicer's own rootNote subtraction
+						// yields the correct slice index
+						Variable *rn = sinst->FindVariable(SIP_ROOTNOTE);
+						int rootNote = rn ? rn->GetInt() : 60;
+						finalNote = note + rootNote;
+					} else {
+						finalNote = note + *trsp + project_->GetTranspose();
+					}
+				} else {
+					finalNote = note + *trsp + project_->GetTranspose();
+				}
 				instrumentOnChannel_[channel][0] = (instr/16)>9?'A'-10+(instr/16):'0'+(instr/16);
 				instrumentOnChannel_[channel][1] = (instr%16)>9?'A'-10+(instr%16):'0'+(instr%16);
 				instrumentOnChannel_[channel][2] = '\0';

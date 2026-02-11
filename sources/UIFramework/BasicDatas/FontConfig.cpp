@@ -16,6 +16,9 @@ const unsigned char embeddedFontBank[FONT_TYPE_COUNT][8*8*128]= {
 	},
 	{//2 monster
 		#include "Resources/monster.txt"
+	},
+	{//3 earth
+		#include "Resources/earth.txt"
 	}
 };
 

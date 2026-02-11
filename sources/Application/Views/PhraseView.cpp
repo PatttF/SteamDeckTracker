@@ -152,6 +152,27 @@ void PhraseView::updateCursorValue(ViewUpdateDirection direction, int xOffset,
         c = phrase_->note_ + (16 * viewData_->currentPhrase_ + row_ + yOffset);
         limit = 119;
         wrap = true;
+        // Check if current instrument is a slicer and clamp to slice count
+        {
+            InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+            I_Instrument *inst = bank->GetInstrument(lastInstr_);
+            if (inst && inst->GetType() == IT_SAMPLE) {
+                SampleInstrument *sinst = (SampleInstrument *)inst;
+                Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+                if (lm && lm->GetInt() == SILM_SLICE) {
+                    Variable *slicesVar = sinst->FindVariable(SIP_SLICES);
+                    int sliceVal = slicesVar ? slicesVar->GetInt() : 0;
+                    if (sliceVal == 0) {
+                        // Manual slice mode: regions = manualSliceCount + 1
+                        limit = (unsigned char)sinst->GetSliceCount();
+                    } else {
+                        // Even division mode
+                        limit = (unsigned char)(sliceVal - 1);
+                    }
+                    wrap = false;
+                }
+            }
+        }
         break;
     case 1:
         c = phrase_->instr_ + (16 * viewData_->currentPhrase_ + row_ + yOffset);
@@ -310,12 +331,24 @@ void PhraseView::updateCursorValue(ViewUpdateDirection direction, int xOffset,
     }
     if ((c) && (*c != 0xFF)) {
         int offset = offsets_[col_ + xOffset][direction];
-        // if note column apply the set scale
+        // if note column apply the set scale (but not in slicer mode)
         if (col_ + xOffset == 0) {
-            // Add/remove from offset to match selected scale
-            int scale = viewData_->project_->GetScale();
-            while (!scaleSteps[scale][(*c + offset) % 12]) {
-                offset > 0 ? offset++ : offset--;
+            bool isSlicerMode = false;
+            InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+            I_Instrument *inst = bank->GetInstrument(lastInstr_);
+            if (inst && inst->GetType() == IT_SAMPLE) {
+                SampleInstrument *sinst = (SampleInstrument *)inst;
+                Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+                if (lm && lm->GetInt() == SILM_SLICE) {
+                    isSlicerMode = true;
+                }
+            }
+            if (!isSlicerMode) {
+                // Add/remove from offset to match selected scale
+                int scale = viewData_->project_->GetScale();
+                while (!scaleSteps[scale][(*c + offset) % 12]) {
+                    offset > 0 ? offset++ : offset--;
+                }
             }
         }
         updateData(c, offset, limit, wrap);
@@ -346,6 +379,26 @@ void PhraseView::pasteLast() {
     case 0:
         c = phrase_->note_ + (16 * viewData_->currentPhrase_ + row_);
         if ((*c == 0xFF)) {
+            // Clamp lastNote_ for slicer instruments
+            {
+                InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+                I_Instrument *inst = bank->GetInstrument(lastInstr_);
+                if (inst && inst->GetType() == IT_SAMPLE) {
+                    SampleInstrument *sinst = (SampleInstrument *)inst;
+                    Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+                    if (lm && lm->GetInt() == SILM_SLICE) {
+                        Variable *slicesVar = sinst->FindVariable(SIP_SLICES);
+                        int sliceVal = slicesVar ? slicesVar->GetInt() : 0;
+                        int maxSlice;
+                        if (sliceVal == 0) {
+                            maxSlice = sinst->GetSliceCount();
+                        } else {
+                            maxSlice = sliceVal - 1;
+                        }
+                        if (lastNote_ > maxSlice) lastNote_ = 0;
+                    }
+                }
+            }
             *c = lastNote_;
             c = phrase_->instr_ + (16 * viewData_->currentPhrase_ + row_);
             *c = lastInstr_;
@@ -1533,17 +1586,40 @@ void PhraseView::DrawView() {
     // Display notes
 
     unsigned char *data = phrase_->note_ + (16 * viewData_->currentPhrase_);
+    unsigned char *instrData = phrase_->instr_ + (16 * viewData_->currentPhrase_);
 
     buffer[4] = 0;
+    unsigned char trackInstr = lastInstr_;
     for (int j = 0; j < 16; j++) {
         unsigned char d = *data++;
+        unsigned char ins = *instrData++;
+        if (ins != 0xFF) {
+            trackInstr = ins;
+        }
         setTextProps(props, 0, j, false);
         (0 == j || 4 == j || 8 == j || 12 == j) ? SetColor(CD_MAJORBEAT)
                                                 : SetColor(CD_NORMAL);
         if (d == 0xFF) {
             DrawString(pos._x, pos._y, "----", props);
         } else {
-            note2char(d, buffer);
+            // Check if instrument is a slicer
+            bool isSlicer = false;
+            InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+            I_Instrument *instr = bank->GetInstrument(trackInstr);
+            if (instr && instr->GetType() == IT_SAMPLE) {
+                SampleInstrument *sinst = (SampleInstrument *)instr;
+                Variable *lm = sinst->FindVariable(SIP_LOOPMODE);
+                if (lm && lm->GetInt() == SILM_SLICE) {
+                    isSlicer = true;
+                }
+            }
+            if (isSlicer) {
+                buffer[0] = 'S';
+                buffer[1] = 'L';
+                hex2char(d, buffer + 2);
+            } else {
+                note2char(d, buffer);
+            }
             DrawString(pos._x, pos._y, buffer, props);
         }
         setTextProps(props, 0, j, true);
