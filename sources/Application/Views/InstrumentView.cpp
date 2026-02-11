@@ -522,7 +522,7 @@ void InstrumentView::fillLV2Parameters() {
     }
 
     // Display help text at top-right (compute rightmost x based on visible logical width)
-    const char *helpText = "L to change pages";
+    const char *helpText = "L4/R4 to change pages";
     const int CHAR_PX = 8; // character pixel width
     int winPixelWidth = w_.GetRect().Width();
     int visibleCols = winPixelWidth / CHAR_PX;
@@ -880,7 +880,7 @@ void InstrumentView::fillVST3Parameters() {
 	}
 
 	// Page scroll help
-	const char *helpText = "L to change pages";
+	const char *helpText = "L4/R4 to change pages";
 	const int CHAR_PX = 8;
 	int winPixelWidth = w_.GetRect().Width();
 	int visibleCols = winPixelWidth / CHAR_PX;

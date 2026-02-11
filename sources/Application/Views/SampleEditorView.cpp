@@ -699,11 +699,11 @@ void SampleEditorView::drawHelp() {
 
     if (mode_ == MODE_NAVIGATE) {
         DrawString(1, HELP_Y,     "A+L/R:Zoom   B+L/R:Scroll", props);
-        DrawString(1, HELP_Y + 1, "START+A:Start   START+B:End", props);
+        DrawString(1, HELP_Y + 1, "L4:Start   R4:End", props);
         DrawString(1, HELP_Y + 2, "E:Slice", props);
     } else {
         DrawString(1, HELP_Y,     "A+L/R:Slice(play)", props);
-        DrawString(1, HELP_Y + 1, "A:Add   B+A:Del   START+A/B:Pts", props);
+        DrawString(1, HELP_Y + 1, "A:Add   B+A:Del   L4/R4:Pts", props);
         DrawString(1, HELP_Y + 2, "E:Nav", props);
     }
 
@@ -853,16 +853,16 @@ void SampleEditorView::processNormalButtonMask(unsigned short mask) {
         return;
     }
 
-    // START modifier (operations)
-    if (mask & EPBM_START) {
-        if (mask & EPBM_A) {
-            setStartPoint();
-            return;
-        }
-        if (mask & EPBM_B) {
-            setEndPoint();
-            return;
-        }
+    // PGBACK: set loop start point
+    if (mask & EPBM_PGBACK) {
+        setStartPoint();
+        return;
+    }
+
+    // PGFWD: set loop end point
+    if (mask & EPBM_PGFWD) {
+        setEndPoint();
+        return;
     }
 
     // START alone: toggle play/stop

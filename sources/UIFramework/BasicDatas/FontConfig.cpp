@@ -4,7 +4,7 @@
 #include "Application/Model/Config.h"
 
 unsigned char font[8*8*128]= {
-	#include "Resources/font.h"
+	#include "Resources/earth.txt"
 };
 
 const unsigned char embeddedFontBank[FONT_TYPE_COUNT][8*8*128]= {

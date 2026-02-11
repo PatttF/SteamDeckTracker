@@ -74,7 +74,7 @@ void EffectView::fillEffectParameters() {
     const int PARAMS_PER_PAGE = MAX_ROWS * 2;
 
     // Display help text at top-right
-    const char *helpText = "L to change pages";
+    const char *helpText = "L4/R4 to change pages";
     const int CHAR_PX = 8;
     int winPixelWidth = w_.GetRect().Width();
     int visibleCols = winPixelWidth / CHAR_PX;
