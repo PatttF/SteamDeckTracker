@@ -130,10 +130,10 @@ void EffectView::fillEffectParameters() {
 
     position._y += 1;
 
-    // Show bank/preset selectors for VST3 effects
+    // Show bank/preset selectors for VST3 effects (only if useful presets found)
     if (!current_->IsEmpty() && current_->GetEffectType() == ET_VST3) {
         VST3Effect *vst3fx = (VST3Effect *)current_;
-        if (vst3fx->GetBankCount() > 0) {
+        if (vst3fx->GetBankCount() > 0 && vst3fx->GetPresetCount() > 1) {
             // Bank selector (if more than one bank)
             if (vst3fx->GetBankCount() > 1) {
                 Variable *bv = vst3fx->FindVariable(VST3FX_BANK);
