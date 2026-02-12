@@ -395,6 +395,12 @@ void MixerView::DrawGraphics() {
     SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
     if (!imp) return;
 
+    SDL_Renderer *renderer = imp->GetRenderer();
+    if (!renderer) return;
+    int mult = imp->GetMult();
+    int ax = imp->GetAppAnchorX();
+    int ay = imp->GetAppAnchorY();
+
     const int charW = 8; // pixels per char cell
     const int charH = 8;
     const int meterCharWidth = 2; // each meter is 2 chars wide in pixels
@@ -459,19 +465,15 @@ void MixerView::DrawGraphics() {
         int ph = mH * charH;                 // total pixel height
 
         // Dark background
-        GUIColor bgColor(0x18, 0x18, 0x18);
-        imp->SetColor(bgColor);
-        GUIRect bgRect(px, py, px + pw, py + ph);
-        imp->DrawRect(bgRect);
+        SDL_SetRenderDrawColor(renderer, 0x18, 0x18, 0x18, 0xFF);
+        SDL_Rect bgRect = { px * mult + ax, py * mult + ay, pw * mult, ph * mult };
+        SDL_RenderFillRect(renderer, &bgRect);
 
         // Live audio peak with smooth gradient (bottom=green, top=red)
-        // dB scale with +6dB headroom so 0dB sits at ~89%, red only above -3dB
-        // Note: bus peaks already have channel volume applied; master peak already
-        // has master damp applied. Do NOT multiply by volFrac again.
         float peak = chPeaks_[i];
-        if (peak > 2.0f) peak = 2.0f; // clamp at +6dB (=2.0 linear)
+        if (peak > 2.0f) peak = 2.0f;
 
-        // Map -48dB..+6dB → 0.0..1.0  (0dB = 48/54 ≈ 0.89)
+        // Map -48dB..+6dB → 0.0..1.0
         float meterFrac = 0.0f;
         if (peak > 0.0001f) {
             float db = 20.0f * log10f(peak);
@@ -484,11 +486,6 @@ void MixerView::DrawGraphics() {
         int peakPx = (int)(meterFrac * ph);
         if (peakPx > ph) peakPx = ph;
 
-        // Draw the meter as individual 2px-tall scanlines with interpolated color
-        // Color zones (in terms of meter fraction, 0=bottom, 1=top):
-        //   0.0  - 0.65  green → yellow  (covers -48dB to ~-13dB)
-        //   0.65 - 0.85  yellow → orange  (covers ~-13dB to ~-2dB)
-        //   0.85 - 1.0   orange → red     (covers ~-2dB to +6dB = clipping zone)
         if (peakPx > 0) {
             int meterTop = ph - peakPx;
             for (int y = meterTop; y < ph; y += 2) {
@@ -513,15 +510,14 @@ void MixerView::DrawGraphics() {
                 }
                 if (clipped) { r = 0xFF; g = 0x00; b = 0x00; }
 
-                GUIColor c((unsigned short)r, (unsigned short)g, (unsigned short)b);
-                imp->SetColor(c);
+                SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
                 int h2 = (y + 2 <= ph) ? 2 : ph - y;
-                GUIRect sr(px, py + y, px + pw, py + y + h2);
-                imp->DrawRect(sr);
+                SDL_Rect sr = { (px) * mult + ax, (py + y) * mult + ay, pw * mult, h2 * mult };
+                SDL_RenderFillRect(renderer, &sr);
             }
         }
 
-        // Volume level marker — thin bright line (dB scaled to match meter)
+        // Volume level marker — thin bright line
         if (volFrac > 0.01f) {
             float volDb = 20.0f * log10f(volFrac);
             const float dbMin = -48.0f;
@@ -531,13 +527,12 @@ void MixerView::DrawGraphics() {
             if (volMeterFrac > 1.0f) volMeterFrac = 1.0f;
             int volLineY = (int)(volMeterFrac * ph);
             if (volLineY > ph - 1) volLineY = ph - 1;
-            GUIColor volMarker(0xDD, 0xDD, 0xDD);
-            imp->SetColor(volMarker);
-            GUIRect vlRect(px, py + ph - volLineY - 1, px + pw, py + ph - volLineY + 1);
-            imp->DrawRect(vlRect);
+            SDL_SetRenderDrawColor(renderer, 0xDD, 0xDD, 0xDD, 0xFF);
+            SDL_Rect vlRect = { px * mult + ax, (py + ph - volLineY - 1) * mult + ay, pw * mult, 2 * mult };
+            SDL_RenderFillRect(renderer, &vlRect);
         }
 
-        // Peak hold marker — thin horizontal line (dB scaled)
+        // Peak hold marker — thin horizontal line
         float hold = chPeakHold_[i];
         if (hold > 0.01f) {
             float holdDb = 20.0f * log10f(hold);
@@ -549,9 +544,9 @@ void MixerView::DrawGraphics() {
             int holdPx = (int)(holdFrac * ph);
             if (holdPx > ph - 1) holdPx = ph - 1;
             GUIColor holdColor = AppWindow::cursorColor_;
-            imp->SetColor(holdColor);
-            GUIRect holdRect(px, py + ph - holdPx - 2, px + pw, py + ph - holdPx);
-            imp->DrawRect(holdRect);
+            SDL_SetRenderDrawColor(renderer, holdColor._r & 0xFF, holdColor._g & 0xFF, holdColor._b & 0xFF, 0xFF);
+            SDL_Rect holdRect = { px * mult + ax, (py + ph - holdPx - 2) * mult + ay, pw * mult, 2 * mult };
+            SDL_RenderFillRect(renderer, &holdRect);
         }
     }
 
@@ -563,76 +558,66 @@ void MixerView::DrawGraphics() {
         int sh = scopeHeightPx_;
 
         // Use theme background color for scope area
-        GUIColor scopeBg(AppWindow::backgroundColor_._r,
-                        AppWindow::backgroundColor_._g,
-                        AppWindow::backgroundColor_._b);
-        imp->SetColor(scopeBg);
-        GUIRect scopeBgRect(sx, sy, sx + sw, sy + sh);
-        imp->DrawRect(scopeBgRect);
+        SDL_SetRenderDrawColor(renderer,
+            AppWindow::backgroundColor_._r & 0xFF,
+            AppWindow::backgroundColor_._g & 0xFF,
+            AppWindow::backgroundColor_._b & 0xFF, 0xFF);
+        SDL_Rect scopeBgRect = { sx * mult + ax, sy * mult + ay, sw * mult, sh * mult };
+        SDL_RenderFillRect(renderer, &scopeBgRect);
 
-        // Subtle center line (zero crossing reference) - slightly lighter than background
+        // Subtle center line
         int centerY = sy + sh / 2;
-        int clR = AppWindow::backgroundColor_._r + 0x10;
-        int clG = AppWindow::backgroundColor_._g + 0x14;
-        int clB = AppWindow::backgroundColor_._b + 0x16;
+        int clR = (AppWindow::backgroundColor_._r & 0xFF) + 0x10;
+        int clG = (AppWindow::backgroundColor_._g & 0xFF) + 0x14;
+        int clB = (AppWindow::backgroundColor_._b & 0xFF) + 0x16;
         if (clR > 255) clR = 255;
         if (clG > 255) clG = 255;
         if (clB > 255) clB = 255;
-        GUIColor centerLine((unsigned short)clR, (unsigned short)clG, (unsigned short)clB);
-        imp->SetColor(centerLine);
-        GUIRect clRect(sx, centerY, sx + sw, centerY + 1);
-        imp->DrawRect(clRect);
+        SDL_SetRenderDrawColor(renderer, clR, clG, clB, 0xFF);
+        SDL_Rect clRect = { sx * mult + ax, centerY * mult + ay, sw * mult, 1 * mult };
+        SDL_RenderFillRect(renderer, &clRect);
 
         // Read oscilloscope samples from MixerService
         MixerService *ms2 = MixerService::GetInstance();
         int scopeN = ms2->GetOscilloscopeSampleCount();
         if (scopeN > 0) {
-            // Map scope samples across the width; each pixel column gets one sample
-            // Waveform trace color: cyan/purple gradient like M8
             const int traceR1 = 0x66, traceG1 = 0xDD, traceB1 = 0xFF; // cyan
             const int traceR2 = 0xCC, traceG2 = 0x66, traceB2 = 0xFF; // purple
 
             int prevY = -1;
             for (int x = 0; x < sw; x++) {
-                // Map pixel column to sample index
                 int sIdx = (x * scopeN) / sw;
                 if (sIdx >= scopeN) sIdx = scopeN - 1;
                 float sample = ms2->GetOscilloscopeSample(sIdx);
 
-                // Clamp to -1..1
                 if (sample > 1.0f) sample = 1.0f;
                 if (sample < -1.0f) sample = -1.0f;
 
-                // Map sample to Y pixel (center = 0.0, top = -1.0, bottom = 1.0)
-                // Leave 2px padding top and bottom
                 int usableH = sh - 4;
                 int midY = sy + sh / 2;
                 int curY = midY - (int)(sample * (usableH / 2));
 
-                // Interpolate trace color across width (cyan → purple)
                 float t = (float)x / (float)(sw > 1 ? sw - 1 : 1);
                 int r = traceR1 + (int)(t * (traceR2 - traceR1));
                 int g = traceG1 + (int)(t * (traceG2 - traceG1));
                 int b = traceB1 + (int)(t * (traceB2 - traceB1));
 
-                // Draw vertical line connecting previous Y to current Y for continuity
                 if (prevY >= 0) {
                     int y0 = (prevY < curY) ? prevY : curY;
                     int y1 = (prevY < curY) ? curY : prevY;
                     if (y1 - y0 < 1) y1 = y0 + 1;
 
-                    // Dim glow (wider, softer)
-                    int glowR = r / 4, glowG = g / 4, glowB = b / 4;
-                    GUIColor glowColor((unsigned short)glowR, (unsigned short)glowG, (unsigned short)glowB);
-                    imp->SetColor(glowColor);
-                    GUIRect glowRect(sx + x - 1, y0 - 1, sx + x + 2, y1 + 2);
-                    imp->DrawRect(glowRect);
+                    // Dim glow
+                    SDL_SetRenderDrawColor(renderer, r / 4, g / 4, b / 4, 0xFF);
+                    SDL_Rect glowRect = { (sx + x - 1) * mult + ax, (y0 - 1) * mult + ay,
+                                          3 * mult, (y1 - y0 + 3) * mult };
+                    SDL_RenderFillRect(renderer, &glowRect);
 
                     // Bright trace
-                    GUIColor traceColor((unsigned short)r, (unsigned short)g, (unsigned short)b);
-                    imp->SetColor(traceColor);
-                    GUIRect traceRect(sx + x, y0, sx + x + 1, y1 + 1);
-                    imp->DrawRect(traceRect);
+                    SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
+                    SDL_Rect traceRect = { (sx + x) * mult + ax, y0 * mult + ay,
+                                           1 * mult, (y1 - y0 + 1) * mult };
+                    SDL_RenderFillRect(renderer, &traceRect);
                 }
                 prevY = curY;
             }

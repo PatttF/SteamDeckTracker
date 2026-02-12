@@ -23,9 +23,19 @@ public:
 	virtual void PostQuitMessage() ;
 	virtual int GetKeyCode(const char *name) ;
 
+	// Raw input capture for button mapping dialog
+	static void StartCapture();
+	static void StopCapture();
+	static bool IsCapturing();
+	// Returns the captured source string (e.g. "but:0:3") and clears it.
+	// Returns empty string if nothing captured yet.
+	static std::string ConsumeCapture();
+
 private:
 	static bool finished_ ;
 	static bool dumpEvent_ ;
+	static bool capturing_ ;
+	static std::string capturedSource_ ;
 	SDL_Joystick *joystick_[MAX_JOY_COUNT];
 	ButtonControllerSource *buttonCS_[MAX_JOY_COUNT] ;
 	JoystickControllerSource *joystickCS_[MAX_JOY_COUNT] ;

@@ -539,6 +539,12 @@ void RecordSampleDialog::DrawGraphics() {
     SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
     if (!imp) return;
 
+    SDL_Renderer *renderer = imp->GetRenderer();
+    if (!renderer) return;
+    int mult = imp->GetMult();
+    int ax = imp->GetAppAnchorX();
+    int ay = imp->GetAppAnchorY();
+
     // Meter area: char columns 1..(width-1), rows 3-4
     // Convert to pixel coordinates using modal's left_/top_ offset
     int charWidth = 8;   // pixels per char cell
@@ -550,13 +556,11 @@ void RecordSampleDialog::DrawGraphics() {
     int ph = 2 * charHeight - 2;            // 1px inset top+bottom
 
     // Dark background
-    GUIColor bgColor(0x18, 0x18, 0x18);
-    imp->SetColor(bgColor);
-    GUIRect bgRect(px, py, px + pw, py + ph);
-    imp->DrawRect(bgRect);
+    SDL_SetRenderDrawColor(renderer, 0x18, 0x18, 0x18, 0xFF);
+    SDL_Rect bgRect = { px * mult + ax, py * mult + ay, pw * mult, ph * mult };
+    SDL_RenderFillRect(renderer, &bgRect);
 
     // Filled level bar with smooth gradient (left=green, right=red)
-    // dB scale with +6dB headroom so 0dB sits at ~89%, red only near clipping
     float meterFrac = 0.0f;
     if (peakLevel_ > 0.0001f) {
         float db = 20.0f * log10f(peakLevel_);
@@ -591,11 +595,10 @@ void RecordSampleDialog::DrawGraphics() {
                 b = 0x00;
             }
 
-            GUIColor c((unsigned short)r, (unsigned short)g, (unsigned short)b);
-            imp->SetColor(c);
+            SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
             int w2 = (x + 2 <= filledPx) ? 2 : filledPx - x;
-            GUIRect sr(px + x, py, px + x + w2, py + ph);
-            imp->DrawRect(sr);
+            SDL_Rect sr = { (px + x) * mult + ax, py * mult + ay, w2 * mult, ph * mult };
+            SDL_RenderFillRect(renderer, &sr);
         }
     }
 
@@ -609,10 +612,9 @@ void RecordSampleDialog::DrawGraphics() {
         if (holdFrac > 1.0f) holdFrac = 1.0f;
         int holdPx = (int)(holdFrac * pw);
         if (holdPx > pw - 1) holdPx = pw - 1;
-        GUIColor holdColor(0xDD, 0xDD, 0xDD);
-        imp->SetColor(holdColor);
-        GUIRect holdRect(px + holdPx, py, px + holdPx + 2, py + ph);
-        imp->DrawRect(holdRect);
+        SDL_SetRenderDrawColor(renderer, 0xDD, 0xDD, 0xDD, 0xFF);
+        SDL_Rect holdRect = { (px + holdPx) * mult + ax, py * mult + ay, 2 * mult, ph * mult };
+        SDL_RenderFillRect(renderer, &holdRect);
     }
 }
 

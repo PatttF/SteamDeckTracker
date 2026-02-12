@@ -37,6 +37,15 @@ public: // I_GUIWindowImp implementation
 	virtual void ClearRect(GUIRect &) ;
 	virtual void PushEvent(GUIEvent &event) ;
 
+	// Present the renderer (call after DrawGraphics overlay drawing)
+	void Present();
+
+	// Access renderer for hardware-accelerated overlay drawing
+	SDL_Renderer *GetRenderer() { return renderer_; }
+	int GetAppAnchorX() const { return appAnchorX_; }
+	int GetAppAnchorY() const { return appAnchorY_; }
+	int GetMult() const { return mult_; }
+
 public: // Added functionality
 	void ProcessExpose() ;
 	void ProcessQuit() ;
@@ -50,8 +59,9 @@ protected:
 
 private:
     SDL_Window *window_;
-    SDL_Surface *surface_;         // Display surface (what gets shown)
-    SDL_Surface *backbuffer_;      // Drawing surface (app draws here)
+    SDL_Renderer *renderer_;       // Hardware-accelerated renderer
+    SDL_Texture *screenTexture_;   // Streaming texture for software-drawn content
+    SDL_Surface *surface_;         // Software drawing surface (backbuffer)
     GUIRect screenRect_ ;
 	unsigned int currentColor_ ;
 	unsigned int backgroundColor_ ;

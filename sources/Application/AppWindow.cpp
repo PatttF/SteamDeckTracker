@@ -16,6 +16,7 @@
 #include "UIFramework/Interfaces/I_GUIWindowFactory.h"
 #include "Views/UIController.h"
 #include <string.h>
+#include "Adapters/SDL2/GUI/SDLGUIWindowImp.h"
 
 AppWindow *instance = 0;
 
@@ -325,13 +326,19 @@ void AppWindow::Flush() {
     }
     long flushEnd = System::GetInstance()->GetClock();
 
-    // Draw pixel-level graphics on top of text buffer
+    // Flush uploads the software surface to the GPU texture and renders it
+    GUIWindow::Flush();
+
+    // Draw hardware-accelerated pixel graphics on top of the rendered texture
     if (_currentView) {
         _currentView->DrawGraphics();
         _currentView->ForwardDrawGraphicsToModal();
     }
 
-    GUIWindow::Flush();
+    // Present the final composited frame
+    SDLGUIWindowImp *sdlImp = (SDLGUIWindowImp *)GetImpWindow();
+    if (sdlImp) sdlImp->Present();
+
     Unlock();
     memcpy(_preScreen, _charScreen, LOGICAL_SIZE);
     memcpy(_preScreenProp, _charScreenProp, LOGICAL_SIZE);

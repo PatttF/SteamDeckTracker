@@ -121,9 +121,25 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
         SDL_SetWindowIcon(window_, icon);
         SDL_FreeSurface(icon);
     }
-    surface_ = SDL_GetWindowSurface(window_);
 
-    NAssert(surface_) ;
+    // Create hardware-accelerated renderer
+    renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!renderer_) {
+        // Fallback to software renderer
+        renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE);
+    }
+    NAssert(renderer_);
+
+    // Create a software surface as our drawing backbuffer
+    surface_ = SDL_CreateRGBSurface(0, screenRect_.Width(), screenRect_.Height(),
+                                     32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+    NAssert(surface_);
+
+    // Create a streaming texture to upload the software surface to the renderer
+    screenTexture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ABGR8888,
+                                        SDL_TEXTUREACCESS_STREAMING,
+                                        screenRect_.Width(), screenRect_.Height());
+    NAssert(screenTexture_);
 
     Uint32 rmask, gmask, bmask, amask;
 
@@ -155,7 +171,9 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
 } ;
 
 SDLGUIWindowImp::~SDLGUIWindowImp() {
-
+    if (screenTexture_) { SDL_DestroyTexture(screenTexture_); screenTexture_ = nullptr; }
+    if (surface_) { SDL_FreeSurface(surface_); surface_ = nullptr; }
+    if (renderer_) { SDL_DestroyRenderer(renderer_); renderer_ = nullptr; }
 }
 
 static SDL_Surface *fonts[FONT_COUNT] ;
@@ -517,30 +535,26 @@ void SDLGUIWindowImp::Unlock()
 
 void SDLGUIWindowImp::Flush()
 {
-    // blit partial updates on resource constrained platforms
-    if ((!framebuffer_)&&(updateCount_!=0))
-    {
-        if (updateCount_<MAX_OVERLAYS)
-        {
-            SDL_UpdateWindowSurfaceRects(window_,updateRects_,updateCount_);
-        }
-        else
-        {
-            SDL_Rect updateRect;
-            updateRect.x = screenRect_.Left();
-            updateRect.y = screenRect_.Top();
-            updateRect.w = screenRect_.Width();
-            updateRect.h = screenRect_.Height();
-            SDL_UpdateWindowSurfaceRects(window_,&updateRect,1);
-        }
-    }
+    // Upload the software surface to the streaming texture
+    SDL_UpdateTexture(screenTexture_, NULL, surface_->pixels, surface_->pitch);
+
+    // Clear the renderer and copy the texture (the full software-drawn frame)
+    SDL_RenderClear(renderer_);
+    SDL_RenderCopy(renderer_, screenTexture_, NULL, NULL);
+
+    // Do NOT call SDL_RenderPresent here — that happens in Present()
+    // after DrawGraphics() has added hardware-accelerated overlays
     updateCount_=0;
+}
+
+void SDLGUIWindowImp::Present()
+{
+    SDL_RenderPresent(renderer_);
 }
 
 void SDLGUIWindowImp::ProcessExpose() 
 {
-    // Expose and resize events will cause a new surface to be needed.
-    surface_ = SDL_GetWindowSurface(window_);
+    // With renderer-based presentation, we just need to trigger a redraw
     _window->Update() ;
 }
 

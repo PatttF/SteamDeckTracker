@@ -481,6 +481,12 @@ void SampleEditorView::drawWaveformGraphical() {
     SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
     if (!imp) return;
 
+    SDL_Renderer *renderer = imp->GetRenderer();
+    if (!renderer) return;
+    int mult = imp->GetMult();
+    int ax = imp->GetAppAnchorX();
+    int ay = imp->GetAppAnchorY();
+
     int viewRange = viewEnd_ - viewStart_;
     if (viewRange <= 0) return;
 
@@ -490,40 +496,35 @@ void SampleEditorView::drawWaveformGraphical() {
     // Clear waveform area with background color
     unsigned short bgr, bgg, bgb;
     getColorForDef(CD_BACKGROUND, bgr, bgg, bgb);
-    GUIColor bgColor(bgr, bgg, bgb);
-    imp->SetColor(bgColor);
-    GUIRect bgRect(WAVE_PX_X, WAVE_PX_Y, WAVE_PX_X + WAVE_PX_W, WAVE_PX_Y + WAVE_PX_H);
-    imp->DrawRect(bgRect);
+    SDL_SetRenderDrawColor(renderer, bgr & 0xFF, bgg & 0xFF, bgb & 0xFF, 0xFF);
+    SDL_Rect bgRect = { WAVE_PX_X * mult + ax, WAVE_PX_Y * mult + ay, WAVE_PX_W * mult, WAVE_PX_H * mult };
+    SDL_RenderFillRect(renderer, &bgRect);
 
     // Draw cursor background first (so waveform draws on top)
     {
         unsigned short ccr, ccg, ccb;
         getColorForDef(CD_CURSOR, ccr, ccg, ccb);
-        GUIColor cursorBgColor(ccr / 4, ccg / 4, ccb / 4);
-        imp->SetColor(cursorBgColor);
-        GUIRect cursorBg(WAVE_PX_X + cursorX_, WAVE_PX_Y,
-                         WAVE_PX_X + cursorX_ + 3, WAVE_PX_Y + WAVE_PX_H);
-        imp->DrawRect(cursorBg);
+        SDL_SetRenderDrawColor(renderer, (ccr / 4) & 0xFF, (ccg / 4) & 0xFF, (ccb / 4) & 0xFF, 0xFF);
+        SDL_Rect cursorBg = { (WAVE_PX_X + cursorX_) * mult + ax, WAVE_PX_Y * mult + ay,
+                              3 * mult, WAVE_PX_H * mult };
+        SDL_RenderFillRect(renderer, &cursorBg);
     }
 
     // Draw center line (dimmed)
     unsigned short cr, cg, cb;
     getColorForDef(CD_HILITE1, cr, cg, cb);
-    GUIColor centerLineColor(cr / 3, cg / 3, cb / 3);
-    imp->SetColor(centerLineColor);
-    GUIRect centerLine(WAVE_PX_X, centerY, WAVE_PX_X + WAVE_PX_W, centerY + 1);
-    imp->DrawRect(centerLine);
+    SDL_SetRenderDrawColor(renderer, (cr / 3) & 0xFF, (cg / 3) & 0xFF, (cb / 3) & 0xFF, 0xFF);
+    SDL_Rect clRect = { WAVE_PX_X * mult + ax, centerY * mult + ay, WAVE_PX_W * mult, 1 * mult };
+    SDL_RenderFillRect(renderer, &clRect);
 
     // Pre-compute cursor color
     unsigned short ccr, ccg, ccb;
     getColorForDef(CD_CURSOR, ccr, ccg, ccb);
-    GUIColor cursorColor(ccr, ccg, ccb);
 
     unsigned short wr, wg, wb;
     getColorForDef(CD_HILITE1, wr, wg, wb);
-    GUIColor waveColor(wr, wg, wb);
     // Dimmed waveform color for regions outside start/end
-    GUIColor waveDimColor(wr / 3, wg / 3, wb / 3);
+    unsigned short wdr = wr / 3, wdg = wg / 3, wdb = wb / 3;
 
     // Get start/end points from instrument for visual dimming
     int instrStart = 0;
@@ -571,22 +572,20 @@ void SampleEditorView::drawWaveformGraphical() {
         }
 
         bool isCursor = (col >= cursorX_ && col < cursorX_ + 3);
-
-        // Determine if this column is outside the start/end range
         bool isOutside = (sampleStart < instrStart || sampleStart >= instrEnd);
 
         if (isCursor) {
-            imp->SetColor(cursorColor);
+            SDL_SetRenderDrawColor(renderer, ccr & 0xFF, ccg & 0xFF, ccb & 0xFF, 0xFF);
         } else if (isOutside) {
-            imp->SetColor(waveDimColor);
+            SDL_SetRenderDrawColor(renderer, wdr & 0xFF, wdg & 0xFF, wdb & 0xFF, 0xFF);
         } else {
-            imp->SetColor(waveColor);
+            SDL_SetRenderDrawColor(renderer, wr & 0xFF, wg & 0xFF, wb & 0xFF, 0xFF);
         }
 
         if (botY > topY) {
-            GUIRect bar(WAVE_PX_X + col, topY,
-                        WAVE_PX_X + col + 1, botY);
-            imp->DrawRect(bar);
+            SDL_Rect bar = { (WAVE_PX_X + col) * mult + ax, topY * mult + ay,
+                             1 * mult, (botY - topY) * mult };
+            SDL_RenderFillRect(renderer, &bar);
         }
     }
 
@@ -594,21 +593,19 @@ void SampleEditorView::drawWaveformGraphical() {
     if (instrStart > 0) {
         int sx = (int)((long long)(instrStart - viewStart_) * WAVE_PX_W / viewRange);
         if (sx >= 0 && sx < WAVE_PX_W) {
-            GUIColor startColor(0x00, 0xFF, 0x00);
-            imp->SetColor(startColor);
-            GUIRect startLine(WAVE_PX_X + sx, WAVE_PX_Y,
-                              WAVE_PX_X + sx + 1, WAVE_PX_Y + WAVE_PX_H);
-            imp->DrawRect(startLine);
+            SDL_SetRenderDrawColor(renderer, 0x00, 0xFF, 0x00, 0xFF);
+            SDL_Rect startLine = { (WAVE_PX_X + sx) * mult + ax, WAVE_PX_Y * mult + ay,
+                                   1 * mult, WAVE_PX_H * mult };
+            SDL_RenderFillRect(renderer, &startLine);
         }
     }
     if (instrEnd < totalSize) {
         int ex = (int)((long long)(instrEnd - viewStart_) * WAVE_PX_W / viewRange);
         if (ex >= 0 && ex < WAVE_PX_W) {
-            GUIColor endColor(0xFF, 0x00, 0x00);
-            imp->SetColor(endColor);
-            GUIRect endLine(WAVE_PX_X + ex, WAVE_PX_Y,
-                            WAVE_PX_X + ex + 1, WAVE_PX_Y + WAVE_PX_H);
-            imp->DrawRect(endLine);
+            SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF);
+            SDL_Rect endLine = { (WAVE_PX_X + ex) * mult + ax, WAVE_PX_Y * mult + ay,
+                                 1 * mult, WAVE_PX_H * mult };
+            SDL_RenderFillRect(renderer, &endLine);
         }
     }
 }
@@ -618,6 +615,12 @@ void SampleEditorView::drawSliceMarkersGraphical() {
 
     SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
     if (!imp) return;
+
+    SDL_Renderer *renderer = imp->GetRenderer();
+    if (!renderer) return;
+    int mult = imp->GetMult();
+    int ax = imp->GetAppAnchorX();
+    int ay = imp->GetAppAnchorY();
 
     for (int i = 0; i < sliceCount_; i++) {
         int screenX = sampleToScreen(slicePoints_[i]);
@@ -631,13 +634,13 @@ void SampleEditorView::drawSliceMarkersGraphical() {
         } else {
             getColorForDef(CD_HILITE2, sr, sg, sb);
         }
-        GUIColor sliceColor(sr, sg, sb);
-        imp->SetColor(sliceColor);
+        SDL_SetRenderDrawColor(renderer, sr & 0xFF, sg & 0xFF, sb & 0xFF, 0xFF);
 
         int x = WAVE_PX_X + screenX;
         int width = isSelected ? 2 : 1;
-        GUIRect sliceLine(x, WAVE_PX_Y, x + width, WAVE_PX_Y + WAVE_PX_H);
-        imp->DrawRect(sliceLine);
+        SDL_Rect sliceLine = { x * mult + ax, WAVE_PX_Y * mult + ay,
+                               width * mult, WAVE_PX_H * mult };
+        SDL_RenderFillRect(renderer, &sliceLine);
 
         // Draw slice number label at the top of the waveform area
         char label[4];
@@ -754,11 +757,16 @@ void SampleEditorView::DrawGraphics() {
             if (sx >= 0 && sx < WAVE_PX_W) {
                 SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
                 if (imp) {
-                    GUIColor playColor(0xFF, 0xFF, 0x00); // Yellow playhead
-                    imp->SetColor(playColor);
-                    GUIRect line(WAVE_PX_X + sx, WAVE_PX_Y,
-                                 WAVE_PX_X + sx + 2, WAVE_PX_Y + WAVE_PX_H);
-                    imp->DrawRect(line);
+                    SDL_Renderer *renderer = imp->GetRenderer();
+                    if (renderer) {
+                        int mult = imp->GetMult();
+                        int ax = imp->GetAppAnchorX();
+                        int ay = imp->GetAppAnchorY();
+                        SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0x00, 0xFF); // Yellow playhead
+                        SDL_Rect line = { (WAVE_PX_X + sx) * mult + ax, WAVE_PX_Y * mult + ay,
+                                          2 * mult, WAVE_PX_H * mult };
+                        SDL_RenderFillRect(renderer, &line);
+                    }
                 }
             }
         }

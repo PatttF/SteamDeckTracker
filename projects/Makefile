@@ -257,7 +257,7 @@ COMMONFILES := \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
 	UIIntVarOffField.o UIIntVarField.o UILV2ParameterField.o UILV2EffectParameterField.o UIVST3ParameterField.o UIVST3EffectParameterField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \
-	MessageBox.o \
+	ButtonMappingDialog.o MessageBox.o \
 	GrooveView.o UINoteVarField.o UIBigHexVarField.o \
 	SRPUpdaters.o UIStaticField.o \
 	Song.o Chain.o Phrase.o Project.o Scale.o \

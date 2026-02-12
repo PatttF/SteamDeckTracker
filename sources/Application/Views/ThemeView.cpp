@@ -273,6 +273,12 @@ void ThemeView::DrawGraphics() {
     SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
     if (!imp) return;
 
+    SDL_Renderer *renderer = imp->GetRenderer();
+    if (!renderer) return;
+    int mult = imp->GetMult();
+    int ax = imp->GetAppAnchorX();
+    int ay = imp->GetAppAnchorY();
+
     GUIPoint anchor = GetAnchor();
     const int cw = 8;
     const int ch = 8;
@@ -286,10 +292,9 @@ void ThemeView::DrawGraphics() {
         int swatchW = 2 * cw;
         int swatchH = ch;
 
-        GUIColor swatchColor(gc->_r & 0xFF, gc->_g & 0xFF, gc->_b & 0xFF);
-        imp->SetColor(swatchColor);
-        GUIRect swatchRect(swatchX, swatchY, swatchX + swatchW, swatchY + swatchH);
-        imp->DrawRect(swatchRect);
+        SDL_SetRenderDrawColor(renderer, gc->_r & 0xFF, gc->_g & 0xFF, gc->_b & 0xFF, 0xFF);
+        SDL_Rect swatchRect = { swatchX * mult + ax, swatchY * mult + ay, swatchW * mult, swatchH * mult };
+        SDL_RenderFillRect(renderer, &swatchRect);
     }
 }
 

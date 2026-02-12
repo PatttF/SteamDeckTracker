@@ -7,6 +7,28 @@
 #include "SDLGUIWindowImp.h"
 bool SDLEventManager::finished_=false ;
 bool SDLEventManager::dumpEvent_=false ;
+bool SDLEventManager::capturing_=false ;
+std::string SDLEventManager::capturedSource_ ;
+
+void SDLEventManager::StartCapture() {
+	capturing_ = true;
+	capturedSource_.clear();
+}
+
+void SDLEventManager::StopCapture() {
+	capturing_ = false;
+	capturedSource_.clear();
+}
+
+bool SDLEventManager::IsCapturing() {
+	return capturing_;
+}
+
+std::string SDLEventManager::ConsumeCapture() {
+	std::string result = capturedSource_;
+	capturedSource_.clear();
+	return result;
+}
 
 SDLEventManager::SDLEventManager() 
 {
@@ -82,6 +104,16 @@ int SDLEventManager::MainLoop()
           {
                         Trace::Log("EVENT","key(%s:%d):%d",SDL_GetScancodeName(event.key.keysym.scancode),event.key.keysym.scancode,1) ;
 					}
+					if (capturing_) {
+						char buf[64];
+						snprintf(buf, sizeof(buf), "key:0:%s",
+							SDL_GetScancodeName(event.key.keysym.scancode));
+						// lowercase the scancode name
+						for (char *p = buf; *p; p++) {
+							if (*p >= 'A' && *p <= 'Z') *p += 32;
+						}
+						capturedSource_ = buf;
+					}
                     keyboardCS_->SetKey((int)event.key.keysym.scancode,true) ;
 					break ;
 
@@ -95,6 +127,12 @@ int SDLEventManager::MainLoop()
 
 
 				case SDL_JOYBUTTONDOWN:
+					if (capturing_) {
+						char buf[64];
+						snprintf(buf, sizeof(buf), "but:%d:%d",
+							(int)event.jbutton.which, (int)event.jbutton.button);
+						capturedSource_ = buf;
+					}
 					if (event.jbutton.which < MAX_JOY_COUNT && buttonCS_[event.jbutton.which])
 						buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,true) ;
 					break ;
@@ -109,6 +147,16 @@ int SDLEventManager::MainLoop()
 					if (dumpEvent_) {
 						Trace::Log("EVENT","joy(%d)::%d=%d",event.jaxis.which,event.jaxis.axis,event.jaxis.value) ;
 					}
+					if (capturing_) {
+						float v = float(event.jaxis.value)/32767.0f;
+						if (v > 0.7f || v < -0.7f) {
+							char buf[64];
+							snprintf(buf, sizeof(buf), "joy:%d:%d%c",
+								(int)event.jaxis.which, (int)event.jaxis.axis,
+								v > 0 ? '+' : '-');
+							capturedSource_ = buf;
+						}
+					}
 					if (event.jaxis.which < MAX_JOY_COUNT && joystickCS_[event.jaxis.which])
 						joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
 					break ;
@@ -121,6 +169,19 @@ int SDLEventManager::MainLoop()
 							if (event.jhat.value&mask)
               {
 								Trace::Log("EVENT","hat(%d)::%d::%d",event.jhat.which,event.jhat.hat,i) ;
+							}
+						}
+					}
+					if (capturing_ && event.jhat.value != 0) {
+						// Find which direction bit is set (SDL hat: 1=up,2=right,4=down,8=left)
+						// Map to our hat channel: bit0=up, bit1=right, bit2=down, bit3=left
+						for (int i = 0; i < 4; i++) {
+							if (event.jhat.value & (1 << i)) {
+								char buf[64];
+								snprintf(buf, sizeof(buf), "hat:%d:%d",
+									(int)event.jhat.hat, i);
+								capturedSource_ = buf;
+								break;
 							}
 						}
 					}

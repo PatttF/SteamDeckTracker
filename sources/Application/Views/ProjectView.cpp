@@ -3,6 +3,7 @@
 #include "Application/Model/ProjectDatas.h"
 #include "Application/Model/Scale.h"
 #include "Application/Persistency/PersistencyService.h"
+#include "Application/Views/ModalDialogs/ButtonMappingDialog.h"
 #include "Application/Views/ModalDialogs/MessageBox.h"
 #include "Application/Views/ModalDialogs/NewProjectDialog.h"
 #include "Application/Views/ModalDialogs/SelectProjectDialog.h"
@@ -25,6 +26,7 @@
 #define ACTION_INSTALL_SAMPLES  MAKE_FOURCC('I','N','S','T')
 #define ACTION_INSTALL_LV2      MAKE_FOURCC('I','L','V','2')
 #define ACTION_THEME            MAKE_FOURCC('T','H','M','E')
+#define ACTION_MAP_BUTTONS      MAKE_FOURCC('M','A','P','B')
 
 static void SaveAsProjectCallback(View &v,ModalView &dialog) {
 
@@ -302,6 +304,11 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 
+    position._y += 1;
+    a1 = new UIActionField("Map Buttons", ACTION_MAP_BUTTONS, position);
+    a1->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(a1);
+
     position._y += 2;
     v = project_->FindVariable(VAR_RENDER);
     NAssert(v);
@@ -449,6 +456,11 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
             ViewEvent ve(VET_SWITCH_VIEW, &vt);
             SetChanged();
             NotifyObservers(&ve);
+            break;
+        }
+        case ACTION_MAP_BUTTONS: {
+            ButtonMappingDialog *bmd = new ButtonMappingDialog(*this);
+            DoModal(bmd);
             break;
         }
         case ACTION_QUIT: {
