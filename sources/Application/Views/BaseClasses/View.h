@@ -127,6 +127,8 @@ class View : public Observable {
 
     void DoModal(ModalView *view, ModalViewCallback cb = 0);
     bool HasModal() const { return modalView_ != 0; }
+    void ForwardPlayerUpdateToModal(PlayerEventType, unsigned int);
+    void ForwardDrawGraphicsToModal();
 
     void EnableNotification();
     void SetNotification(const char *notification, int offset = 2);

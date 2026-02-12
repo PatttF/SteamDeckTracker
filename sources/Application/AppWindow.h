@@ -39,6 +39,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     virtual void ClearRect(GUIRect &rect);
     virtual void SetColor(ColorDefinition cd);
     void SetDirty();
+    void InvalidateScreenCache();
 
   protected: // GUIWindow implementation
     virtual bool onEvent(GUIEvent &event);

@@ -68,6 +68,11 @@ public:
 	float GetWaveSample(int index) const; // 0..GetWaveSampleCount()-1 (oldest..newest)
 	int GetWaveSampleCount() const;
 
+	// Oscilloscope buffer (signed audio samples for real-time waveform display)
+	void PushOscilloscopeSamples(const float *samples, int count);
+	float GetOscilloscopeSample(int index) const; // 0..GetOscilloscopeSampleCount()-1
+	int GetOscilloscopeSampleCount() const;
+
 	// Mixer control helpers
 	void SetChannelVolume(int channel, int percent); // 0..100
 	int GetChannelVolume(int channel);
@@ -100,10 +105,15 @@ private:
   int pregain_;
   int masterVolume_;
 
-  // Waveform buffer
+  // Waveform buffer (peak envelope)
   static const int WAVE_SAMPLES_CONST = 512;
   float waveform_[WAVE_SAMPLES_CONST];
   int waveformPos_;
+
+  // Oscilloscope buffer (signed audio samples for waveform display)
+  static const int SCOPE_SAMPLES = 640; // enough for full pixel width
+  float scopeBuffer_[SCOPE_SAMPLES];
+  int scopeWritePos_;
   
   // Reverb effect
   Reverb reverb_;

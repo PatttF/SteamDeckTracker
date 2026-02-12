@@ -9,9 +9,10 @@
 #include "Application/Player/PlayerMixer.h"
 #include "System/Console/Trace.h"
 
-MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100), masterVolume_(100), waveformPos_(0) {
+MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(100), masterVolume_(100), waveformPos_(0), scopeWritePos_(0) {
     mode_ = MSRM_PLAYBACK;
     for (int i=0;i<WAVE_SAMPLES_CONST;i++) waveform_[i]=0.0f;
+    for (int i=0;i<SCOPE_SAMPLES;i++) scopeBuffer_[i]=0.0f;
     for (int i=0;i<SONG_CHANNEL_COUNT;i++) channelReverbSend_[i]=0.0f;
 };
 
@@ -347,6 +348,24 @@ float MixerService::GetWaveSample(int index) const {
 
 int MixerService::GetWaveSampleCount() const {
     return WAVE_SAMPLES_CONST;
+}
+
+void MixerService::PushOscilloscopeSamples(const float *samples, int count) {
+    for (int i = 0; i < count; i++) {
+        scopeBuffer_[scopeWritePos_] = samples[i];
+        scopeWritePos_ = (scopeWritePos_ + 1) % SCOPE_SAMPLES;
+    }
+}
+
+float MixerService::GetOscilloscopeSample(int index) const {
+    if (index < 0 || index >= SCOPE_SAMPLES) return 0.0f;
+    // Read from oldest to newest
+    int pos = (scopeWritePos_ + index) % SCOPE_SAMPLES;
+    return scopeBuffer_[pos];
+}
+
+int MixerService::GetOscilloscopeSampleCount() const {
+    return SCOPE_SAMPLES;
 }
 
 AudioOut *MixerService::GetAudioOut() {

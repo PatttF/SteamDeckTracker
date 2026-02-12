@@ -90,7 +90,9 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
              if (f > peak) peak = f;
              c++;
          }
-         if (peak > 1.0f) peak = 1.0f;
+         // Normalize: fp2fl returns values in 0..32767 range for full-scale
+         // 16-bit audio. Divide by 32768 to get 0..1 range.
+         peak /= 32768.0f;
          lastPeak_.store(peak, std::memory_order_relaxed);
      } else {
          lastPeak_.store(0.0f, std::memory_order_relaxed);

@@ -1,5 +1,6 @@
 #include "MixerView.h"
 #include "Application/AppWindow.h"
+#include "Adapters/SDL2/GUI/SDLGUIWindowImp.h"
 #include "Application/LogicalSize.h"
 #include "Application/Model/Mixer.h"
 #include "Application/Utils/char.h"
@@ -25,6 +26,19 @@ MixerView::MixerView(GUIWindow &w,ViewData *viewData):View(w,viewData) {
 	lastDrawTick_ = SDL_GetTicks();
 	lastUpdateLogTick_ = 0;
 	lastEventPushTick_ = 0;
+	meterLeftX_ = 0;
+	meterTopY_ = 0;
+	meterDx_ = 3;
+	meterGap_ = 0;
+	meterHeight_ = 10;
+	meterChannels_ = SONG_CHANNEL_COUNT;
+	scopeLeftPx_ = 0;
+	scopeTopPx_ = 0;
+	scopeWidthPx_ = 0;
+	scopeHeightPx_ = 0;
+	memset(chPeaks_, 0, sizeof(chPeaks_));
+	memset(chPeakHold_, 0, sizeof(chPeakHold_));
+	memset(chPeakTimer_, 0, sizeof(chPeakTimer_));
 	// Observe MixerService updates so we can request redraws on audio buffer events
 	MixerService::GetInstance()->AddObserver(*this);
 }
@@ -296,6 +310,45 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 		lastDownRepeatTime_ = 0;
 	}
 
+	// A button — toggle mute on selected channel (rising edge only)
+	// If any channel is soloed, lock out mute changes
+	if ((mask & EPBM_A) && !(lastMask_ & EPBM_A)) {
+		int ch = viewData_->mixerCol_;
+		if (ch < SONG_CHANNEL_COUNT) {
+			// Check if any channel is soloed — if so, block mute toggle
+			Mixer *mx = Mixer::GetInstance();
+			bool anySoloed = false;
+			for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+				if (mx->IsChannelSolo(i)) { anySoloed = true; break; }
+			}
+			if (!anySoloed) {
+				MixerService::GetInstance()->ToggleChannelMute(ch);
+				PlayerMixer *pm = PlayerMixer::GetInstance();
+				bool muted = pm ? pm->IsChannelMuted(ch) : false;
+				char nb[32];
+				snprintf(nb, sizeof(nb), "Ch %02d: %s", ch, muted ? "MUTED" : "unmuted");
+				SetNotification(nb, 0);
+			} else {
+				SetNotification("Solo active", 0);
+			}
+			isDirty_ = true;
+		}
+	}
+
+	// B button — toggle solo on selected channel (rising edge only)
+	if ((mask & EPBM_B) && !(lastMask_ & EPBM_B)) {
+		int ch = viewData_->mixerCol_;
+		if (ch < SONG_CHANNEL_COUNT) {
+			MixerService::GetInstance()->ToggleChannelSolo(ch);
+			Mixer *mx = Mixer::GetInstance();
+			bool soloed = mx ? mx->IsChannelSolo(ch) : false;
+			char nb[32];
+			snprintf(nb, sizeof(nb), "Ch %02d: %s", ch, soloed ? "SOLO" : "unsolo");
+			SetNotification(nb, 0);
+			isDirty_ = true;
+		}
+	}
+
 	// store mask for edge detection
 	lastMask_ = mask;
 } ;
@@ -335,6 +388,256 @@ void MixerView::processSelectionButtonMask(unsigned int mask, bool pressed) {
 		    }
 	  } 
 	}
+}
+
+// Pixel-level meter drawing — called after text buffer flush in AppWindow::Flush()
+void MixerView::DrawGraphics() {
+    SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
+    if (!imp) return;
+
+    const int charW = 8; // pixels per char cell
+    const int charH = 8;
+    const int meterCharWidth = 2; // each meter is 2 chars wide in pixels
+    int channels = meterChannels_;
+    int dx = meterDx_;
+    int gap = meterGap_;
+    int mH = meterHeight_;
+
+    // Update smoothed peaks from live audio data
+    MixerService *ms = MixerService::GetInstance();
+    bool clipped = ms->Clipped();
+
+    for (int i = 0; i <= channels; i++) {
+        float livePeak = 0.0f;
+        if (i < channels) {
+            int bus = Mixer::GetInstance()->GetBus(i);
+            if (bus >= 0) {
+                MixBus *mb = ms->GetMixBus(bus);
+                if (mb) livePeak = mb->GetLastPeak();
+            }
+        } else {
+            livePeak = ms->GetMasterPeak();
+        }
+
+        // Fast attack, smooth decay
+        if (livePeak > chPeaks_[i]) {
+            chPeaks_[i] = livePeak;
+        } else {
+            chPeaks_[i] *= 0.80f;
+            if (chPeaks_[i] < 0.001f) chPeaks_[i] = 0.0f;
+        }
+
+        // Peak hold
+        if (livePeak > chPeakHold_[i]) {
+            chPeakHold_[i] = livePeak;
+            chPeakTimer_[i] = 0;
+        } else {
+            chPeakTimer_[i]++;
+            if (chPeakTimer_[i] > 30) {
+                chPeakHold_[i] *= 0.96f;
+                if (chPeakHold_[i] < 0.001f) chPeakHold_[i] = 0.0f;
+            }
+        }
+    }
+
+    // Draw pixel meters for each channel + master
+    for (int i = 0; i <= channels; i++) {
+        int colX = meterLeftX_ + i * (dx + gap);
+        int vol;
+        if (i < channels) {
+            vol = ms->GetChannelVolume(i);
+        } else {
+            vol = ms->GetMasterVolume();
+        }
+
+        float volFrac = (float)vol / 100.0f;
+
+        // Pixel coordinates for this meter column (inset 1px each side for gaps)
+        int px = colX * charW + 1;
+        int py = meterTopY_ * charH;
+        int pw = meterCharWidth * charW - 2; // 14 pixels wide (inset)
+        int ph = mH * charH;                 // total pixel height
+
+        // Dark background
+        GUIColor bgColor(0x18, 0x18, 0x18);
+        imp->SetColor(bgColor);
+        GUIRect bgRect(px, py, px + pw, py + ph);
+        imp->DrawRect(bgRect);
+
+        // Live audio peak with smooth gradient (bottom=green, top=red)
+        // dB scale with +6dB headroom so 0dB sits at ~89%, red only above -3dB
+        // Note: bus peaks already have channel volume applied; master peak already
+        // has master damp applied. Do NOT multiply by volFrac again.
+        float peak = chPeaks_[i];
+        if (peak > 2.0f) peak = 2.0f; // clamp at +6dB (=2.0 linear)
+
+        // Map -48dB..+6dB → 0.0..1.0  (0dB = 48/54 ≈ 0.89)
+        float meterFrac = 0.0f;
+        if (peak > 0.0001f) {
+            float db = 20.0f * log10f(peak);
+            const float dbMin = -48.0f;
+            const float dbMax = 6.0f;
+            meterFrac = (db - dbMin) / (dbMax - dbMin);
+            if (meterFrac < 0.0f) meterFrac = 0.0f;
+            if (meterFrac > 1.0f) meterFrac = 1.0f;
+        }
+        int peakPx = (int)(meterFrac * ph);
+        if (peakPx > ph) peakPx = ph;
+
+        // Draw the meter as individual 2px-tall scanlines with interpolated color
+        // Color zones (in terms of meter fraction, 0=bottom, 1=top):
+        //   0.0  - 0.65  green → yellow  (covers -48dB to ~-13dB)
+        //   0.65 - 0.85  yellow → orange  (covers ~-13dB to ~-2dB)
+        //   0.85 - 1.0   orange → red     (covers ~-2dB to +6dB = clipping zone)
+        if (peakPx > 0) {
+            int meterTop = ph - peakPx;
+            for (int y = meterTop; y < ph; y += 2) {
+                float t = 1.0f - (float)y / (float)ph;
+
+                int r, g, b;
+                if (t < 0.65f) {
+                    float s = t / 0.65f;
+                    r = (int)(0x22 + s * (0xCC - 0x22));
+                    g = 0xCC;
+                    b = (int)(0x44 - s * 0x44);
+                } else if (t < 0.85f) {
+                    float s = (t - 0.65f) / 0.20f;
+                    r = (int)(0xCC + s * (0xEE - 0xCC));
+                    g = (int)(0xCC - s * (0xCC - 0x77));
+                    b = 0x00;
+                } else {
+                    float s = (t - 0.85f) / 0.15f;
+                    r = (int)(0xEE + s * (0xFF - 0xEE));
+                    g = (int)(0x77 - s * 0x77);
+                    b = 0x00;
+                }
+                if (clipped) { r = 0xFF; g = 0x00; b = 0x00; }
+
+                GUIColor c((unsigned short)r, (unsigned short)g, (unsigned short)b);
+                imp->SetColor(c);
+                int h2 = (y + 2 <= ph) ? 2 : ph - y;
+                GUIRect sr(px, py + y, px + pw, py + y + h2);
+                imp->DrawRect(sr);
+            }
+        }
+
+        // Volume level marker — thin bright line (dB scaled to match meter)
+        if (volFrac > 0.01f) {
+            float volDb = 20.0f * log10f(volFrac);
+            const float dbMin = -48.0f;
+            const float dbMax = 6.0f;
+            float volMeterFrac = (volDb - dbMin) / (dbMax - dbMin);
+            if (volMeterFrac < 0.0f) volMeterFrac = 0.0f;
+            if (volMeterFrac > 1.0f) volMeterFrac = 1.0f;
+            int volLineY = (int)(volMeterFrac * ph);
+            if (volLineY > ph - 1) volLineY = ph - 1;
+            GUIColor volMarker(0xDD, 0xDD, 0xDD);
+            imp->SetColor(volMarker);
+            GUIRect vlRect(px, py + ph - volLineY - 1, px + pw, py + ph - volLineY + 1);
+            imp->DrawRect(vlRect);
+        }
+
+        // Peak hold marker — thin horizontal line (dB scaled)
+        float hold = chPeakHold_[i];
+        if (hold > 0.01f) {
+            float holdDb = 20.0f * log10f(hold);
+            const float dbMin = -48.0f;
+            const float dbMax = 6.0f;
+            float holdFrac = (holdDb - dbMin) / (dbMax - dbMin);
+            if (holdFrac < 0.0f) holdFrac = 0.0f;
+            if (holdFrac > 1.0f) holdFrac = 1.0f;
+            int holdPx = (int)(holdFrac * ph);
+            if (holdPx > ph - 1) holdPx = ph - 1;
+            GUIColor holdColor = AppWindow::cursorColor_;
+            imp->SetColor(holdColor);
+            GUIRect holdRect(px, py + ph - holdPx - 2, px + pw, py + ph - holdPx);
+            imp->DrawRect(holdRect);
+        }
+    }
+
+    // ── Pixel oscilloscope (M8-style waveform trace) ──
+    if (scopeWidthPx_ > 0 && scopeHeightPx_ > 0) {
+        int sx = scopeLeftPx_;
+        int sy = scopeTopPx_;
+        int sw = scopeWidthPx_;
+        int sh = scopeHeightPx_;
+
+        // Use theme background color for scope area
+        GUIColor scopeBg(AppWindow::backgroundColor_._r,
+                        AppWindow::backgroundColor_._g,
+                        AppWindow::backgroundColor_._b);
+        imp->SetColor(scopeBg);
+        GUIRect scopeBgRect(sx, sy, sx + sw, sy + sh);
+        imp->DrawRect(scopeBgRect);
+
+        // Subtle center line (zero crossing reference) - slightly lighter than background
+        int centerY = sy + sh / 2;
+        int clR = AppWindow::backgroundColor_._r + 0x10;
+        int clG = AppWindow::backgroundColor_._g + 0x14;
+        int clB = AppWindow::backgroundColor_._b + 0x16;
+        if (clR > 255) clR = 255;
+        if (clG > 255) clG = 255;
+        if (clB > 255) clB = 255;
+        GUIColor centerLine((unsigned short)clR, (unsigned short)clG, (unsigned short)clB);
+        imp->SetColor(centerLine);
+        GUIRect clRect(sx, centerY, sx + sw, centerY + 1);
+        imp->DrawRect(clRect);
+
+        // Read oscilloscope samples from MixerService
+        MixerService *ms2 = MixerService::GetInstance();
+        int scopeN = ms2->GetOscilloscopeSampleCount();
+        if (scopeN > 0) {
+            // Map scope samples across the width; each pixel column gets one sample
+            // Waveform trace color: cyan/purple gradient like M8
+            const int traceR1 = 0x66, traceG1 = 0xDD, traceB1 = 0xFF; // cyan
+            const int traceR2 = 0xCC, traceG2 = 0x66, traceB2 = 0xFF; // purple
+
+            int prevY = -1;
+            for (int x = 0; x < sw; x++) {
+                // Map pixel column to sample index
+                int sIdx = (x * scopeN) / sw;
+                if (sIdx >= scopeN) sIdx = scopeN - 1;
+                float sample = ms2->GetOscilloscopeSample(sIdx);
+
+                // Clamp to -1..1
+                if (sample > 1.0f) sample = 1.0f;
+                if (sample < -1.0f) sample = -1.0f;
+
+                // Map sample to Y pixel (center = 0.0, top = -1.0, bottom = 1.0)
+                // Leave 2px padding top and bottom
+                int usableH = sh - 4;
+                int midY = sy + sh / 2;
+                int curY = midY - (int)(sample * (usableH / 2));
+
+                // Interpolate trace color across width (cyan → purple)
+                float t = (float)x / (float)(sw > 1 ? sw - 1 : 1);
+                int r = traceR1 + (int)(t * (traceR2 - traceR1));
+                int g = traceG1 + (int)(t * (traceG2 - traceG1));
+                int b = traceB1 + (int)(t * (traceB2 - traceB1));
+
+                // Draw vertical line connecting previous Y to current Y for continuity
+                if (prevY >= 0) {
+                    int y0 = (prevY < curY) ? prevY : curY;
+                    int y1 = (prevY < curY) ? curY : prevY;
+                    if (y1 - y0 < 1) y1 = y0 + 1;
+
+                    // Dim glow (wider, softer)
+                    int glowR = r / 4, glowG = g / 4, glowB = b / 4;
+                    GUIColor glowColor((unsigned short)glowR, (unsigned short)glowG, (unsigned short)glowB);
+                    imp->SetColor(glowColor);
+                    GUIRect glowRect(sx + x - 1, y0 - 1, sx + x + 2, y1 + 2);
+                    imp->DrawRect(glowRect);
+
+                    // Bright trace
+                    GUIColor traceColor((unsigned short)r, (unsigned short)g, (unsigned short)b);
+                    imp->SetColor(traceColor);
+                    GUIRect traceRect(sx + x, y0, sx + x + 1, y1 + 1);
+                    imp->DrawRect(traceRect);
+                }
+                prevY = curY;
+            }
+        }
+    }
 }
 
 void MixerView::DrawView() {
@@ -384,6 +687,9 @@ void MixerView::DrawView() {
 	// Draw channel labels and faders
 	unsigned int now = SDL_GetTicks();
 
+	// Shift everything up by 1 row so meters start at pos._y - 1
+	int meterStartRow = pos._y - 1;
+
 	for (int i = 0; i < channels; i++) {
 		int colX = pos._x; // base x for this column
 
@@ -393,88 +699,50 @@ void MixerView::DrawView() {
 		colProps.invert_ = selected;
 		SetColor(selected ? CD_HILITE2 : CD_NORMAL);
 
-		// label above meter: show bus id (hex) to match the bottom label
+		// label above meter (shifted up 1 row)
 		int bus = Mixer::GetInstance()->GetBus(i);
 		hex2char(bus, hex);
-		DrawString(colX, pos._y - 1, hex, colProps);
+		DrawString(colX, meterStartRow - 1, hex, colProps);
 
-		// draw meter as stacked blocks (bottom = lowest)
-		// meter should be 2 chars wide for the visual style
-		int meterWidth = 2;
-		// prepare padding strings (dx up to 4)
-		char padStr[8] = "";
-		int pad = dx - meterWidth;
-		if (pad > 0) {
-			for (int p = 0; p < pad && p < (int)sizeof(padStr)-1; p++) padStr[p] = ' ';
-			padStr[pad] = '\0';
-		} else {
-			padStr[0] = '\0';
-		}
-
-		// Display volume-only meter: read channel volume (0..100) and map to meter height
-		int channelVol = MixerService::GetInstance()->GetChannelVolume(i);
-		float displayPeak = (float)channelVol / 100.0f;
-		int filled = int(displayPeak * meterHeight + 0.5f);
-		if (filled < 0) filled = 0;
-		if (filled > meterHeight) filled = meterHeight;
-
-
-		for (int m = 0; m < meterHeight; m++) {
-			int row = meterHeight - 1 - m; // bottom-up
-			// prepare a pad string for remaining column width and a small filled block for the meter area
-			char padStr[8] = "";
-			int pad = dx - meterWidth;
-			if (pad > 0) {
-				for (int p = 0; p < pad && p < (int)sizeof(padStr)-1; p++) padStr[p] = ' ';
-				padStr[pad] = '\0';
-			} else {
-				padStr[0] = '\0';
-			}
-			// filled block (foreground glyphs) — keep it simple and robust
-			char fillBlock[8];
-			int fw = (meterWidth < (int)sizeof(fillBlock)-1) ? meterWidth : (int)sizeof(fillBlock)-1;
-			for (int e = 0; e < fw; e++) fillBlock[e] = '#';
-			fillBlock[fw] = '\0';
-
-			if (row < filled) {
-				// pick darker color by default, switch to lighter when channel has recent audio activity
-				float mbPeak = 0.0f;
-				if (bus >= 0) {
-					MixBus *mb = MixerService::GetInstance()->GetMixBus(bus);
-					if (mb) mbPeak = mb->GetLastPeak();
-				}
-				// show clip color only when master output is actually clipping
-                if (MixerService::GetInstance()->Clipped()) SetColor(CD_CLIP);
-                else SetColor(mbPeak > 0.02f ? CD_HILITE2 : CD_HILITE1);
-				// draw the filled glyphs and then pad to the full column width
-				DrawString(colX, pos._y + m, fillBlock, props);
-				if (pad > 0) DrawString(colX + meterWidth, pos._y + m, padStr, props);
-			} else {
-				// empty row: draw spaces across the column
-				char empty[8];
-				int ew = (dx < (int)sizeof(empty)-1) ? dx : (int)sizeof(empty)-1;
-				for (int e = 0; e < ew; e++) empty[e] = ' ';
-				empty[ew] = '\0';
-				DrawString(colX, pos._y + m, empty, props);
-			}
-		}
-
-		// draw empty row below the meter to create a gap between meter and volume percent
+		// Reserve blank space for the meter area — DrawGraphics() paints pixel bars
 		{
 			char empty[8];
 			int ew = (dx < (int)sizeof(empty)-1) ? dx : (int)sizeof(empty)-1;
 			for (int e = 0; e < ew; e++) empty[e] = ' ';
 			empty[ew] = '\0';
-			DrawString(colX, pos._y + meterHeight, empty, props);
+			SetColor(CD_NORMAL);
+			for (int m = 0; m < meterHeight; m++) {
+				DrawString(colX, meterStartRow + m, empty, props);
+			}
 		}
 
-		// draw volume percent (left-align within column so three digits are visible)
+		// draw volume percent right below meter
 		int vol = MixerService::GetInstance()->GetChannelVolume(i);
 		char vstr[8];
 		snprintf(vstr, sizeof(vstr), "%3d", vol);
-		DrawString(colX, pos._y + meterHeight + 1, vstr, props);
+		DrawString(colX, meterStartRow + meterHeight, vstr, props);
 
-	
+		// draw mute/solo indicator
+		{
+			PlayerMixer *pm = PlayerMixer::GetInstance();
+			Mixer *mx = Mixer::GetInstance();
+			bool muted = pm ? pm->IsChannelMuted(i) : false;
+			bool soloed = mx ? mx->IsChannelSolo(i) : false;
+			char ms[4];
+			if (soloed) {
+				snprintf(ms, sizeof(ms), " S ");
+				SetColor(CD_CURSOR);
+			} else if (muted) {
+				snprintf(ms, sizeof(ms), " M ");
+				SetColor(CD_HILITE1);
+			} else {
+				snprintf(ms, sizeof(ms), "   ");
+				SetColor(CD_NORMAL);
+			}
+			// Only draw as many chars as dx allows
+			ms[dx < 3 ? dx : 3] = '\0';
+			DrawString(colX, meterStartRow + meterHeight + 1, ms, props);
+		}
 
 		pos._x = colX + dx + gap;
 	}
@@ -492,101 +760,62 @@ void MixerView::DrawView() {
 	SetColor(selectedMaster ? CD_HILITE2 : CD_NORMAL);
 	char lblm[4];
 	snprintf(lblm, sizeof(lblm), "MAS");
-	DrawString(colX, pos._y - 1, lblm, colProps);
+	DrawString(colX, meterStartRow - 1, lblm, colProps);
 
-	// Master meter (same height as channel meters)
-	int masterVol = MixerService::GetInstance()->GetMasterVolume();
-	float masterPeak = (float)masterVol / 100.0f;
-	int masterFilled = int(masterPeak * meterHeight + 0.5f);
-	if (masterFilled < 0) masterFilled = 0;
-	if (masterFilled > meterHeight) masterFilled = meterHeight;
-	for (int m = 0; m < meterHeight; m++) {
-		int row = meterHeight - 1 - m;
-		int pad = dx - 2;
-		if (row < masterFilled) {
-			float mp = MixerService::GetInstance()->GetMasterPeak();
-			// show clip color only when output driver flags actual clipping
-                if (MixerService::GetInstance()->Clipped()) SetColor(CD_CLIP);
-                else SetColor(mp > 0.02f ? CD_HILITE2 : CD_HILITE1);
-			// draw the filled glyphs and then pad to the full column width
-			DrawString(colX, pos._y + m, "##", props);
-			if (pad > 0) {
-				char padStr[8] = "";
-				for (int p = 0; p < pad && p < (int)sizeof(padStr)-1; p++) padStr[p] = ' ';
-				padStr[pad] = '\0';
-				DrawString(colX + 2, pos._y + m, padStr, props);
-			}
-		} else {
-			char empty[8];
-			int ew = (dx < (int)sizeof(empty)-1) ? dx : (int)sizeof(empty)-1;
-			for (int e = 0; e < ew; e++) empty[e] = ' ';
-			empty[ew] = '\0';
-			DrawString(colX, pos._y + m, empty, props);
+	// Reserve blank space for master meter — DrawGraphics() paints pixel bars
+	{
+		char empty[8];
+		int ew = (dx < (int)sizeof(empty)-1) ? dx : (int)sizeof(empty)-1;
+		for (int e = 0; e < ew; e++) empty[e] = ' ';
+		empty[ew] = '\0';
+		SetColor(CD_NORMAL);
+		for (int m = 0; m < meterHeight; m++) {
+			DrawString(colX, meterStartRow + m, empty, props);
 		}
 	}
 
-	// draw volume percent for master (percent not inverted)
+	// draw volume percent for master right below meter
+	int masterVol = MixerService::GetInstance()->GetMasterVolume();
 	char vstrm[8];
 	snprintf(vstrm, sizeof(vstrm), "%3d", masterVol);
-	DrawString(colX, pos._y + meterHeight + 1, vstrm, props);
+	DrawString(colX, meterStartRow + meterHeight, vstrm, props);
 
-	// Enhanced waveform visualizer: taller, smoothed, with gradient glyphs
+	// master has no mute/solo, draw blank in that row
 	{
-		const int vizHeight = 9; // odd so we have a center row
-		int vizRow = pos._y + meterHeight + 2; // top row of waveform
-		int totalCols = (channels + 1) * dx + channels * gap; // character columns available for waveform
-		int sampleCount = MixerService::GetInstance()->GetWaveSampleCount();
+		char blank[4] = "   ";
+		blank[dx < 3 ? dx : 3] = '\0';
+		SetColor(CD_NORMAL);
+		DrawString(colX, meterStartRow + meterHeight + 1, blank, props);
+	}
 
+	// Cache layout for DrawGraphics pixel meter rendering
+	meterLeftX_ = mixerLeftX;
+	meterTopY_ = meterStartRow;  // meters shifted up 1 row
+	meterDx_ = dx;
+	meterGap_ = gap;
+	meterHeight_ = meterHeight;
+	meterChannels_ = channels;
+
+	// Reserve blank space for pixel oscilloscope (drawn in DrawGraphics)
+	// Layout: meters | vol% | mute/solo | oscilloscope
+	{
+		const int vizHeight = 9;
+		int vizRow = meterStartRow + meterHeight + 2;
+		int totalCols = (channels + 1) * dx + channels * gap;
 		if (totalCols <= 0) totalCols = 1;
 
-		// prepare rows using std::string to avoid manual malloc/free
-		std::vector<std::string> rows;
-		rows.resize(vizHeight);
-		for (int r = 0; r < vizHeight; r++) rows[r].assign(totalCols, ' ');
-
-		int center = vizHeight / 2;
-
-		// Draw columns from oldest (left) to newest (right) with simple linear interpolation
-		for (int c = 0; c < totalCols; c++) {
-			float rel = (float)c / (float)(totalCols - 1);
-			float fidx = rel * (sampleCount - 1);
-			int idx = (int)floor(fidx);
-			float frac = fidx - idx;
-			float s1 = MixerService::GetInstance()->GetWaveSample(idx);
-			float s2 = MixerService::GetInstance()->GetWaveSample((idx + 1) % sampleCount);
-			float s = s1 * (1.0f - frac) + s2 * frac; // interpolated amplitude [0..1]
-			// small smoothing: average with neighboring samples to reduce flicker
-			if (idx > 0) s = (s + MixerService::GetInstance()->GetWaveSample(idx - 1) * 0.5f) / 1.5f;
-
-			if (s < 0.0f) s = 0.0f;
-			if (s > 1.0f) s = 1.0f;
-
-			int amp = int(s * (float)center + 0.5f);
-			int top = center - amp;
-			int bottom = center + amp;
-			if (top < 0) top = 0;
-			if (bottom >= vizHeight) bottom = vizHeight - 1;
-
-			for (int r = top; r <= bottom; r++) {
-				// choose glyph by proximity to center for a gradient look
-				float d = 1.0f - (fabs((float)center - (float)r) / (float)center);
-				char g;
-				if (d >= 0.85f) g = '#';
-				else if (d >= 0.6f) g = '=';
-				else if (d >= 0.35f) g = '-';
-				else g = '.';
-				rows[r][c] = g;
-			}
-
-			// if very low amplitude and center is empty, draw a subtle baseline
-			if (amp == 0 && rows[center][c] == ' ') rows[center][c] = '-';
-		}
-
-		// render rows; use highlight for activity
+		// Clear character cells so no text artifacts show through
+		std::string blank(totalCols, ' ');
+		SetColor(CD_NORMAL);
 		for (int r = 0; r < vizHeight; r++) {
-			SetColor(CD_HILITE1);
-			DrawString(mixerLeftX, vizRow + r, rows[r].c_str(), props);
+			DrawString(mixerLeftX, vizRow + r, blank.c_str(), props);
 		}
+
+		// Cache pixel coordinates for DrawGraphics oscilloscope rendering
+		scopeLeftPx_ = mixerLeftX * 8;
+		scopeTopPx_ = vizRow * 8;
+		scopeWidthPx_ = totalCols * 8;
+		scopeHeightPx_ = vizHeight * 8;
 	}
 
 	drawMap();

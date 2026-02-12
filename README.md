@@ -51,6 +51,157 @@ In Steam search for SDTracker control layout in community to correctly map your 
 
 ---
 
+## Navigation
+
+SDTracker uses a page-based navigation system. A small guide map in the bottom-right corner shows the current page highlighted. Pages are arranged in a grid and you move between them using button combos:
+
+```
+ P G          P = Project   G = Groove
+ S C P I E    S = Song      C = Chain     P = Phrase   I = Instrument   E = Effect
+ M   T T      M = Mixer     T = Table (under Phrase or Instrument)
+```
+
+### Moving Between Pages
+
+| From | Action | Destination |
+|------|--------|-------------|
+| Any  | **R + Up** | Project |
+| Song | **R + Down** | Mixer |
+| Mixer | **R + Up** | Song |
+| Song | **R + Right** (on a chain) | Chain |
+| Chain | **R + Right** (on a phrase) | Phrase |
+| Chain | **R + Left** | Song |
+| Phrase | **R + Right** (on a note/instr) | Instrument |
+| Phrase | **R + Left** | Chain |
+| Instrument | **R + Left** | Phrase |
+| Instrument | **R + Right** | Effect |
+| Phrase | **R + Down** | Table |
+| Table | **R + Up** | Phrase |
+| Song | **R + Left** (on row 0) | Groove |
+
+### Playback Controls
+
+| Action | Description |
+|--------|-------------|
+| **Start** | Play from current position |
+| **R + Start** | Stop playback |
+| **L + Start** | Live mode — play current row |
+
+### Selection & Clipboard (Song / Chain / Phrase)
+
+| Action | Description |
+|--------|-------------|
+| **B** (held) + **D-Pad** | Start/extend selection |
+| **B** (release) | Copy selection |
+| **A** | Paste clipboard |
+| **L + B** | Select entire row |
+| **L + B + B** | Select entire screen |
+| **L + A** | Cut selection |
+
+### Mute & Solo (Song / Chain / Phrase)
+
+| Action | Description |
+|--------|-------------|
+| **R + B** | Toggle mute on cursor channel |
+| **R + A** | Toggle solo on cursor channel |
+| **L + R** | Un-mute all channels |
+
+---
+
+## Mixer Page
+
+Navigate to the Mixer from the Song page with **R + Down**. Return to Song with **R + Up**.
+
+### Layout (top to bottom)
+
+```
+ 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F MAS   ← Channel / Master labels
+ ████████████████████████████████████████████████████████  ← Pixel level meters (10 rows)
+ 100 100 100 100 100 100 100 100 100 100 100 ...  100    ← Volume %
+                  S           M                          ← Mute / Solo indicators
+ ~~~~~~~~~ oscilloscope waveform (real-time) ~~~~~~~~~~  ← Pixel oscilloscope
+```
+
+- **Level meters** — Per-channel pixel bars with a green → yellow → red gradient mapped to a dB scale (−48 dB to +6 dB). A bright peak-hold marker tracks the loudest recent level. The rightmost column is the master bus.
+- **Volume %** — Current volume for each channel (0–100) and master.
+- **Mute / Solo indicators** — Shows **M** when a channel is muted or **S** when soloed.
+- **Oscilloscope** — A real-time waveform trace of the master output, drawn in a cyan-to-purple gradient.
+
+### Mixer Controls
+
+| Action | Description |
+|--------|-------------|
+| **Left / Right** | Select channel (last column = Master) |
+| **Up / Down** | Increase / decrease volume on the selected channel |
+| **A** | Toggle mute on the selected channel (blocked while any channel is soloed) |
+| **B** | Toggle solo on the selected channel (mutes all others; press again to unsolo) |
+| **Start** | Play / Stop |
+| **R + Up** | Return to Song page |
+
+> **Solo lock:** While any channel is soloed, mute toggles are locked out. Unsolo the channel first (press **B** on the soloed channel) to restore normal mute control.
+
+---
+
+## Sample Recorder
+
+The sample recorder lets you capture audio from any connected input device directly into a WAV file and auto-import it into the current instrument.
+
+### Opening the Recorder
+
+1. Navigate to the **Instrument** page.
+2. Select the **`record`** action field and press **A** to open the Record Sample dialog.
+
+### Setup Phase
+
+When the dialog opens you'll see:
+
+| Field | Description |
+|-------|-------------|
+| **Input** | The capture device. Use **Left / Right** to cycle through available audio inputs. |
+| **Rate** | Detected native sample rate of the device (read-only). |
+| **Chan** | Detected channel count — Mono or Stereo (read-only). |
+
+Use **Up / Down** to move between the input selector and the buttons.
+
+| Button | Action |
+|--------|--------|
+| **Record** (A) | Start recording |
+| **Cancel** (A or B) | Close without recording |
+
+### Recording Phase
+
+While recording you'll see:
+
+- A **level meter** with a green → red gradient and a peak-hold marker so you can monitor input volume in real time.
+- A running **time counter** (minutes:seconds).
+- **Sample rate, channels, and sample count** info.
+- Maximum recording length is **120 seconds**.
+
+Press **A** or **B** to **stop** recording.
+
+### Save Phase
+
+After stopping, you can name and save the recording:
+
+- **Name field** — Use **A** to open the on-screen keyboard, then type a filename.
+  - **A** = insert character at cursor
+  - **B** = backspace / delete
+  - **L / R** = move cursor left / right in the name
+  - **D-Pad** = navigate the keyboard grid
+  - **Start** or select **OK** = close keyboard
+
+| Button | Action |
+|--------|--------|
+| **Preview** | Play back the recording to check it before saving |
+| **Save** | Write the WAV file to `samplelib/recordings/` and auto-import it into the current instrument |
+| **Discard** | Throw away the recording and close |
+
+Use **Left / Right** to move between Preview, Save, and Discard. Press **A** to activate. Press **B** at any time to discard and close.
+
+The saved file is a standard 16-bit PCM WAV at the device's native sample rate and channel count.
+
+---
+
 ## Command Reference
 
 Commands are entered in the phrase and table editors. Each command uses the format **`CMD:aabb`** where `aa` is typically a speed or modifier parameter and `bb` is the target value. All values are hexadecimal.

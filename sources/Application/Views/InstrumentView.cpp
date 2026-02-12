@@ -23,6 +23,7 @@
 #include "BaseClasses/UIVST3ParameterField.h"
 #include "ModalDialogs/MessageBox.h"
 #include "ModalDialogs/SavePresetDialog.h"
+#include "ModalDialogs/RecordSampleDialog.h"
 #include "System/System/System.h"
 #include "System/Console/Trace.h"
 #include "Application/Player/Player.h"
@@ -35,6 +36,7 @@
 #define ACTION_LOAD_VST3 MAKE_FOURCC('V','3','L','D')
 #define ACTION_SAVE_PRESET MAKE_FOURCC('P','S','A','V')
 #define ACTION_EDIT_SAMPLE MAKE_FOURCC('S','E','D','T')
+#define ACTION_REC_SAMPLE MAKE_FOURCC('R','E','C','S')
 
 // Callback for LV2 plugin selection dialog
 static void LV2PluginSelectCallback(View &v, ModalView &dialog) {
@@ -62,6 +64,33 @@ static void SavePresetCallback(View &v, ModalView &dialog) {
 
 	InstrumentView &iv = (InstrumentView &)v;
 	iv.OnSavePreset(name);
+}
+
+// Callback for record sample dialog
+static void RecordSampleCallback(View &v, ModalView &dialog) {
+	RecordSampleDialog &rsd = (RecordSampleDialog &)dialog;
+	if (rsd.GetReturnCode() == 1) {
+		std::string path = rsd.GetSavedPath();
+		if (!path.empty()) {
+			Trace::Log("RECORD", "Recording saved: %s, importing...", path.c_str());
+			// Auto-import the recorded sample into the current instrument
+			Path p(path.c_str());
+			SamplePool *pool = SamplePool::GetInstance();
+			int sampleID = pool->ImportSample(p);
+			if (sampleID >= 0) {
+				int i = v.viewData_->currentInstrument_;
+				InstrumentBank *bank = v.viewData_->project_->GetInstrumentBank();
+				I_Instrument *instr = bank->GetInstrument(i);
+				if (instr && instr->GetType() == IT_SAMPLE) {
+					SampleInstrument *sinstr = (SampleInstrument *)instr;
+					sinstr->AssignSample(sampleID);
+					Trace::Log("RECORD", "Auto-imported sample ID %d into instrument %02x", sampleID, i);
+				}
+			} else {
+				Trace::Error("RecordSample: failed to import %s", path.c_str());
+			}
+		}
+	}
 }
 
 InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
@@ -230,7 +259,22 @@ void InstrumentView::fillSampleParameters() {
     T_SimpleList<UIField>::Insert(f1);
     position._x -= 16;
 #endif
-    position._y += 2;
+    position._y += 1;
+    {
+        GUIPoint editPos = position;
+        UIActionField *editAf = new UIActionField("edit", ACTION_EDIT_SAMPLE, editPos);
+        T_SimpleList<UIField>::Insert(editAf);
+        editAf->AddObserver(*this);
+    }
+    position._x += 5;
+    {
+        GUIPoint recPos = position;
+        UIActionField *recAf = new UIActionField("record", ACTION_REC_SAMPLE, recPos);
+        T_SimpleList<UIField>::Insert(recAf);
+        recAf->AddObserver(*this);
+    }
+    position._x -= 5;
+    position._y += 1;
     v=instrument->FindVariable(SIP_VOLUME) ;
 	f1=new UIIntVarField(position,*v,"volume: %d [%2.2X]",0,255,1,10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
@@ -327,15 +371,6 @@ void InstrumentView::fillSampleParameters() {
 	v=instrument->FindVariable(SIP_SLICES) ;
 	f1=new UIIntVarField(position,*v,"slices: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
-
-	position._x+=13 ;
-	{
-		GUIPoint editPos = position;
-		UIActionField *editAf = new UIActionField("edit", ACTION_EDIT_SAMPLE, editPos);
-		T_SimpleList<UIField>::Insert(editAf);
-		editAf->AddObserver(*this);
-	}
-	position._x-=13 ;
 
 	v=instrument->FindVariable(SIP_TABLEAUTO) ;
 	position._y+=2 ;
@@ -1599,6 +1634,14 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
                     SetChanged();
                     NotifyObservers(&ve);
+                }
+                return;
+            }
+            if (fourcc == ACTION_REC_SAMPLE) {
+                InstrumentType it = getInstrumentType();
+                if (it == IT_SAMPLE) {
+                    RecordSampleDialog *dialog = new RecordSampleDialog(*this);
+                    DoModal(dialog, RecordSampleCallback);
                 }
                 return;
             }

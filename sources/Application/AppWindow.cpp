@@ -328,6 +328,7 @@ void AppWindow::Flush() {
     // Draw pixel-level graphics on top of text buffer
     if (_currentView) {
         _currentView->DrawGraphics();
+        _currentView->ForwardDrawGraphicsToModal();
     }
 
     GUIWindow::Flush();
@@ -648,6 +649,9 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
         if (_currentView) {
             SysMutexLocker locker(drawMutex_);
             _currentView->OnPlayerUpdate(pt->GetType(), pt->GetTickCount());
+            if (_currentView->HasModal()) {
+                _currentView->ForwardPlayerUpdateToModal(pt->GetType(), pt->GetTickCount());
+            }
             Invalidate();
         }
 
@@ -711,6 +715,11 @@ void AppWindow::Print(char *line) {
 };
 
 void AppWindow::SetColor(ColorDefinition cd) { colorIndex_ = cd; };
+
+void AppWindow::InvalidateScreenCache() {
+    memset(_preScreen, 0xFF, LOGICAL_SIZE);
+    memset(_preScreenProp, 0xFF, LOGICAL_SIZE);
+};
 
 Path AppWindow::GetLastProjectPath() {
     Path lastProjectFile(LAST_PROJECT_NAME);

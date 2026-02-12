@@ -252,12 +252,12 @@ void SongView::deepClonePosition() {
 
 void SongView::extendSelection() {
     GUIRect rect = getSelectionRect();
-    if (rect.Left() > 0 || rect.Right() < 7) {
+    if (rect.Left() > 0 || rect.Right() < SONG_CHANNEL_COUNT - 1) {
         if (viewData_->songX_ < clipboard_.x_) {
             viewData_->songX_ = 0;
-            clipboard_.x_ = 7;
+            clipboard_.x_ = SONG_CHANNEL_COUNT - 1;
         } else {
-            viewData_->songX_ = 7;
+            viewData_->songX_ = SONG_CHANNEL_COUNT - 1;
             clipboard_.x_ = 0;
         }
         isDirty_ = true;
@@ -502,7 +502,7 @@ void SongView::onStart() {
 void SongView::startCurrentRow() {
     Player *player = Player::GetInstance();
     player->SetSequencerMode(SM_LIVE);
-    player->OnSongStartButton(0, 7, false, false);
+    player->OnSongStartButton(0, SONG_CHANNEL_COUNT - 1, false, false);
 }
 
 void SongView::startImmediate() {

@@ -1,5 +1,6 @@
 
 #include "AudioOutDriver.h"
+#include "Application/Mixer/MixerService.h"
 #include "Application/Model/Project.h"
 #include "Application/Player/SyncMaster.h" // Should be installable
 #include "AudioDriver.h"
@@ -235,9 +236,34 @@ void AudioOutDriver::clipToMix() {
 			s2 += offset;
         };
 
-        // Store final post-damp peak for UI and meters
-        if (finalPeak > 1.0f) finalPeak = 1.0f;
+        // Normalize: fp2fl returns values in 0..32767 range for full-scale
+        // 16-bit audio. Divide by 32768 to get 0..1 range (1.0 = 0dBFS).
+        finalPeak /= 32768.0f;
+        if (finalPeak > 2.0f) finalPeak = 2.0f; // clamp at +6dB
         finalLastPeak_.store(finalPeak, std::memory_order_relaxed);
+
+        // Capture oscilloscope samples: downsample the post-damp audio to
+        // a manageable number of signed mono samples for waveform display.
+        // We take every Nth sample pair, mix to mono, normalize to -1..1.
+        {
+            const int maxScope = 128; // samples per buffer tick
+            int step = sampleCount_ / maxScope;
+            if (step < 1) step = 1;
+            float scopeBuf[128];
+            int scopeCount = 0;
+            fixed *sp = primarySoundBuffer_;
+            for (int i = 0; i < sampleCount_ && scopeCount < maxScope; i += step) {
+                // Mix L+R to mono, apply damp, normalize
+                float l = fp2fl(sp[i * 2]) * damp;
+                float r = fp2fl(sp[i * 2 + 1]) * damp;
+                float mono = (l + r) * 0.5f / 32768.0f;
+                if (mono > 1.0f) mono = 1.0f;
+                if (mono < -1.0f) mono = -1.0f;
+                scopeBuf[scopeCount++] = mono;
+            }
+            MixerService *ms = MixerService::GetInstance();
+            if (ms) ms->PushOscilloscopeSamples(scopeBuf, scopeCount);
+        }
     }
 } ;
 

@@ -22,6 +22,8 @@ class ModalView : public View {
   private:
     bool finished_;
     int returnCode_;
+
+  protected:
     int left_;
     int top_;
 };

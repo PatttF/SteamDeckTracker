@@ -245,6 +245,18 @@ void View::DoModal(ModalView *view,ModalViewCallback cb) {
 	isDirty_=true ;
 } ;
 
+void View::ForwardPlayerUpdateToModal(PlayerEventType evt, unsigned int tick) {
+	if (modalView_) {
+		modalView_->OnPlayerUpdate(evt, tick);
+	}
+}
+
+void View::ForwardDrawGraphicsToModal() {
+	if (modalView_) {
+		modalView_->DrawGraphics();
+	}
+}
+
 void View::Redraw() {
 	if (modalView_) {
 		if (isDirty_) {
@@ -272,6 +284,9 @@ void View::ProcessButton(unsigned short mask, bool pressed) {
 				modalViewCallback_(*this,*modalView_) ;
 			}
 			SAFE_DELETE(modalView_) ;
+			// Force full screen redraw to clear any pixel graphics
+			// the modal may have painted via DrawGraphics()
+			((AppWindow &)w_).InvalidateScreenCache();
 			isDirty_=true ;
 		}
 	} else {
