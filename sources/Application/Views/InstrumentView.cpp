@@ -1656,11 +1656,11 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
         Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
         if (tv) {
             int val = tv->GetInt();
-            // val==0 => Sample, val==1 => LV2, val==2 => SF2, val==3 => VST3, val==4 => MidiOut
+            // val==0 => Sample, val==1 => SF2, val==2 => VST3, val==3 => LV2, val==4 => MidiOut
             InstrumentType targetType = IT_SAMPLE;
-            if (val == 1) targetType = IT_LV2;
-            else if (val == 2) targetType = IT_SOUNDFONT;
-            else if (val == 3) targetType = IT_VST3;
+            if (val == 1) targetType = IT_SOUNDFONT;
+            else if (val == 2) targetType = IT_VST3;
+            else if (val == 3) targetType = IT_LV2;
             else if (val == 4) targetType = IT_MIDIOUT;
 
             if (instr->GetType() != targetType) {

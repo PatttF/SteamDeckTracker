@@ -57,15 +57,15 @@ InstrumentBank::InstrumentBank():Persistent("INSTRUMENTBANK") {
     }
 
     // Insert a 'type' Variable into each instrument so the UI can bind to it and allow switching
-    static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+    static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
     for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
         I_Instrument *ins = instrument_[i];
         // ID: ITYP
         FourCC id = MAKE_FOURCC('I','T','Y','P');
         int init = 0;
-        if (ins->GetType() == IT_LV2) init = 1;
-        else if (ins->GetType() == IT_SOUNDFONT) init = 2;
-        else if (ins->GetType() == IT_VST3) init = 3;
+        if (ins->GetType() == IT_SOUNDFONT) init = 1;
+        else if (ins->GetType() == IT_VST3) init = 2;
+        else if (ins->GetType() == IT_LV2) init = 3;
         else if (ins->GetType() == IT_MIDIOUT) init = 4;
         WatchedVariable *tv = new WatchedVariable("type", id, instrTypes, 5, init);
         ins->Insert(tv);
@@ -537,15 +537,15 @@ void InstrumentBank::SetInstrumentType(int i, InstrumentType type) {
 
     // Ensure the 'type' variable exists and is set appropriately
     int typeInit = 0;
-    if (type == IT_LV2) typeInit = 1;
-    else if (type == IT_SOUNDFONT) typeInit = 2;
-    else if (type == IT_VST3) typeInit = 3;
+    if (type == IT_SOUNDFONT) typeInit = 1;
+    else if (type == IT_VST3) typeInit = 2;
+    else if (type == IT_LV2) typeInit = 3;
     else if (type == IT_MIDIOUT) typeInit = 4;
     Variable *tv = n->FindVariable(MAKE_FOURCC('I','T','Y','P'));
     if (tv) {
         tv->SetInt(typeInit, false);
     } else {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+        static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
         WatchedVariable *ntv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, typeInit);
         n->Insert(ntv);
     }

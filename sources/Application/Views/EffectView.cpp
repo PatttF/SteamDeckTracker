@@ -1,5 +1,8 @@
 #include "EffectView.h"
+#include "Application/Instruments/I_Effect.h"
 #include "Application/Instruments/LV2Effect.h"
+#include "Application/Instruments/VST3Effect.h"
+#include "BaseClasses/UIVST3EffectParameterField.h"
 #include "Application/Model/Config.h"
 #include "BaseClasses/UIIntVarField.h"
 #include "BaseClasses/UIIntVarOffField.h"
@@ -9,6 +12,7 @@
 #include "Foundation/Variables/Variable.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "ModalDialogs/ImportLV2EffectDialog.h"
+#include "ModalDialogs/ImportVST3EffectDialog.h"
 #include "ModalDialogs/MessageBox.h"
 #include "System/Console/Trace.h"
 #include <cstring>
@@ -16,7 +20,12 @@
 #include <string>
 #include <map>
 
-#define ACTION_LOAD_LV2_EFFECT MAKE_FOURCC('E','F','L','D')
+#define ACTION_LOAD_EFFECT MAKE_FOURCC('E','F','L','D')
+#define EFTP MAKE_FOURCC('E','F','T','P')
+
+// Effect type names for the picker (index 0 = VST3, index 1 = LV2)
+static char *effectTypeNames[] = { (char*)"VST3", (char*)"LV2" };
+static const int NUM_EFFECT_TYPES = 2;
 
 // Callback for effect plugin selection dialog
 static void EffectPluginSelectCallback(View &v, ModalView &dialog) {
@@ -27,11 +36,12 @@ static void EffectPluginSelectCallback(View &v, ModalView &dialog) {
 EffectView::EffectView(GUIWindow &w, ViewData *data) : FieldView(w, data) {
     project_ = data->project_;
     currentEffect_ = 0;
-    lv2ScrollOffset_ = 0;
+    scrollOffset_ = 0;
     current_ = nullptr;
-    lv2LoadField_ = nullptr;
-    memset(lv2PluginLabel_, 0, sizeof(lv2PluginLabel_));
-    memset(lv2ParamText_, 0, sizeof(lv2ParamText_));
+    loadField_ = nullptr;
+    currentTypeIndex_ = 0;  // VST3 default
+    memset(pluginLabel_, 0, sizeof(pluginLabel_));
+    memset(paramText_, 0, sizeof(paramText_));
 }
 
 EffectView::~EffectView() {
@@ -40,18 +50,21 @@ EffectView::~EffectView() {
 void EffectView::onEffectChange() {
     ClearFocus();
 
-    LV2Effect *old = current_;
+    I_Effect *old = current_;
     current_ = project_->GetEffect(currentEffect_);
     if (!current_) return;
 
-    if (current_ != old && old != nullptr) {
-        // No observer pattern needed on effects for now
+    // Sync the type picker to match the current effect's type
+    if (current_->GetEffectType() == ET_VST3) {
+        currentTypeIndex_ = 0;
+    } else {
+        currentTypeIndex_ = 1;
     }
-    T_SimpleList<UIField>::Empty();
 
+    T_SimpleList<UIField>::Empty();
     fillEffectParameters();
 
-    // Focus the first non-static field (skip the static help text)
+    // Focus the first non-static field
     UIField *firstFocusable = nullptr;
     IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
     for (fit->Begin(); !fit->IsDone(); fit->Next()) {
@@ -68,12 +81,11 @@ void EffectView::fillEffectParameters() {
 
     GUIPoint position = GetAnchor();
 
-    // Constants for two-column layout
     const int COL_WIDTH = 27;
     const int MAX_ROWS = 17;
     const int PARAMS_PER_PAGE = MAX_ROWS * 2;
 
-    // Display help text at top-right
+    // Help text at top-right
     const char *helpText = "L4/R4 to change pages";
     const int CHAR_PX = 8;
     int winPixelWidth = w_.GetRect().Width();
@@ -88,55 +100,134 @@ void EffectView::fillEffectParameters() {
 
     position._y += 1;
 
-    // Display the plugin selector as a clickable action (opens LV2 effect browser)
-    if (current_->IsEmpty()) {
-        strcpy(lv2PluginLabel_, "load list");
-    } else {
-        snprintf(lv2PluginLabel_, sizeof(lv2PluginLabel_), "plugin: %s", current_->GetName());
+    // Type picker line: left/right to switch between VST3 and LV2
+    Variable *tv = current_->FindVariable(EFTP);
+    if (!tv) {
+        WatchedVariable *wtv = new WatchedVariable("type", EFTP, effectTypeNames, NUM_EFFECT_TYPES, currentTypeIndex_);
+        current_->Insert(wtv);
+        tv = wtv;
     }
-    UIActionField *af = new UIActionField(lv2PluginLabel_, ACTION_LOAD_LV2_EFFECT, position);
-    T_SimpleList<UIField>::Insert(af);
-    af->AddObserver(*this);
-    lv2LoadField_ = af;
+    UIIntVarField *typeField = new UIIntVarField(position, *tv, "type: %s", 0, NUM_EFFECT_TYPES - 1, 1, 1);
+    T_SimpleList<UIField>::Insert(typeField);
+    if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+        wtv->RemoveObserver(*this);
+        wtv->AddObserver(*this);
+    }
 
     position._y += 1;
+
+    // Plugin loader line
+    static char loadLabelBuf[80];
+    if (current_->IsEmpty()) {
+        strcpy(loadLabelBuf, "load list");
+    } else {
+        snprintf(loadLabelBuf, sizeof(loadLabelBuf), "plugin: %s", current_->GetName());
+    }
+    UIActionField *af = new UIActionField(loadLabelBuf, ACTION_LOAD_EFFECT, position);
+    T_SimpleList<UIField>::Insert(af);
+    af->AddObserver(*this);
+    loadField_ = af;
+
+    position._y += 1;
+
+    // Show bank/preset selectors for VST3 effects
+    if (!current_->IsEmpty() && current_->GetEffectType() == ET_VST3) {
+        VST3Effect *vst3fx = (VST3Effect *)current_;
+        if (vst3fx->GetBankCount() > 0) {
+            // Bank selector (if more than one bank)
+            if (vst3fx->GetBankCount() > 1) {
+                Variable *bv = vst3fx->FindVariable(VST3FX_BANK);
+                if (!bv) {
+                    int maxBank = vst3fx->GetBankCount() - 1;
+                    WatchedVariable *wbv = new WatchedVariable("bank", VST3FX_BANK, 0);
+                    wbv->AddObserver(*this);
+                    vst3fx->Insert(wbv);
+                    bv = wbv;
+                }
+                if (WatchedVariable *wbv = dynamic_cast<WatchedVariable *>(bv)) {
+                    wbv->RemoveObserver(*this);
+                    wbv->AddObserver(*this);
+                }
+                int maxBank = vst3fx->GetBankCount() - 1;
+                if (maxBank < 0) maxBank = 0;
+                UIIntVarField *bf = new UIIntVarField(position, *bv, "bank: %2.2X", 0, maxBank, 1, 0x10);
+                T_SimpleList<UIField>::Insert(bf);
+                position._y += 1;
+
+                // Show bank name
+                int bankIdx = vst3fx->GetCurrentBank();
+                const char *bankName = vst3fx->GetBankName(bankIdx);
+                snprintf(bankLabel_, sizeof(bankLabel_), "  [%s]", bankName);
+                UIStaticField *bsf = new UIStaticField(position, bankLabel_);
+                T_SimpleList<UIField>::Insert(bsf);
+                position._y += 1;
+            }
+
+            // Preset selector
+            Variable *pv = vst3fx->FindVariable(VST3FX_PRESET);
+            if (!pv) {
+                WatchedVariable *wpv = new WatchedVariable("preset", VST3FX_PRESET, 0);
+                wpv->AddObserver(*this);
+                vst3fx->Insert(wpv);
+                pv = wpv;
+            }
+            if (WatchedVariable *wpv = dynamic_cast<WatchedVariable *>(pv)) {
+                wpv->RemoveObserver(*this);
+                wpv->AddObserver(*this);
+            }
+            // Sync variable to actual preset
+            if (pv->GetInt() != vst3fx->GetCurrentPreset()) {
+                pv->SetInt(vst3fx->GetCurrentPreset());
+            }
+            int maxPreset = vst3fx->GetPresetCount() - 1;
+            if (maxPreset < 0) maxPreset = 0;
+            UIIntVarField *pf = new UIIntVarField(position, *pv, "preset: %2.2X", 0, maxPreset, 1, 0x10);
+            T_SimpleList<UIField>::Insert(pf);
+            position._y += 1;
+
+            // Show preset name
+            int presetIdx = vst3fx->GetCurrentPreset();
+            const char *presetName = vst3fx->GetPresetName(presetIdx);
+            snprintf(presetLabel_, sizeof(presetLabel_), "  [%s]", presetName);
+            UIStaticField *sf = new UIStaticField(position, presetLabel_);
+            T_SimpleList<UIField>::Insert(sf);
+            position._y += 1;
+        }
+    }
 
     // Show parameters if plugin is loaded
     if (!current_->IsEmpty()) {
         int paramCount = current_->GetParameterCount();
         if (paramCount > 0) {
-            // Group parameters by groupName, preserving order
-            std::vector<std::pair<std::string, std::vector<int>>> groups;
-            std::map<std::string, int> groupIndex;
-
-            for (int p = 0; p < paramCount; p++) {
-                const LV2PluginParameter *param = current_->GetParameter(p);
-                if (!param) continue;
-
-                std::string grp = param->groupName.empty() ? "" : param->groupName;
-                if (groupIndex.find(grp) == groupIndex.end()) {
-                    groupIndex[grp] = (int)groups.size();
-                    groups.push_back({grp, {}});
-                }
-                groups[groupIndex[grp]].second.push_back(p);
-            }
-
-            // Flatten grouped params into display order
             std::vector<int> displayOrder;
-            for (auto &grp : groups) {
-                for (int idx : grp.second) {
-                    displayOrder.push_back(idx);
+
+            if (current_->GetEffectType() == ET_LV2) {
+                // Group parameters by groupName
+                std::vector<std::pair<std::string, std::vector<int>>> groups;
+                std::map<std::string, int> groupIndex;
+                for (int p = 0; p < paramCount; p++) {
+                    const EffectParameter *param = current_->GetEffectParameter(p);
+                    if (!param) continue;
+                    std::string grp = param->groupName.empty() ? "" : param->groupName;
+                    if (groupIndex.find(grp) == groupIndex.end()) {
+                        groupIndex[grp] = (int)groups.size();
+                        groups.push_back({grp, {}});
+                    }
+                    groups[groupIndex[grp]].second.push_back(p);
                 }
+                for (auto &grp : groups) {
+                    for (int idx : grp.second) displayOrder.push_back(idx);
+                }
+            } else {
+                for (int p = 0; p < paramCount; p++) displayOrder.push_back(p);
             }
 
-            // Calculate scroll range
             int totalParams = (int)displayOrder.size();
-            int startIdx = lv2ScrollOffset_;
+            int startIdx = scrollOffset_;
             if (startIdx >= totalParams) startIdx = 0;
             int endIdx = startIdx + PARAMS_PER_PAGE;
             if (endIdx > totalParams) endIdx = totalParams;
 
-            // Display in two columns
             int baseY = position._y;
             int baseX = 0;
             int col = 0;
@@ -145,13 +236,13 @@ void EffectView::fillEffectParameters() {
 
             for (int i = startIdx; i < endIdx && textIdx < 40; i++, textIdx++) {
                 int p = displayOrder[i];
-                const LV2PluginParameter *param = current_->GetParameter(p);
+                const EffectParameter *param = current_->GetEffectParameter(p);
                 if (!param || !param->variable) continue;
 
                 GUIPoint pos(baseX + col * COL_WIDTH, baseY + row);
 
-                strncpy(lv2ParamText_[textIdx], param->name.c_str(), 22);
-                lv2ParamText_[textIdx][22] = '\0';
+                strncpy(paramText_[textIdx], param->name.c_str(), 22);
+                paramText_[textIdx][22] = '\0';
 
                 int stepSize = 1;
                 int bigStep = 10;
@@ -165,18 +256,24 @@ void EffectView::fillEffectParameters() {
                     }
                 }
 
-                UILV2EffectParameterField *pfield = new UILV2EffectParameterField(
-                    pos,
-                    *param->variable,
-                    lv2ParamText_[textIdx],
-                    current_,
-                    p,
-                    0,    // min
-                    127,  // max
-                    stepSize,
-                    bigStep
-                );
-                T_SimpleList<UIField>::Insert(pfield);
+                if (current_->GetEffectType() == ET_LV2) {
+                    LV2Effect *lv2fx = (LV2Effect *)current_;
+                    UILV2EffectParameterField *pfield = new UILV2EffectParameterField(
+                        pos, *param->variable, paramText_[textIdx],
+                        lv2fx, p, 0, 127, stepSize, bigStep);
+                    T_SimpleList<UIField>::Insert(pfield);
+                } else {
+                    VST3Effect *vst3fx = (VST3Effect *)current_;
+                    const VST3PluginParameter *vp = vst3fx->GetVST3Parameter(p);
+                    int maxVal = 127;
+                    if (vp && vp->stepCount > 0 && vp->stepCount <= 255) {
+                        maxVal = vp->stepCount;
+                    }
+                    UIVST3EffectParameterField *pfield = new UIVST3EffectParameterField(
+                        pos, *param->variable, paramText_[textIdx],
+                        vst3fx, p, 0, maxVal, stepSize, bigStep);
+                    T_SimpleList<UIField>::Insert(pfield);
+                }
 
                 row++;
                 if (row >= MAX_ROWS) {
@@ -192,14 +289,17 @@ void EffectView::fillEffectParameters() {
         }
 
         // Footer controls: volume and wet/dry
-        Variable *v = current_->FindVariable(LV2FX_VOLUME);
+        FourCC volId = (current_->GetEffectType() == ET_LV2) ? LV2FX_VOLUME : VST3FX_VOLUME;
+        FourCC wetId = (current_->GetEffectType() == ET_LV2) ? LV2FX_WETDRY : VST3FX_WETDRY;
+
+        Variable *v = current_->FindVariable(volId);
         if (v) {
             UIIntVarField *f1 = new UIIntVarField(position, *v, "volume: %2.2X", 0, 0xFF, 1, 0x10);
             T_SimpleList<UIField>::Insert(f1);
             position._y += 1;
         }
 
-        v = current_->FindVariable(LV2FX_WETDRY);
+        v = current_->FindVariable(wetId);
         if (v) {
             UIIntVarField *f1 = new UIIntVarField(position, *v, "wet/dry: %2.2X", 0, 0xFF, 1, 0x10);
             T_SimpleList<UIField>::Insert(f1);
@@ -212,14 +312,14 @@ void EffectView::fillEffectParameters() {
 
 void EffectView::warpToNext(int offset) {
     int effect = currentEffect_ + offset;
-    if (effect >= MAX_LV2EFFECT_COUNT) {
-        effect = effect - MAX_LV2EFFECT_COUNT;
+    if (effect >= MAX_EFFECT_COUNT) {
+        effect = effect - MAX_EFFECT_COUNT;
     }
     if (effect < 0) {
-        effect = MAX_LV2EFFECT_COUNT + effect;
+        effect = MAX_EFFECT_COUNT + effect;
     }
     currentEffect_ = effect;
-    lv2ScrollOffset_ = 0;
+    scrollOffset_ = 0;
     onEffectChange();
     isDirty_ = true;
 }
@@ -229,13 +329,24 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
 
     isDirty_ = false;
 
-    // Handle A press on load field
+    // Handle A press on load field or type field
     if (viewMode_ == VM_NEW) {
         if (mask == EPBM_A) {
             UIField *focusField = GetFocus();
-            if (focusField == lv2LoadField_) {
-                ImportLV2EffectDialog *dialog = new ImportLV2EffectDialog(*this, current_);
-                DoModal(dialog, EffectPluginSelectCallback);
+            if (focusField == loadField_) {
+                // Open the appropriate plugin browser based on current type
+                if (current_) {
+                    if (current_->GetEffectType() == ET_VST3) {
+                        ImportVST3EffectDialog *dialog = new ImportVST3EffectDialog(*this, current_);
+                        DoModal(dialog, EffectPluginSelectCallback);
+                    } else {
+                        LV2Effect *lv2fx = dynamic_cast<LV2Effect*>(current_);
+                        if (lv2fx) {
+                            ImportLV2EffectDialog *dialog = new ImportLV2EffectDialog(*this, lv2fx);
+                            DoModal(dialog, EffectPluginSelectCallback);
+                        }
+                    }
+                }
                 return;
             }
         }
@@ -249,7 +360,7 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
         viewMode_ = VM_NORMAL;
     }
 
-    // B modifier: navigate between effect slots (check BEFORE FieldView)
+    // B modifier: navigate between effect slots
     if (mask & EPBM_B) {
         if (mask & EPBM_LEFT) warpToNext(-1);
         else if (mask & EPBM_RIGHT) warpToNext(+1);
@@ -269,24 +380,20 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
     FieldView::ProcessButtonMask(mask);
 
     {
-        // A modifier
         if (mask == EPBM_A) {
             UIField *focusField = GetFocus();
-            if (focusField == lv2LoadField_) {
+            if (focusField == loadField_) {
                 viewMode_ = VM_NEW;
             }
         } else {
-            // R modifier: navigate to other views
             if (mask & EPBM_R) {
                 if (mask & EPBM_LEFT) {
-                    // Go to instrument view
                     ViewType vt = VT_INSTRUMENT;
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
                     SetChanged();
                     NotifyObservers(&ve);
                 }
                 if (mask & EPBM_DOWN) {
-                    // Go to table view
                     ViewType vt = VT_TABLE2;
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
                     SetChanged();
@@ -299,19 +406,18 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
                                           viewData_->chainRow_);
                 }
             } else if (mask & EPBM_L) {
-                // L shoulder: scroll LV2 parameters with wrap-around
+                // L shoulder: scroll parameters with wrap-around
                 const int PARAMS_PER_PAGE = 36;
                 if (current_ && !current_->IsEmpty() && current_->GetParameterCount() > PARAMS_PER_PAGE) {
-                    lv2ScrollOffset_ += 18;
-                    if (lv2ScrollOffset_ >= current_->GetParameterCount()) {
-                        lv2ScrollOffset_ = 0;
+                    scrollOffset_ += 18;
+                    if (scrollOffset_ >= current_->GetParameterCount()) {
+                        scrollOffset_ = 0;
                     }
                     onEffectChange();
                     isDirty_ = true;
                     return;
                 }
             } else {
-                // No modifier
                 Player *player = Player::GetInstance();
                 if (mask & EPBM_START) {
                     player->OnStartButton(PM_PHRASE, viewData_->songX_, false,
@@ -329,13 +435,11 @@ void EffectView::DrawView() {
     GUITextProperties props;
     GUIPoint pos = GetTitlePosition();
 
-    // Draw title
     char title[20];
     SetColor(CD_NORMAL);
     sprintf(title, "Effect %2.2X", currentEffect_);
     DrawString(pos._x, pos._y, title, props);
 
-    // Draw fields
     FieldView::Redraw();
     drawMap();
 }
@@ -345,13 +449,12 @@ void EffectView::OnFocus() {
 }
 
 void EffectView::OnEffectPluginSelected() {
-    lv2ScrollOffset_ = 0;
+    scrollOffset_ = 0;
     onEffectChange();
     isDirty_ = true;
 }
 
 void EffectView::Update(Observable &o, I_ObservableData *d) {
-    // Handle action field clicks (LV2 effect load action)
     UIActionField *action = dynamic_cast<UIActionField *>(&o);
     if (action) {
         if (d) {
@@ -360,14 +463,69 @@ void EffectView::Update(Observable &o, I_ObservableData *d) {
 #else
             unsigned int fourcc = (unsigned int)(intptr_t)d;
 #endif
-            if (fourcc == ACTION_LOAD_LV2_EFFECT) {
+            if (fourcc == ACTION_LOAD_EFFECT) {
                 if (current_) {
-                    ImportLV2EffectDialog *dialog = new ImportLV2EffectDialog(*this, current_);
-                    DoModal(dialog, EffectPluginSelectCallback);
+                    if (current_->GetEffectType() == ET_VST3) {
+                        ImportVST3EffectDialog *dialog = new ImportVST3EffectDialog(*this, current_);
+                        DoModal(dialog, EffectPluginSelectCallback);
+                    } else {
+                        LV2Effect *lv2fx = dynamic_cast<LV2Effect*>(current_);
+                        if (lv2fx) {
+                            ImportLV2EffectDialog *dialog = new ImportLV2EffectDialog(*this, lv2fx);
+                            DoModal(dialog, EffectPluginSelectCallback);
+                        }
+                    }
                 }
+                return;
+            }
+
+        }
+    }
+
+    // Check EFTP type switch FIRST — must take priority over preset changes
+    if (current_) {
+        Variable *tv = current_->FindVariable(EFTP);
+        if (tv) {
+            int val = tv->GetInt();
+            EffectType targetType = (val == 0) ? ET_VST3 : ET_LV2;
+            if (current_->GetEffectType() != targetType) {
+                currentTypeIndex_ = val;
+                EffectBank *bank = project_->GetEffectBank();
+                if (bank) {
+                    bank->SetEffectType(currentEffect_, targetType);
+                    current_ = bank->GetEffect(currentEffect_);
+                }
+                scrollOffset_ = 0;
+                onEffectChange();
+                isDirty_ = true;
                 return;
             }
         }
     }
+
+    // Handle VST3 effect bank/preset variable changes
+    if (current_ && current_->GetEffectType() == ET_VST3) {
+        VST3Effect *vst3fx = (VST3Effect *)current_;
+        Variable *bv = vst3fx->FindVariable(VST3FX_BANK);
+        if (bv && vst3fx->GetCurrentBank() != bv->GetInt()) {
+            vst3fx->SetCurrentBank(bv->GetInt());
+            // Reset preset to 0 when bank changes
+            Variable *pv = vst3fx->FindVariable(VST3FX_PRESET);
+            if (pv) pv->SetInt(0);
+            vst3fx->SetPreset(0);
+            onEffectChange();
+            isDirty_ = true;
+            return;
+        }
+        Variable *pv = vst3fx->FindVariable(VST3FX_PRESET);
+        if (pv && vst3fx->GetCurrentPreset() != pv->GetInt()) {
+            vst3fx->SetPreset(pv->GetInt());
+            onEffectChange();
+            isDirty_ = true;
+            return;
+        }
+    }
+
     onEffectChange();
 }
+

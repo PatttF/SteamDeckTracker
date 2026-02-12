@@ -1,12 +1,8 @@
 #ifndef _LV2_EFFECT_H_
 #define _LV2_EFFECT_H_
 
-#include "Foundation/Variables/VariableContainer.h"
-#include "Foundation/Observable.h"
+#include "I_Effect.h"
 #include "Application/Persistency/Persistent.h"
-#include "Application/Utils/fixed.h"
-#include <vector>
-#include <string>
 #include <cstdint>
 #include <map>
 #include <lv2/urid/urid.h>
@@ -22,7 +18,7 @@
 #define LV2FX_VOLUME   MAKE_FOURCC('F','V','O','L')
 #define LV2FX_WETDRY   MAKE_FOURCC('F','W','E','T')
 
-class LV2Effect : public VariableContainer, public I_Observer {
+class LV2Effect : public I_Effect {
 public:
     LV2Effect();
     virtual ~LV2Effect();
@@ -30,22 +26,25 @@ public:
     // I_Observer: notified when WatchedVariables change
     virtual void Update(Observable &o, I_ObservableData *d) override;
 
-    bool Init();
+    // I_Effect interface
+    virtual EffectType GetEffectType() const override { return ET_LV2; }
+    virtual bool Init() override;
+    virtual void Purge() override;
+    virtual bool IsEmpty() const override { return pluginURI_[0] == '\0'; }
+    virtual const char *GetName() const override;
+    virtual void SetForcedOutputChannels(int count) override;
+    virtual bool ProcessAudio(fixed *buffer, int sampleCount, int wetDry = 255) override;
+    virtual int GetParameterCount() const override { return (int)parameters_.size(); }
+    virtual const EffectParameter* GetEffectParameter(int index) const override;
+    virtual std::string GetParameterScalePointLabel(int paramIndex, float value) const override;
+    virtual void SaveContent(TiXmlNode *node) override;
+    virtual void RestoreContent(TiXmlElement *element) override;
 
-    bool IsEmpty() const { return pluginURI_[0] == '\0'; }
-    const char *GetName() const;
+    // LV2-specific methods
     const char *GetPluginURI() const { return pluginURI_; }
-
-    // Plugin management
     void SetPlugin(const char *uri);
-    void Purge();
 
-    // Audio processing: process interleaved stereo fixed-point buffer in-place
-    // Returns true if audio was modified
-    bool ProcessAudio(fixed *buffer, int sampleCount, int wetDry = 255);
-
-    // Parameter access
-    int GetParameterCount() const { return (int)parameters_.size(); }
+    // LV2-native parameter access (used by UILV2EffectParameterField)
     const LV2PluginParameter* GetParameter(int index) const {
         if (index >= 0 && index < (int)parameters_.size()) {
             return &parameters_[index];
@@ -53,15 +52,9 @@ public:
         return nullptr;
     }
     void SetParameterValue(int index, float value);
-    void SetForcedOutputChannels(int count);
-
-    // Scale point label lookup
-    std::string GetParameterScalePointLabel(int paramIndex, float value) const;
 
     // Persistence support
     void StorePendingVariable(const char *name, const char *value);
-    void SaveContent(TiXmlNode *node);
-    void RestoreContent(TiXmlElement *element);
 
 private:
     char name_[80];

@@ -54,7 +54,7 @@ public:
 
   InstrumentBank *GetInstrumentBank();
   EffectBank *GetEffectBank();
-  LV2Effect *GetEffect(int index);
+  I_Effect *GetEffect(int index);
   virtual void SaveContent(TiXmlNode *node);
   virtual void RestoreContent(TiXmlElement *element);
 

@@ -896,6 +896,27 @@ std::string LV2Effect::GetParameterScalePointLabel(int paramIndex, float value) 
     return "";
 }
 
+const EffectParameter* LV2Effect::GetEffectParameter(int index) const {
+    if (index < 0 || index >= (int)parameters_.size()) return nullptr;
+    // Build a static EffectParameter on the fly from the LV2PluginParameter
+    static thread_local EffectParameter ep;
+    const LV2PluginParameter &p = parameters_[index];
+    ep.name = p.name;
+    ep.groupName = p.groupName;
+    ep.minValue = p.minValue;
+    ep.maxValue = p.maxValue;
+    ep.currentValue = p.currentValue;
+    ep.variable = p.variable;
+    ep.scalePoints.clear();
+    for (auto &sp : p.scalePoints) {
+        EffectParameter::ScalePoint esp;
+        esp.value = sp.value;
+        esp.label = sp.label;
+        ep.scalePoints.push_back(esp);
+    }
+    return &ep;
+}
+
 void LV2Effect::Update(Observable &o, I_ObservableData *d) {
     Variable *v = dynamic_cast<Variable *>(&o);
     if (!v) return;

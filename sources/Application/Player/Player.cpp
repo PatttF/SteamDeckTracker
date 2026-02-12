@@ -5,7 +5,7 @@
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/I_Instrument.h"
 #include "Application/Instruments/SampleInstrument.h"
-#include "Application/Instruments/LV2Effect.h"
+#include "Application/Instruments/I_Effect.h"
 #include "Application/Utils/char.h"
 #include "System/Console/n_assert.h"
 #include "Application/Player/TablePlayback.h"
@@ -762,8 +762,8 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 				int wetDry = param & 0xFF;
 				Trace::Log("FXSN", "slot=%d wetDry=%d channel=%d", effectSlot, wetDry, channel);
 				PlayerChannel *ch = mixer_->GetChannel(channel);
-				if (effectSlot < MAX_LV2EFFECT_COUNT && project_) {
-					LV2Effect *effect = project_->GetEffect(effectSlot);
+				if (effectSlot < MAX_EFFECT_COUNT && project_) {
+					I_Effect *effect = project_->GetEffect(effectSlot);
 					Trace::Log("FXSN", "effect=%p ch=%p empty=%d", effect, ch, effect ? effect->IsEmpty() : -1);
 					if (ch && effect && !effect->IsEmpty()) {
 						ch->SetEffect(effect, wetDry);
@@ -771,7 +771,7 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 						ch->ClearEffect();
 					}
 				} else if (ch) {
-					// Slot >= MAX_LV2EFFECT_COUNT (e.g. FXSN FF00) = clear effect
+					// Slot >= MAX_EFFECT_COUNT (e.g. FXSN FF00) = clear effect
 					Trace::Log("FXSN", "clearing effect on channel %d (slot=0x%02X)", channel, effectSlot);
 					ch->ClearEffect();
 				}

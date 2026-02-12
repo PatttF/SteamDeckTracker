@@ -160,7 +160,7 @@ EffectBank* Project::GetEffectBank() {
 	return effectBank_ ;
 } ;
 
-LV2Effect* Project::GetEffect(int index) {
+I_Effect* Project::GetEffect(int index) {
 	return effectBank_->GetEffect(index) ;
 } ;
 

@@ -3,7 +3,7 @@
 #include "Application/Player/SyncMaster.h"
 #include "Application/Mixer/MixerService.h"
 #include "Application/Model/Mixer.h"
-#include "Application/Instruments/LV2Effect.h"
+#include "Application/Instruments/I_Effect.h"
 
 PlayerChannel::PlayerChannel(int index) {             
     index_=index ;
@@ -47,7 +47,7 @@ void PlayerChannel::StopInstrument() {
 
 bool PlayerChannel::Render(fixed *buffer,int samplecount) {
    I_Instrument *localInstr = 0;
-   LV2Effect *localEffect = nullptr;
+   I_Effect *localEffect = nullptr;
    int localWetDry = 255;
    {
        SysMutexLocker locker(startStopMutex_);
@@ -60,7 +60,7 @@ bool PlayerChannel::Render(fixed *buffer,int samplecount) {
      bool status=localInstr->Render(index_,buffer,samplecount,tableSlice) ;
      bool result = ((status)&&(!muted_));
 
-     // Apply LV2 effect if active
+     // Apply audio effect if active
      if (result && localEffect && !localEffect->IsEmpty()) {
          localEffect->ProcessAudio(buffer, samplecount, localWetDry);
      }
@@ -107,7 +107,7 @@ void PlayerChannel::Reset() {
 	effectWetDry_=255 ;
 } ;
 
-void PlayerChannel::SetEffect(LV2Effect *effect, int wetDry) {
+void PlayerChannel::SetEffect(I_Effect *effect, int wetDry) {
     SysMutexLocker locker(startStopMutex_);
     activeEffect_ = effect;
     effectWetDry_ = wetDry;

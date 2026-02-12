@@ -8,7 +8,7 @@
 #include "System/Process/SysMutex.h"
 #include <atomic>
 
-class LV2Effect;
+class I_Effect;
 
 class PlayerChannel: public AudioModule {
 public:
@@ -27,8 +27,8 @@ public:
 	void SetMixBus(int i) ;
 	void Reset() ;
 
-	// LV2 effect support
-	void SetEffect(LV2Effect *effect, int wetDry = 255);
+	// Audio effect support
+	void SetEffect(I_Effect *effect, int wetDry = 255);
 	void ClearEffect();
 
 private:
@@ -41,8 +41,8 @@ private:
 	// Mutex protecting start/stop/access to instr_
 	SysMutex startStopMutex_ ;
 
-	// LV2 effect chain
-	LV2Effect *activeEffect_;
+	// Audio effect chain
+	I_Effect *activeEffect_;
 	int effectWetDry_;
 
 	// Diagnostics

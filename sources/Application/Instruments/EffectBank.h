@@ -2,6 +2,7 @@
 #define _EFFECT_BANK_H_
 
 #include "Application/Persistency/Persistent.h"
+#include "Application/Instruments/I_Effect.h"
 #include "Application/Instruments/LV2Effect.h"
 
 class EffectBank : public Persistent {
@@ -9,7 +10,11 @@ public:
     EffectBank();
     ~EffectBank();
 
-    LV2Effect *GetEffect(int i);
+    I_Effect *GetEffect(int i);
+
+    // Change the effect type for a given slot (creates new effect, deletes old)
+    void SetEffectType(int slot, EffectType type);
+    EffectType GetEffectType(int slot) const;
 
     virtual void SaveContent(TiXmlNode *node);
     virtual void RestoreContent(TiXmlElement *element);
@@ -17,7 +22,7 @@ public:
     void Init();
 
 private:
-    LV2Effect *effects_[MAX_LV2EFFECT_COUNT];
+    I_Effect *effects_[MAX_EFFECT_COUNT];
 };
 
 #endif

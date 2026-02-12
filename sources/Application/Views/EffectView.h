@@ -4,8 +4,8 @@
 #include "BaseClasses/FieldView.h"
 #include "Foundation/Observable.h"
 #include "ViewData.h"
+#include "Application/Instruments/I_Effect.h"
 
-class LV2Effect;
 class UIActionField;
 
 class EffectView : public FieldView, public I_Observer {
@@ -28,10 +28,13 @@ protected:
 private:
     Project *project_;
     int currentEffect_;    // Currently selected effect slot (0-15)
-    int lv2ScrollOffset_;
-    char lv2PluginLabel_[80];
-    char lv2ParamText_[40][40];
-    UIActionField *lv2LoadField_;
-    LV2Effect *current_;
+    int scrollOffset_;
+    char pluginLabel_[80];
+    char paramText_[40][40];
+    UIActionField *loadField_;
+    I_Effect *current_;
+    int currentTypeIndex_;  // 0=VST3, 1=LV2 (picker index)
+    char bankLabel_[80];
+    char presetLabel_[80];
 };
 #endif
