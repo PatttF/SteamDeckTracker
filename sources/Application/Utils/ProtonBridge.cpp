@@ -1,56 +1,58 @@
 #include "ProtonBridge.h"
-#include "System/Console/Trace.h"
 #include "Application/Model/Config.h"
+#include "System/Console/Trace.h"
 #include "System/FileSystem/FileSystem.h"
 
-// The FileSystem.h eventually includes TinyXML headers which redefine FILE to I_File
-// We need the real system FILE* for popen/pclose, so undefine it here
+// The FileSystem.h eventually includes TinyXML headers which redefine FILE to
+// I_File We need the real system FILE* for popen/pclose, so undefine it here
 #ifdef FILE
 #undef FILE
 #undef fopen
 #undef fclose
 #endif
 
-#include <string>
-#include <vector>
 #include <algorithm>
-#include <sys/stat.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
+#include <sys/stat.h>
+#include <vector>
 
 // Helper: Parse version number from Proton directory name
-static void parseProtonVersion(const std::string& name, ProtonVersion& version) {
+static void parseProtonVersion(const std::string &name,
+                               ProtonVersion &version) {
     version.name = name;
     version.isExperimental = (name.find("Experimental") != std::string::npos);
-    
+
     if (version.isExperimental) {
         version.major = version.minor = version.patch = 0;
         return;
     }
-    
+
     // Parse "Proton X.Y-Z" format
     size_t pos = name.find("Proton ");
     if (pos == std::string::npos) {
         return;
     }
-    
-    const char* numStart = name.c_str() + pos + 7; // Skip "Proton "
-    char* end = nullptr;
+
+    const char *numStart = name.c_str() + pos + 7; // Skip "Proton "
+    char *end = nullptr;
     version.major = (int)strtol(numStart, &end, 10);
-    
+
     if (end && *end == '.') {
         version.minor = (int)strtol(end + 1, &end, 10);
     }
-    
+
     if (end && *end == '-') {
         version.patch = (int)strtol(end + 1, &end, 10);
     }
 }
 
 // Helper: Check if a wine binary exists at the given path
-static bool checkWinePath(const std::string& basePath, const char* subpath, std::string& outWinePath) {
+static bool checkWinePath(const std::string &basePath, const char *subpath,
+                          std::string &outWinePath) {
     std::string fullPath = basePath + "/" + subpath;
     struct stat st;
     if (stat(fullPath.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
@@ -61,82 +63,96 @@ static bool checkWinePath(const std::string& basePath, const char* subpath, std:
 }
 
 // Discover all available Proton installations
-std::vector<ProtonVersion> discoverAllProton(const char* homeDir) {
+std::vector<ProtonVersion> discoverAllProton(const char *homeDir) {
     std::vector<ProtonVersion> versions;
-    
-    std::string steamPath = std::string(homeDir) + "/.steam/steam/steamapps/common";
-    DIR* dir = opendir(steamPath.c_str());
+
+    std::string steamPath =
+        std::string(homeDir) + "/.steam/steam/steamapps/common";
+    DIR *dir = opendir(steamPath.c_str());
     if (!dir) {
-        Trace::Log("BRIDGE", "Steam directory not found: %s", steamPath.c_str());
+        Trace::Log("BRIDGE", "Steam directory not found: %s",
+                   steamPath.c_str());
         return versions;
     }
-    
-    struct dirent* entry;
+
+    struct dirent *entry;
     while ((entry = readdir(dir)) != nullptr) {
         // Skip . and ..
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        
+
         // Check if name contains "Proton"
         if (strstr(entry->d_name, "Proton") == nullptr) {
             continue;
         }
-        
+
         std::string protonPath = steamPath + "/" + entry->d_name;
         ProtonVersion version;
         parseProtonVersion(entry->d_name, version);
-        
+
         // Try to find wine binary (newer location first, then older)
         if (checkWinePath(protonPath, "files/bin/wine", version.winePath)) {
             versions.push_back(version);
-        } else if (checkWinePath(protonPath, "dist/bin/wine", version.winePath)) {
+        } else if (checkWinePath(protonPath, "dist/bin/wine",
+                                 version.winePath)) {
             versions.push_back(version);
         }
     }
-    
+
     closedir(dir);
-    
+
     // Sort: Experimental first, then by version descending
-    std::sort(versions.begin(), versions.end(), [](const ProtonVersion& a, const ProtonVersion& b) {
-        if (a.isExperimental != b.isExperimental) {
-            return a.isExperimental; // Experimental comes first
-        }
-        if (a.major != b.major) return a.major > b.major;
-        if (a.minor != b.minor) return a.minor > b.minor;
-        return a.patch > b.patch;
-    });
-    
+    std::sort(versions.begin(), versions.end(),
+              [](const ProtonVersion &a, const ProtonVersion &b) {
+                  if (a.isExperimental != b.isExperimental) {
+                      return a.isExperimental; // Experimental comes first
+                  }
+                  if (a.major != b.major)
+                      return a.major > b.major;
+                  if (a.minor != b.minor)
+                      return a.minor > b.minor;
+                  return a.patch > b.patch;
+              });
+
     // Log discovered versions
-    Trace::Log("BRIDGE", "Found %d Proton installation(s)", (int)versions.size());
+    Trace::Log("BRIDGE", "Found %d Proton installation(s)",
+               (int)versions.size());
     for (size_t i = 0; i < versions.size(); i++) {
-        Trace::Log("BRIDGE", "  [%d] %s -> %s", (int)i, versions[i].name.c_str(), versions[i].winePath.c_str());
+        Trace::Log("BRIDGE", "  [%d] %s -> %s", (int)i,
+                   versions[i].name.c_str(), versions[i].winePath.c_str());
     }
-    
+
     return versions;
 }
 
 // Find the best Proton wine binary path
-std::string findProtonWine(const char* homeDir) {
+std::string findProtonWine(const char *homeDir) {
     // Check for user preference in config
-    const char* preferredVersion = Config::GetInstance()->GetValue("PROTONVERSION");
-    
+    const char *preferredVersion =
+        Config::GetInstance()->GetValue("PROTONVERSION");
+
     std::vector<ProtonVersion> versions = discoverAllProton(homeDir);
     if (versions.empty()) {
         return "";
     }
-    
+
     // If user specified a preference, try to find it
     if (preferredVersion && preferredVersion[0] != '\0') {
-        for (const auto& v : versions) {
+        for (const auto &v : versions) {
             if (v.name.find(preferredVersion) != std::string::npos) {
-                Trace::Log("BRIDGE", "Using preferred Proton: %s", v.name.c_str());
+                Trace::Log("BRIDGE", "Using preferred Proton: %s",
+                           v.name.c_str());
                 return v.winePath;
             }
         }
-        Trace::Log("BRIDGE", "Preferred Proton '%s' not found, using auto-selected version", preferredVersion);
+        Trace::Log(
+            "BRIDGE",
+            "Preferred Proton '%s' not found, using auto-selected version",
+            preferredVersion);
     }
-    
+
     // Return the best (first) version
     Trace::Log("BRIDGE", "Auto-selected Proton: %s", versions[0].name.c_str());
     return versions[0].winePath;
@@ -145,12 +161,14 @@ std::string findProtonWine(const char* homeDir) {
 // Main entry point: bridge Windows VST3 plugins using yabridge + Proton
 void bridgeWindowsVST3s() {
     // Get HOME environment variable
-    const char* home = getenv("HOME");
+    const char *home = getenv("HOME");
     if (!home) {
-        Trace::Log("BRIDGE", "HOME environment variable not set, skipping Windows VST3 bridge");
+        Trace::Log(
+            "BRIDGE",
+            "HOME environment variable not set, skipping Windows VST3 bridge");
         return;
     }
-    
+
     // Create ~/.vst3/win/ directory if it doesn't exist
     std::string vst3WinDir = std::string(home) + "/.vst3/win";
     struct stat st;
@@ -167,46 +185,50 @@ void bridgeWindowsVST3s() {
             Trace::Log("BRIDGE", "Failed to create ~/.vst3/win directory");
             return;
         }
-        Trace::Log("BRIDGE", "Created %s for Windows VST3 files", vst3WinDir.c_str());
+        Trace::Log("BRIDGE", "Created %s for Windows VST3 files",
+                   vst3WinDir.c_str());
     }
-    
+
     // Find Proton wine binary
     std::string winePath = findProtonWine(home);
     if (winePath.empty()) {
-        Trace::Log("BRIDGE", "No Proton installation found, skipping Windows VST3 bridge");
+        Trace::Log(
+            "BRIDGE",
+            "No Proton installation found, skipping Windows VST3 bridge");
         return;
     }
-    
+
     // Locate bundled yabridge yabridgectl binary
-    const char* candidates[] = {
-        "bin:yabridge/yabridgectl",
-        "bin:../yabridge/yabridgectl"
-    };
-    
+    const char *candidates[] = {"bin:yabridge/yabridgectl",
+                                "bin:../yabridge/yabridgectl"};
+
     Path yabridgectlPath;
     bool found = false;
     for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
         Path candidate(candidates[i]);
-        if (FileSystem::GetInstance()->GetFileType(candidate.GetPath().c_str()) == FT_FILE) {
+        if (FileSystem::GetInstance()->GetFileType(
+                candidate.GetPath().c_str()) == FT_FILE) {
             yabridgectlPath = candidate;
             found = true;
             break;
         }
     }
-    
+
     if (!found) {
-        Trace::Log("BRIDGE", "yabridge not bundled, skipping Windows VST3 bridge");
+        Trace::Log("BRIDGE",
+                   "yabridge not bundled, skipping Windows VST3 bridge");
         return;
     }
-    
+
     std::string yabridgectlBin = yabridgectlPath.GetCanonicalPath();
     Trace::Log("BRIDGE", "Found yabridgectl: %s", yabridgectlBin.c_str());
-    
+
     // Run yabridgectl add "~/.vst3/win/"
-    std::string addCmd = "\"" + yabridgectlBin + "\" add \"" + vst3WinDir + "\" 2>&1";
+    std::string addCmd =
+        "\"" + yabridgectlBin + "\" add \"" + vst3WinDir + "\" 2>&1";
     Trace::Log("BRIDGE", "Running: %s", addCmd.c_str());
-    
-    FILE* addPipe = popen(addCmd.c_str(), "r");
+
+    FILE *addPipe = popen(addCmd.c_str(), "r");
     if (addPipe) {
         char line[256];
         while (fgets(line, sizeof(line), addPipe)) {
@@ -219,18 +241,20 @@ void bridgeWindowsVST3s() {
         }
         int addResult = pclose(addPipe);
         if (addResult != 0) {
-            Trace::Log("BRIDGE", "yabridgectl add failed with code %d", addResult);
+            Trace::Log("BRIDGE", "yabridgectl add failed with code %d",
+                       addResult);
         }
     } else {
         Trace::Log("BRIDGE", "Failed to run yabridgectl add");
         return;
     }
-    
+
     // Run WINELOADER="..." yabridgectl sync
-    std::string syncCmd = "WINELOADER=\"" + winePath + "\" \"" + yabridgectlBin + "\" sync 2>&1";
+    std::string syncCmd =
+        "WINELOADER=\"" + winePath + "\" \"" + yabridgectlBin + "\" sync 2>&1";
     Trace::Log("BRIDGE", "Running: %s", syncCmd.c_str());
-    
-    FILE* syncPipe = popen(syncCmd.c_str(), "r");
+
+    FILE *syncPipe = popen(syncCmd.c_str(), "r");
     if (syncPipe) {
         char line[256];
         while (fgets(line, sizeof(line), syncPipe)) {
@@ -243,9 +267,11 @@ void bridgeWindowsVST3s() {
         }
         int syncResult = pclose(syncPipe);
         if (syncResult == 0) {
-            Trace::Log("BRIDGE", "Windows VST3 bridge setup completed successfully");
+            Trace::Log("BRIDGE",
+                       "Windows VST3 bridge setup completed successfully");
         } else {
-            Trace::Log("BRIDGE", "yabridgectl sync failed with code %d", syncResult);
+            Trace::Log("BRIDGE", "yabridgectl sync failed with code %d",
+                       syncResult);
         }
     } else {
         Trace::Log("BRIDGE", "Failed to run yabridgectl sync");
