@@ -19,18 +19,19 @@
 12. [Audio Configuration](#audio-configuration)
 13. [MIDI Configuration](#midi-configuration)
 14. [Log Dumping](#log-dumping)
+15. [Windows VST3 Bridge (Steam Deck)](#windows-vst3-bridge-steam-deck)
 ----------
-15. [`mapping.xml` Guide](#mappingxml-guide)
-16. [Mapping a Joystick](#mapping-a-joystick)
-17. [`mapping.xml` Example](#mappingxml-example)
-18. [Checking Your Work](#checking-your-work)
-19. [Recovering X,Y to work on GP2X.](#recovering-xy-to-work-on-gp2x)
-20. [MAC OSX mapping](#mac-osx-mapping-howto)
-21. [PSP key mapping](#psp-key-mapping)
-22. [GP2X key mapping](#gp2x-key-mapping)
-23. [Dingoo key mapping](#dingoo-key-mapping)
-24. [Caanoo key mapping](#caanoo-key-mapping)
-25. [Mapping a Midi Controller](#mapping-a-midi-controller)
+16. [`mapping.xml` Guide](#mappingxml-guide)
+17. [Mapping a Joystick](#mapping-a-joystick)
+18. [`mapping.xml` Example](#mappingxml-example)
+19. [Checking Your Work](#checking-your-work)
+20. [Recovering X,Y to work on GP2X.](#recovering-xy-to-work-on-gp2x)
+21. [MAC OSX mapping](#mac-osx-mapping-howto)
+22. [PSP key mapping](#psp-key-mapping)
+23. [GP2X key mapping](#gp2x-key-mapping)
+24. [Dingoo key mapping](#dingoo-key-mapping)
+25. [Caanoo key mapping](#caanoo-key-mapping)
+26. [Mapping a Midi Controller](#mapping-a-midi-controller)
 
 ----------
 
@@ -593,3 +594,21 @@ the rough description of the `src string` is
 `note/cc`: selects the midi message
 
 `val`: the value that it's connected to
+
+## Windows VST3 Bridge (Steam Deck)
+
+SDTracker can automatically bridge Windows VST3 plugins using the Steam Deck's built-in Proton. Place Windows `.vst3` files in `~/.vst3/win/` and they will be available on the next app startup.
+
+By default, SDTracker auto-selects the best available Proton version (Experimental first, then the newest stable). To pin a specific version:
+
+```xml
+<CONFIG>
+    <PROTONVERSION value="Proton 9.0-4"/>
+</CONFIG>
+```
+
+Or via command line:
+```
+./SDTracker -PROTONVERSION="Proton 8.0-5"
+```
+

@@ -5,6 +5,7 @@
 #include "Services/Audio/Audio.h"
 #include "Application/Commands/CommandDispatcher.h"
 #include "Application/Controllers/ControlRoom.h"
+#include "Application/Utils/ProtonBridge.h"
 #include <sys/stat.h>
 #include <stdio.h>
 #include <fstream>
@@ -263,6 +264,10 @@ bool Application::Init(GUICreateWindowParams &params) {
       }
     }
   }
+
+  // Bridge Windows VST3 plugins using bundled yabridge + Proton
+  bridgeWindowsVST3s();
+
 	return true ;
 } ;
 

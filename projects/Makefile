@@ -261,7 +261,7 @@ COMMONFILES := \
 	GrooveView.o UINoteVarField.o UIBigHexVarField.o \
 	SRPUpdaters.o UIStaticField.o \
 	Song.o Chain.o Phrase.o Project.o Scale.o \
-	char.o n_assert.o fixed.o wildcard.o \
+	char.o n_assert.o fixed.o wildcard.o ProtonBridge.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
 	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o MidiOutInstrument.o LV2Instrument.o LV2Effect.o VST3Effect.o SoundFontInstrument.o VST3Instrument.o VST3IIDs.o funknown.o coreiids.o conststringtable.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
