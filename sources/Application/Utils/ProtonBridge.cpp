@@ -3,14 +3,22 @@
 #include "Application/Model/Config.h"
 #include "System/FileSystem/FileSystem.h"
 
+// The FileSystem.h eventually includes TinyXML headers which redefine FILE to I_File
+// We need the real system FILE* for popen/pclose, so undefine it here
+#ifdef FILE
+#undef FILE
+#undef fopen
+#undef fclose
+#endif
+
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <sys/stat.h>
 #include <dirent.h>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 // Helper: Parse version number from Proton directory name
 static void parseProtonVersion(const std::string& name, ProtonVersion& version) {
