@@ -998,10 +998,9 @@ bool VST3Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
 
     // Sync parameter changes
     FXParameterChanges paramChanges;
-    if (pendingEventsMutex_.TryLock()) {
-        renderLocalParams_.swap(pendingParamChanges_);
-        pendingEventsMutex_.Unlock();
-    }
+    pendingEventsMutex_.Lock();
+    renderLocalParams_.swap(pendingParamChanges_);
+    pendingEventsMutex_.Unlock();
 
     for (size_t i = 0; i < parameters_.size(); ++i) {
         VST3PluginParameter& p = parameters_[i];

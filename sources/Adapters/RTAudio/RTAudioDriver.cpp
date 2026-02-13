@@ -194,11 +194,13 @@ void RTAudioDriver::fillBuffer(short *stream,int frameCount)
   {
     // First move remaining bytes at the front
     // then get next queued buffer and copy data from it
+    // size_==0 means the slot is empty (consumed or never filled)
 
-    if (pool_[poolPlayPosition_].buffer_ == 0)
+    if (pool_[poolPlayPosition_].size_ == 0)
     { 
     // underrun, let's fill the buffer with blank and bail out
      SYS_MEMSET(stream, 0, len);
+     thread_->Notify() ; // Wake producer to prevent cascading underruns
      return ;
     }
     else
@@ -213,7 +215,8 @@ void RTAudioDriver::fillBuffer(short *stream,int frameCount)
       bufferSize_ = bufferSize_-bufferPos_ + pool_[poolPlayPosition_].size_ ;
       bufferPos_ = 0 ;
 
-      pool_[poolPlayPosition_].buffer_ = 0 ;
+      // Mark consumed — keep allocation, zero size for reuse
+      pool_[poolPlayPosition_].size_ = 0 ;
       poolPlayPosition_ = (poolPlayPosition_+1)%SOUND_BUFFER_COUNT ;
       thread_->Notify() ;
      }    	 

@@ -163,12 +163,15 @@ void SDLAudioDriver::OnChunkDone(Uint8 *stream,int len) {
           memmove(mainBuffer_,mainBuffer_+bufferPos_,bufferSize_-bufferPos_) ;
 
          // then get next queued buffer and copy data from it
+         // size_==0 means the slot is empty (consumed or never filled)
 
-    	 if (pool_[poolPlayPosition_].buffer_==0) {
+    	 if (pool_[poolPlayPosition_].size_==0) {
     		 SYS_MEMCPY(mainBuffer_+bufferSize_-bufferPos_, miniBlank_,len);
     		 bufferSize_=bufferSize_-bufferPos_+len ;
 		 
              bufferPos_=0 ;
+             // Wake the producer thread to prevent cascading underruns
+             if (thread_) thread_->Notify() ;
          } else {
 
 			memcpy(mainBuffer_+bufferSize_-bufferPos_, pool_[poolPlayPosition_].buffer_,pool_[poolPlayPosition_].size_);
@@ -179,8 +182,9 @@ void SDLAudioDriver::OnChunkDone(Uint8 *stream,int len) {
     	     bufferSize_=bufferSize_-bufferPos_+pool_[poolPlayPosition_].size_ ;
              bufferPos_=0 ;
            
-             // Mark buffer as consumed (don't free - pre-allocated for reuse)
-             pool_[poolPlayPosition_].buffer_=0 ;
+             // Mark buffer as consumed — keep allocation for reuse,
+             // just zero the size so AddBuffer knows the slot is free
+             pool_[poolPlayPosition_].size_=0 ;
              poolPlayPosition_=(poolPlayPosition_+1)%SOUND_BUFFER_COUNT ;
 	     	 if (thread_) thread_->Notify() ;
 

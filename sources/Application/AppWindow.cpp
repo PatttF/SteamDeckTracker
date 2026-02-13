@@ -232,116 +232,128 @@ void AppWindow::Redraw() {
 
 void AppWindow::Flush() {
 
-    SysMutexLocker locker(drawMutex_);
+    // Scope the mutex to cover only the rendering work (char drawing,
+    // texture upload, DrawGraphics). Present() and frame-rate limiting
+    // happen OUTSIDE the lock so the audio thread's Player observer
+    // updates (which also need drawMutex_) are never starved.
+    {
+        SysMutexLocker locker(drawMutex_);
 
-    Lock();
-    long flushStart = System::GetInstance()->GetClock();
+        Lock();
+        long flushStart = System::GetInstance()->GetClock();
 
-    GUITextProperties props;
-    GUIPoint pos;
+        GUITextProperties props;
+        GUIPoint pos;
 
-    ColorDefinition color = (ColorDefinition)-1;
-    pos._x = 0;
-    pos._y = 0;
-
-    int count = 0;
-
-    unsigned char *current = _charScreen;
-    unsigned char *previous = _preScreen;
-    unsigned char *currentProp = _charScreenProp;
-    unsigned char *previousProp = _preScreenProp;
-    for (int y = 0; y < LOGICAL_ROWS; y++) {
-        for (int x = 0; x < LOGICAL_COLS; x++) {
-#ifndef _LGPT_NO_SCREEN_CACHE_
-            if ((*current != *previous) || (*currentProp != *previousProp)) {
-#endif
-                props.invert_ = (*currentProp & PROP_INVERT) != 0;
-                if (((*currentProp) & 0x7F) != color) {
-                    color = (ColorDefinition)((*currentProp) & 0x7F);
-                    GUIColor gcolor = normalColor_;
-                    switch (color) {
-                    case CD_BACKGROUND:
-                        gcolor = backgroundColor_;
-                        break;
-                    case CD_NORMAL:
-                        break;
-                    case CD_BORDER:
-                        gcolor = borderColor_;
-                        break;
-                    case CD_CLIP:
-                        gcolor = clipColor_;
-                        break;
-                    case CD_HILITE1:
-                        gcolor = highlightColor_;
-                        break;
-                    case CD_HILITE2:
-                        gcolor = highlight2Color_;
-                        break;
-                    case CD_CONSOLE:
-                        gcolor = consoleColor_;
-                        break;
-                    case CD_CURSOR:
-                        gcolor = cursorColor_;
-                        break;
-                    case CD_PLAY:
-                        gcolor = playColor_;
-                        break;
-                    case CD_MUTE:
-                        gcolor = muteColor_;
-                        break;
-                    case CD_SONGVIEWFE:
-                        gcolor = songviewfeColor_;
-                        break;
-                    case CD_SONGVIEW00:
-                        gcolor = songview00Color_;
-                        break;
-                    case CD_ROW:
-                        gcolor = rownumberColor_;
-                        break;
-                    case CD_ROW2:
-                        gcolor = rownumber2Color_;
-                        break;
-                    case CD_MAJORBEAT:
-                        gcolor = majorbeatColor_;
-                        break;
-                    default:
-                        NAssert(0);
-                        break;
-                    }
-                    GUIWindow::SetColor(gcolor);
-                }
-                GUIWindow::DrawChar(*current, pos, props);
-                count++;
-#ifndef _LGPT_NO_SCREEN_CACHE_
-            }
-#endif
-            current++;
-            previous++;
-            currentProp++;
-            previousProp++;
-            pos._x += AppWindow::charWidth_;
-        }
-        pos._y += AppWindow::charHeight_;
+        ColorDefinition color = (ColorDefinition)-1;
         pos._x = 0;
+        pos._y = 0;
+
+        int count = 0;
+
+        unsigned char *current = _charScreen;
+        unsigned char *previous = _preScreen;
+        unsigned char *currentProp = _charScreenProp;
+        unsigned char *previousProp = _preScreenProp;
+        for (int y = 0; y < LOGICAL_ROWS; y++) {
+            for (int x = 0; x < LOGICAL_COLS; x++) {
+#ifndef _LGPT_NO_SCREEN_CACHE_
+                if ((*current != *previous) || (*currentProp != *previousProp)) {
+#endif
+                    props.invert_ = (*currentProp & PROP_INVERT) != 0;
+                    if (((*currentProp) & 0x7F) != color) {
+                        color = (ColorDefinition)((*currentProp) & 0x7F);
+                        GUIColor gcolor = normalColor_;
+                        switch (color) {
+                        case CD_BACKGROUND:
+                            gcolor = backgroundColor_;
+                            break;
+                        case CD_NORMAL:
+                            break;
+                        case CD_BORDER:
+                            gcolor = borderColor_;
+                            break;
+                        case CD_CLIP:
+                            gcolor = clipColor_;
+                            break;
+                        case CD_HILITE1:
+                            gcolor = highlightColor_;
+                            break;
+                        case CD_HILITE2:
+                            gcolor = highlight2Color_;
+                            break;
+                        case CD_CONSOLE:
+                            gcolor = consoleColor_;
+                            break;
+                        case CD_CURSOR:
+                            gcolor = cursorColor_;
+                            break;
+                        case CD_PLAY:
+                            gcolor = playColor_;
+                            break;
+                        case CD_MUTE:
+                            gcolor = muteColor_;
+                            break;
+                        case CD_SONGVIEWFE:
+                            gcolor = songviewfeColor_;
+                            break;
+                        case CD_SONGVIEW00:
+                            gcolor = songview00Color_;
+                            break;
+                        case CD_ROW:
+                            gcolor = rownumberColor_;
+                            break;
+                        case CD_ROW2:
+                            gcolor = rownumber2Color_;
+                            break;
+                        case CD_MAJORBEAT:
+                            gcolor = majorbeatColor_;
+                            break;
+                        default:
+                            NAssert(0);
+                            break;
+                        }
+                        GUIWindow::SetColor(gcolor);
+                    }
+                    GUIWindow::DrawChar(*current, pos, props);
+                    count++;
+#ifndef _LGPT_NO_SCREEN_CACHE_
+                }
+#endif
+                current++;
+                previous++;
+                currentProp++;
+                previousProp++;
+                pos._x += AppWindow::charWidth_;
+            }
+            pos._y += AppWindow::charHeight_;
+            pos._x = 0;
+        }
+        long flushEnd = System::GetInstance()->GetClock();
+
+        // Flush uploads the software surface to the GPU texture and renders it
+        GUIWindow::Flush();
+
+        // Draw hardware-accelerated pixel graphics on top of the rendered texture
+        if (_currentView) {
+            _currentView->DrawGraphics();
+            _currentView->ForwardDrawGraphicsToModal();
+        }
+
+        Unlock();
+        memcpy(_preScreen, _charScreen, LOGICAL_SIZE);
+        memcpy(_preScreenProp, _charScreenProp, LOGICAL_SIZE);
     }
-    long flushEnd = System::GetInstance()->GetClock();
+    // drawMutex_ is now released — Present and frame pacing cannot starve
+    // the audio thread.
 
-    // Flush uploads the software surface to the GPU texture and renders it
-    GUIWindow::Flush();
-
-    // Draw hardware-accelerated pixel graphics on top of the rendered texture
-    if (_currentView) {
-        _currentView->DrawGraphics();
-        _currentView->ForwardDrawGraphicsToModal();
-    }
-
-    // Present the final composited frame
+    // Present the final composited frame (outside mutex)
     SDLGUIWindowImp *sdlImp = (SDLGUIWindowImp *)GetImpWindow();
     if (sdlImp) sdlImp->Present();
 
-    Unlock();
-    memcpy(_preScreen, _charScreen, LOGICAL_SIZE);
-    memcpy(_preScreenProp, _charScreenProp, LOGICAL_SIZE);
+    // Manual frame-rate cap (~60 fps) to avoid burning CPU now that
+    // VSYNC is disabled. This sleep happens outside all locks.
+    SDL_Delay(1);
 };
 
 void AppWindow::LoadProject(const Path &p) {

@@ -1008,6 +1008,9 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
         }
 
         short *i2=i1+channelCount ;
+        // Clamp i2 so interpolation never reads past the wave buffer end
+        short *wavEnd=(short *)(wavbuf+rp->rendLoopEnd_*2*channelCount) ;
+        if (i2 >= wavEnd) i2 = i1 ;
 
 				if (filtering) 
         {
@@ -1345,12 +1348,13 @@ void SampleInstrument::SetSliceCount(int count) {
     if (count > MAX_MANUAL_SLICES) count = MAX_MANUAL_SLICES ;
     manualSliceCount_ = count ;
 
-    // Persist as a string variable: "count:pt0,pt1,pt2,..."
-    char buf[512] ;
+    // Persist as a string variable: "count:pt0:pt1:pt2:..."
+    char buf[2048] ;
     char *p = buf ;
-    p += sprintf(p, "%d", manualSliceCount_) ;
-    for (int i = 0 ; i < manualSliceCount_ ; i++) {
-        p += sprintf(p, ":%d", manualSlicePoints_[i]) ;
+    char *end = buf + sizeof(buf) - 1 ;
+    p += snprintf(p, end - p, "%d", manualSliceCount_) ;
+    for (int i = 0 ; i < manualSliceCount_ && p < end ; i++) {
+        p += snprintf(p, end - p, ":%d", manualSlicePoints_[i]) ;
     }
 
     Variable *v = FindVariable(SIP_SLICEPTS) ;

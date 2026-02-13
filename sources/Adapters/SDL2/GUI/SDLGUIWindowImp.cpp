@@ -122,8 +122,9 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
         SDL_FreeSurface(icon);
     }
 
-    // Create hardware-accelerated renderer
-    renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    // Create hardware-accelerated renderer (no VSYNC — frame rate is managed
+    // manually to avoid blocking the main thread and starving the audio thread)
+    renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer_) {
         // Fallback to software renderer
         renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE);

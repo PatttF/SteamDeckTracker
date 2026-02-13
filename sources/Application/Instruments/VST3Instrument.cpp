@@ -630,10 +630,12 @@ bool VST3Instrument::Start(int channel, unsigned char note, bool retrigger) {
         pendingNoteEvents_.push_back(offEvt);
     }
     pendingNoteEvents_.push_back(evt);
-    pendingEventsMutex_.Unlock();
 
+    // Update tracking state under the same lock so Render() and Stop()
+    // always see consistent lastNote_/playing_ vs queued events
     lastNote_[channel] = note;
     playing_[channel] = true;
+    pendingEventsMutex_.Unlock();
 
     // Reset LFO phases on new note
     tremoloLFO_[channel].phase = 0;
@@ -644,7 +646,12 @@ bool VST3Instrument::Start(int channel, unsigned char note, bool retrigger) {
 
 void VST3Instrument::Stop(int channel) {
     if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
-    if (!playing_[channel]) return;
+
+    pendingEventsMutex_.Lock();
+    if (!playing_[channel]) {
+        pendingEventsMutex_.Unlock();
+        return;
+    }
 
     // Queue note off
     PendingNoteEvent evt;
@@ -652,12 +659,10 @@ void VST3Instrument::Stop(int channel) {
     evt.pitch = lastNote_[channel];
     evt.velocity = 0.0f;
     evt.noteId = lastNote_[channel];
-
-    pendingEventsMutex_.Lock();
     pendingNoteEvents_.push_back(evt);
-    pendingEventsMutex_.Unlock();
 
     playing_[channel] = false;
+    pendingEventsMutex_.Unlock();
 }
 
 bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTick) {
@@ -666,7 +671,13 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         return false;
     }
 
-    bool noteActive = playing_[channel];
+    // Snapshot playing state under lock (consistent with Start/Stop)
+    bool noteActive;
+    {
+        pendingEventsMutex_.Lock();
+        noteActive = playing_[channel];
+        pendingEventsMutex_.Unlock();
+    }
 
     // Render-once-per-cycle: detect new audio cycle when the same channel
     // bit is already set (meaning we've come around again).
@@ -714,12 +725,14 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         SimpleEventList eventList;
         SimpleParameterChanges paramChanges;
 
-        if (pendingEventsMutex_.TryLock()) {
-            renderLocalNotes_.swap(pendingNoteEvents_);
-            renderLocalParams_.swap(pendingParamChanges_);
-            renderLocalMidiCCs_.swap(pendingMidiCCs_);
-            pendingEventsMutex_.Unlock();
-        }
+        // Use Lock() instead of TryLock() to guarantee we never silently
+        // drop pending note events — losing a note-off causes stuck notes
+        // and can crash the plugin on rapid retrigger.
+        pendingEventsMutex_.Lock();
+        renderLocalNotes_.swap(pendingNoteEvents_);
+        renderLocalParams_.swap(pendingParamChanges_);
+        renderLocalMidiCCs_.swap(pendingMidiCCs_);
+        pendingEventsMutex_.Unlock();
 
         // Sync parameter values from Variables to parameter changes
         // (runs on audio thread only, so no lock needed for the variables)

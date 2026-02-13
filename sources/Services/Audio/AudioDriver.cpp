@@ -9,6 +9,9 @@ AudioDriver::AudioDriver(AudioSettings &settings) {
 }
 
 AudioDriver::~AudioDriver() {
+	for (int i=0;i<SOUND_BUFFER_COUNT;i++) {
+		SAFE_FREE(pool_[i].buffer_) ;
+	}
 }
 
 bool AudioDriver::Init() {
@@ -32,8 +35,9 @@ bool AudioDriver::Start() {
 
     isPlaying_=true ; 
 
+    // Mark all pool slots as empty but keep allocations for reuse
     for (int i=0;i<SOUND_BUFFER_COUNT;i++) {
-  	  SAFE_FREE(pool_[i].buffer_) ;
+  	  pool_[i].size_=0 ;
     } ;
 	 
     poolQueuePosition_=0 ;
@@ -60,7 +64,8 @@ void AudioDriver::AddBuffer(short *buffer,int samplecount) {
       return ;
   }
 
-  if (pool_[poolQueuePosition_].buffer_!=0) {
+  // size_>0 means the slot still has unconsumed data
+  if (pool_[poolQueuePosition_].size_>0) {
   Trace::Error("Audio overrun, please report") ;
   // Buffer still has unconsumed data — skip this write to prevent stuck loop.
   // Advance position so subsequent writes don't keep hitting the same slot.
