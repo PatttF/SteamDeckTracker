@@ -60,6 +60,20 @@ copy_lib "libserd"
 copy_lib "libsord"
 copy_lib "libsratom"
 
+# Bundle yabridge for Windows VST3 bridging via Proton
+echo "Bundling yabridge..."
+mkdir -p "$DIST_DIR/yabridge"
+# Note: yabridge binaries must be obtained separately and placed in the build environment
+if [ -d "$TRACKER_ROOT/yabridge" ]; then
+    for f in yabridgectl yabridge-host.exe yabridge-host.exe.so libyabridge-vst3.so; do
+        if [ -f "$TRACKER_ROOT/yabridge/$f" ]; then
+            cp "$TRACKER_ROOT/yabridge/$f" "$DIST_DIR/yabridge/"
+            echo "  Bundled yabridge: $f"
+        fi
+    done
+    chmod +x "$DIST_DIR/yabridge/yabridgectl" 2>/dev/null || true
+fi
+
 # Create launcher script that sets LD_LIBRARY_PATH
 cat > "$DIST_DIR/sdtracker.sh" << 'EOF'
 #!/bin/bash
