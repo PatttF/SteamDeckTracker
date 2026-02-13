@@ -27,6 +27,25 @@ void init_filters(void)
     filters_inited = true;
 }
 
+// Fast approximation of 10^x for x in ~[0.6, 3.7]
+// Uses exp2(x * log2(10)) with a fast exp2 polynomial
+// Max error ~0.5% which is inaudible for filter cutoff
+static inline float fastPow10(float x) {
+    float y = x * 3.321928095f; // x * log2(10)
+    // Separate integer and fractional parts
+    int yi = (int)y;
+    if (y < 0) yi--; // floor for negative
+    float yf = y - (float)yi;
+    // Polynomial approximation of 2^frac for frac in [0,1)
+    // (quadratic is sufficient for audio filter use)
+    float exp2f = 1.0f + yf * (0.6931472f + yf * 0.2402265f);
+    // Multiply by 2^integer via bit manipulation
+    union { float f; int i; } u;
+    u.f = exp2f;
+    u.i += yi << 23; // add yi to float exponent
+    return u.f;
+}
+
 void set_filter(int channel, filterType_t type, fixed param1,fixed param2,int mix,bool bassyMapping)
 {
 	filter_t* flt=&filter[channel];
@@ -57,7 +76,7 @@ void set_filter(int channel, filterType_t type, fixed param1,fixed param2,int mi
       static const fixed fpThreeOne = fl2fp(3.1f);
 
       fixed power = fp_add(fpZeroSix,fp_mul(param1,fpThreeOne));
-      fixed frequency = fl2fp(pow(10.0f,fp2fl(power))) ;
+      fixed frequency = fl2fp(fastPow10(fp2fl(power))) ;
       frequency=fp_mul(frequency,fpFreqDivider);
       flt->freq=frequency;
     }

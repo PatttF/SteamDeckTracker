@@ -14,6 +14,8 @@ MixerService::MixerService() : out_(0), sync_(0), isRendering_(false), pregain_(
     for (int i=0;i<WAVE_SAMPLES_CONST;i++) waveform_[i]=0.0f;
     for (int i=0;i<SCOPE_SAMPLES;i++) scopeBuffer_[i]=0.0f;
     for (int i=0;i<SONG_CHANNEL_COUNT;i++) channelReverbSend_[i]=0.0f;
+    // Pre-cache constant to avoid repeated fl2fp(0.01f) in volume calculations
+    fpOnePercent_ = fl2fp(0.01f);
 };
 
 MixerService::~MixerService(){};
@@ -45,7 +47,7 @@ bool MixerService::Init() {
 			int vol = mixer->GetChannelVolume(i);
 			int bus = mixer->GetBus(i);
 			if (bus < 0 || bus >= MAX_BUS_COUNT) continue;
-			fixed fvol = fp_mul(i2fp(vol), fl2fp(0.01f));
+			fixed fvol = fp_mul(i2fp(vol), fpOnePercent_);
 			bus_[bus].SetVolume(fvol);
 		}
 	}
@@ -177,14 +179,14 @@ void MixerService::SetPregain(int vol) {
     if (pregain_ == vol) return; // avoid noisy repeated logs/updates
     pregain_ = vol;
 
-    fixed pregainFactor = fp_mul(i2fp(vol), fl2fp(0.01f));
+    fixed pregainFactor = fp_mul(i2fp(vol), fpOnePercent_);
 
     for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
         int chPercent = 100;
         if (mixer) chPercent = mixer->GetChannelVolume(i);
         int bus = mixer ? mixer->GetBus(i) : i;
         if (bus < 0 || bus >= MAX_BUS_COUNT) continue;
-        fixed chFactor = fp_mul(i2fp(chPercent), fl2fp(0.01f));
+        fixed chFactor = fp_mul(i2fp(chPercent), fpOnePercent_);
         fixed combined = fp_mul(chFactor, pregainFactor);
         bus_[bus].SetVolume(combined);
     }
@@ -217,8 +219,8 @@ void MixerService::SetChannelVolume(int channel, int percent) {
     int bus = m->GetBus(channel);
     if (bus >= 0 && bus < MAX_BUS_COUNT) {
         // Apply pregain_ so volume changes take effect immediately and are combined with pregain.
-        fixed chFactor = fp_mul(i2fp(percent), fl2fp(0.01f));
-        fixed pregainFactor = fp_mul(i2fp(pregain_), fl2fp(0.01f));
+        fixed chFactor = fp_mul(i2fp(percent), fpOnePercent_);
+        fixed pregainFactor = fp_mul(i2fp(pregain_), fpOnePercent_);
         fixed combined = fp_mul(chFactor, pregainFactor);
         bus_[bus].SetVolume(combined);
     } else {

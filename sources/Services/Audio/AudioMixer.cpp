@@ -65,11 +65,13 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
                fixed *src=mixBuffer_ ;
                int count=samplecount*2 ;
                while (count--) {
-                 // Saturating add to prevent signed overflow (UB)
-                 long long sum = (long long)*dst + (long long)*src ;
-                 if (sum > 0x7FFFFFFF) sum = 0x7FFFFFFF ;
-                 else if (sum < (long long)(int)0x80000000) sum = (int)0x80000000 ;
-                 *dst = (fixed)sum ;
+                 // Saturating add: use GCC/Clang built-in for branchless
+                 // overflow detection on x64 (compiles to add+cmov)
+                 int result ;
+                 if (__builtin_add_overflow(*dst, *src, &result)) {
+                     result = (*dst > 0) ? 0x7FFFFFFF : (int)0x80000000 ;
+                 }
+                 *dst = result ;
                  dst++ ;
                  src++ ;
                }

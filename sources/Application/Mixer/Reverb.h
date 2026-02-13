@@ -43,10 +43,16 @@ private:
     static const int NUM_TAPS = 4;
     int tapOffsets_[NUM_TAPS];
     float tapGains_[NUM_TAPS];
+    fixed tapGainsFixed_[NUM_TAPS]; // Cached fixed-point tap gains
     
     // Parameters
     float decay_;    // Feedback amount (0.0 to 0.95)
     float damping_;  // High frequency damping
+    
+    // Cached fixed-point parameters (avoid per-sample fl2fp)
+    fixed decayFixed_;
+    fixed dampCoefFixed_;  // damping_
+    fixed dampInvFixed_;   // 1.0 - damping_
     
     // Damping filter state
     fixed dampL_;

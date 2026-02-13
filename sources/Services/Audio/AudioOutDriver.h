@@ -78,5 +78,6 @@ class AudioOutDriver: public AudioOut,protected I_Observer {
     int sampleCount_ ;
     int cachedVolume_ ;       // Cached master volume for damp calculation
     float cachedDamp_ ;       // Cached damp factor (masterVolume^4)
+    fixed cachedDampFixed_ ;  // Cached damp as fixed-point (avoids per-sample float conversion)
 } ;
 #endif

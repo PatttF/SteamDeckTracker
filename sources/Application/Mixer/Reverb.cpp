@@ -32,6 +32,14 @@ Reverb::Reverb()
     tapGains_[1] = 0.3f;
     tapGains_[2] = 0.2f;
     tapGains_[3] = 0.15f;
+    
+    // Pre-cache as fixed-point to avoid per-sample fl2fp
+    for (int i = 0; i < NUM_TAPS; i++) {
+        tapGainsFixed_[i] = fl2fp(tapGains_[i]);
+    }
+    decayFixed_ = fl2fp(decay_);
+    dampCoefFixed_ = fl2fp(damping_);
+    dampInvFixed_ = fl2fp(1.0f - damping_);
 }
 
 Reverb::~Reverb() {
@@ -83,9 +91,8 @@ void Reverb::GetOutput(fixed &left, fixed &right) {
         fixed tapL = buffer_[readPos * 2];
         fixed tapR = buffer_[readPos * 2 + 1];
         
-        fixed gain = fl2fp(tapGains_[t]);
-        outL = fp_add(outL, fp_mul(tapL, gain));
-        outR = fp_add(outR, fp_mul(tapR, gain));
+        outL = fp_add(outL, fp_mul(tapL, tapGainsFixed_[t]));
+        outR = fp_add(outR, fp_mul(tapR, tapGainsFixed_[t]));
     }
     
     left = outL;
@@ -102,16 +109,13 @@ void Reverb::Advance() {
     fixed fbL = buffer_[feedbackPos * 2];
     fixed fbR = buffer_[feedbackPos * 2 + 1];
     
-    // Apply damping (simple lowpass filter on feedback)
-    fixed dampCoef = fl2fp(damping_);
-    fixed dampInv = fl2fp(1.0f - damping_);
-    dampL_ = fp_add(fp_mul(fbL, dampInv), fp_mul(dampL_, dampCoef));
-    dampR_ = fp_add(fp_mul(fbR, dampInv), fp_mul(dampR_, dampCoef));
+    // Apply damping (simple lowpass filter on feedback) using cached fixed-point
+    dampL_ = fp_add(fp_mul(fbL, dampInvFixed_), fp_mul(dampL_, dampCoefFixed_));
+    dampR_ = fp_add(fp_mul(fbR, dampInvFixed_), fp_mul(dampR_, dampCoefFixed_));
     
     // Mix input with decayed feedback
-    fixed decayFixed = fl2fp(decay_);
-    fixed writeL = fp_add(inputL_, fp_mul(dampL_, decayFixed));
-    fixed writeR = fp_add(inputR_, fp_mul(dampR_, decayFixed));
+    fixed writeL = fp_add(inputL_, fp_mul(dampL_, decayFixed_));
+    fixed writeR = fp_add(inputR_, fp_mul(dampR_, decayFixed_));
     
     // Soft limit to prevent runaway
     const fixed limit = fl2fp(0.95f);
@@ -140,10 +144,13 @@ void Reverb::SetDecay(float value) {
     if (value < 0.0f) value = 0.0f;
     if (value > 0.95f) value = 0.95f;  // Limit to prevent infinite feedback
     decay_ = value;
+    decayFixed_ = fl2fp(value);
 }
 
 void Reverb::SetDamping(float value) {
     if (value < 0.0f) value = 0.0f;
     if (value > 1.0f) value = 1.0f;
     damping_ = value;
+    dampCoefFixed_ = fl2fp(value);
+    dampInvFixed_ = fl2fp(1.0f - value);
 }

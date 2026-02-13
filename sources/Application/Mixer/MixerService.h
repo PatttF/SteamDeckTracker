@@ -119,5 +119,8 @@ private:
   // Reverb effect
   Reverb reverb_;
   float channelReverbSend_[SONG_CHANNEL_COUNT]; // Per-channel reverb send (0.0 to 1.0)
+
+  // Pre-cached fixed-point constant: fl2fp(0.01f)
+  fixed fpOnePercent_;
 } ;
 #endif

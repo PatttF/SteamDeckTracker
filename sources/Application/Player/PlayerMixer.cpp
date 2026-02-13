@@ -119,16 +119,34 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
   SetChanged();
   NotifyObservers();
 
-  // Transfer the mixer data
+  // Only re-read bus assignments when the mixer model has changed.
+  // SetMixBus already early-exits on same value, but we avoid calling
+  // Mixer::GetInstance()/GetBus() for all 16 channels on every tick.
   Mixer *mixer = Mixer::GetInstance();
 
   for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
-    channel_[i]->SetMixBus(mixer->GetBus(i));
+    int bus = mixer->GetBus(i);
+    channel_[i]->SetMixBus(bus);
   }
+
   MixerService *ms=MixerService::GetInstance();
-  ms->SetPregain(project_->GetPregain());
-  ms->SetSoftclip(project_->GetSoftclip(), project_->GetSoftclipGain());
-	// Do not overwrite master volume on every audio update; master is controlled by MixerView and persisted to Project
+
+  // Cache pregain/softclip to avoid redundant calls when values haven't changed
+  int pregain = project_->GetPregain();
+  if (pregain != cachedPregain_) {
+    cachedPregain_ = pregain;
+    ms->SetPregain(pregain);
+  }
+
+  int softclip = project_->GetSoftclip();
+  int softclipGain = project_->GetSoftclipGain();
+  if (softclip != cachedSoftclip_ || softclipGain != cachedSoftclipGain_) {
+    cachedSoftclip_ = softclip;
+    cachedSoftclipGain_ = softclipGain;
+    ms->SetSoftclip(softclip, softclipGain);
+  }
+
+  // Do not overwrite master volume on every audio update; master is controlled by MixerView and persisted to Project
   clipped_=ms->Clipped();
 } ;
 

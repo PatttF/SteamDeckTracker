@@ -38,6 +38,7 @@ AudioOutDriver::AudioOutDriver(AudioDriver &driver) {
     sampleCount_ = 0;
     cachedVolume_ = -1;
     cachedDamp_ = 1.0f;
+    cachedDampFixed_ = FP_ONE;
 
     // Precalculate constant values for softclipping algorithm
     softClipData_[0].alpha = 1.45f; // -1.5db (approx.)
@@ -170,42 +171,52 @@ fixed AudioOutDriver::hardClip(fixed sample) {
  * https://wiki.analog.com/resources/tools-software/sigmastudio/toolbox/nonlinearprocessors/standardcubic
  */
 fixed AudioOutDriver::softClip(fixed sample) {
-    if (softclip_ == -1 || sample == 0)
-        return sample;
+    // Caller already guards softclip_ != -1, so no check needed here
+    if (sample == 0) return 0;
 
-    float x;
+    // One fp2fl at entry, one fl2fp at exit
     float sampleFloat = fp2fl(sample);
-	float maxFloat = fp2fl(sampleFloat > 0 ? MAX_POSITIVE_FIXED : MAX_NEGATIVE_FIXED);
-	SoftClipData* data = &softClipData_[softclip_];
+    static const float maxFloat = 32767.0f; // fp2fl(MAX_POSITIVE_FIXED)
+    float sign = (sampleFloat >= 0.0f) ? 1.0f : -1.0f;
+    float absSample = sampleFloat * sign;
+    SoftClipData* data = &softClipData_[softclip_];
 
-    x = data->alphaInv * (sampleFloat / maxFloat);
-    if (x > -1.0f && x < 1.0f) {
-        sampleFloat = maxFloat * (data->alpha * (x - (x * x * x / 3.0f)));
+    float x = data->alphaInv * (absSample / maxFloat);
+    if (x < 1.0f) {
+        absSample = maxFloat * (data->alpha * (x - (x * x * x / 3.0f)));
     } else {
-        sampleFloat = maxFloat * data->alpha23;
+        absSample = maxFloat * data->alpha23;
     }
 
     if (softclipGain_) {
-        sampleFloat = sampleFloat * data->gainCmp;
+        absSample *= data->gainCmp;
     }
 
-    return fl2fp(sampleFloat);
+    return fl2fp(absSample * sign);
 }
 
 void AudioOutDriver::clipToMix() {
 
-    // Cache damp calculation - recompute only when volume changes
+    // Cache damp as fixed-point — recompute only when volume changes.
+    // This avoids per-sample fp2fl/fl2fp round-trips for master volume.
     if (masterVolume_ != cachedVolume_) {
         cachedVolume_ = masterVolume_;
         float v = (float)masterVolume_ / 100.0f;
         cachedDamp_ = v * v * v * v; // x^4 without pow()
+        cachedDampFixed_ = fl2fp(cachedDamp_);
     }
-    float damp = cachedDamp_;
+    fixed dampFixed = cachedDampFixed_;
     bool interlaced = driver_->Interlaced();
 
     if (!hasSound_) {
         SYS_MEMSET(mixBuffer_, 0, sampleCount_ * 2 * sizeof(short));
         finalLastPeak_.store(0.0f, std::memory_order_relaxed);
+        // Push silence to oscilloscope
+        MixerService *ms = MixerService::GetInstance();
+        if (ms) {
+            float zero = 0.0f;
+            ms->PushOscilloscopeSamples(&zero, 1);
+        }
     } else {
         short *s1 = mixBuffer_;
 		short *s2 = (interlaced) ? s1 + 1 : s1 + sampleCount_;
@@ -213,63 +224,65 @@ void AudioOutDriver::clipToMix() {
 
         fixed *p = primarySoundBuffer_;
 
-        fixed leftSample;
-        fixed rightSample;
+        // Oscilloscope: capture during the main loop to avoid a second pass.
+        const int maxScope = 128;
+        int scopeStep = sampleCount_ / maxScope;
+        if (scopeStep < 1) scopeStep = 1;
+        float scopeBuf[128];
+        int scopeCount = 0;
 
-        float finalPeak = 0.0f;
+        // Peak tracking in fixed-point (avoid per-sample float conversion)
+        fixed peakFixed = 0;
+        bool doSoftClip = (softclip_ != -1);
+
         for (int i = 0; i < sampleCount_; i++) {
 
-            // Apply softclip first, then master damp, then hard clip to reflect final output clipping.
-            fixed l = softClip(*p++);
-            fixed r = softClip(*p++);
+            fixed l = *p++;
+            fixed r = *p++;
 
-            // Apply master damp in floating point to preserve accuracy, then convert back to fixed.
-            fixed l_damped = fl2fp(fp2fl(l) * damp);
-            fixed r_damped = fl2fp(fp2fl(r) * damp);
+            // Apply softclip only when enabled
+            if (doSoftClip) {
+                l = softClip(l);
+                r = softClip(r);
+            }
 
-            leftSample = hardClip(l_damped);
-            rightSample = hardClip(r_damped);
+            // Apply master damp entirely in fixed-point (no float round-trip)
+            l = fp_mul(l, dampFixed);
+            r = fp_mul(r, dampFixed);
 
-            // Track final peak after damping/clipping
-            float lf = fabsf(fp2fl(leftSample));
-            float rf = fabsf(fp2fl(rightSample));
-            if (lf > finalPeak) finalPeak = lf;
-            if (rf > finalPeak) finalPeak = rf;
+            // Hard clip
+            l = hardClip(l);
+            r = hardClip(r);
 
-            *s1 = short(fp2i(leftSample));
+            // Track peak in fixed-point (abs)
+            fixed al = l < 0 ? -l : l;
+            fixed ar = r < 0 ? -r : r;
+            if (al > peakFixed) peakFixed = al;
+            if (ar > peakFixed) peakFixed = ar;
+
+            // Capture oscilloscope sample (fused into main loop)
+            if ((i % scopeStep) == 0 && scopeCount < maxScope) {
+                // Mix L+R to mono in fixed, then one float conversion
+                fixed mono = (l >> 1) + (r >> 1);
+                float monoF = fp2fl(mono) / 32768.0f;
+                if (monoF > 1.0f) monoF = 1.0f;
+                if (monoF < -1.0f) monoF = -1.0f;
+                scopeBuf[scopeCount++] = monoF;
+            }
+
+            *s1 = short(fp2i(l));
             s1 += offset;
-			*s2 = short(fp2i(rightSample));
+			*s2 = short(fp2i(r));
 			s2 += offset;
         };
 
-        // Normalize: fp2fl returns values in 0..32767 range for full-scale
-        // 16-bit audio. Divide by 32768 to get 0..1 range (1.0 = 0dBFS).
-        finalPeak /= 32768.0f;
-        if (finalPeak > 2.0f) finalPeak = 2.0f; // clamp at +6dB
+        // One float conversion for peak at the end instead of per-sample
+        float finalPeak = fp2fl(peakFixed) / 32768.0f;
+        if (finalPeak > 2.0f) finalPeak = 2.0f;
         finalLastPeak_.store(finalPeak, std::memory_order_relaxed);
 
-        // Capture oscilloscope samples: downsample the post-damp audio to
-        // a manageable number of signed mono samples for waveform display.
-        // We take every Nth sample pair, mix to mono, normalize to -1..1.
-        {
-            const int maxScope = 128; // samples per buffer tick
-            int step = sampleCount_ / maxScope;
-            if (step < 1) step = 1;
-            float scopeBuf[128];
-            int scopeCount = 0;
-            fixed *sp = primarySoundBuffer_;
-            for (int i = 0; i < sampleCount_ && scopeCount < maxScope; i += step) {
-                // Mix L+R to mono, apply damp, normalize
-                float l = fp2fl(sp[i * 2]) * damp;
-                float r = fp2fl(sp[i * 2 + 1]) * damp;
-                float mono = (l + r) * 0.5f / 32768.0f;
-                if (mono > 1.0f) mono = 1.0f;
-                if (mono < -1.0f) mono = -1.0f;
-                scopeBuf[scopeCount++] = mono;
-            }
-            MixerService *ms = MixerService::GetInstance();
-            if (ms) ms->PushOscilloscopeSamples(scopeBuf, scopeCount);
-        }
+        MixerService *ms = MixerService::GetInstance();
+        if (ms) ms->PushOscilloscopeSamples(scopeBuf, scopeCount);
     }
 } ;
 

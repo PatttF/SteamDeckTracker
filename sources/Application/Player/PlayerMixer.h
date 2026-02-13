@@ -88,6 +88,11 @@ private:
 	// store trigger notes, 0xFF = none
 	
     unsigned char notes_[SONG_CHANNEL_COUNT] ;
+
+    // Cached values to avoid redundant calls on every audio tick
+    int cachedPregain_ = -1;
+    int cachedSoftclip_ = -999;
+    int cachedSoftclipGain_ = -999;
 } ;
 
 #endif
