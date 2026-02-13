@@ -590,10 +590,10 @@ void SampleInstrument::updateFeedback(renderParams *rp) {
 				break ;
 		}
 		rp->feedbackOut_=rp->feedbackIn_+offset ;
-		if (rp->feedbackOut_>=FB_BUFFER_LENGTH) {
+		while (rp->feedbackOut_>=FB_BUFFER_LENGTH) {
 			rp->feedbackOut_-=FB_BUFFER_LENGTH ;
 		}
-		if (rp->feedbackOut_<0) {
+		while (rp->feedbackOut_<0) {
 			rp->feedbackOut_+=FB_BUFFER_LENGTH ;
 		}
 	} ;
@@ -837,11 +837,29 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 								if (input <= lastSample || input >= loopPosition) {
 									rpReverse = !rpReverse;
 									fpSpeed = -fpSpeed;
+									// Reflect input back into [lastSample, loopPosition] range
+									if (input >= loopPosition) {
+										input = loopPosition - (input - loopPosition);
+									} else if (input <= lastSample) {
+										input = lastSample + (lastSample - input);
+									}
+									// Clamp if overshoot was larger than the loop range
+									if (input < lastSample) input = lastSample;
+									if (input > loopPosition) input = loopPosition;
 								}
 							} else {
 								if (input>=lastSample || input <= loopPosition) {
 									rpReverse = !rpReverse;
 									fpSpeed = -fpSpeed;
+									// Reflect input back into [loopPosition, lastSample] range
+									if (input >= lastSample) {
+										input = lastSample - (input - lastSample);
+									} else if (input <= loopPosition) {
+										input = loopPosition + (loopPosition - input);
+									}
+									// Clamp if overshoot was larger than the loop range
+									if (input < loopPosition) input = loopPosition;
+									if (input > lastSample) input = lastSample;
 								}
 							}
 							break;
@@ -892,11 +910,27 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 								if (input <= lastSample || input >= loopPosition) {
 									rpReverse = !rpReverse;
 									fpSpeed = -fpSpeed;
+									// Reflect input back into [lastSample, loopPosition] range
+									if (input >= loopPosition) {
+										input = loopPosition - (input - loopPosition);
+									} else if (input <= lastSample) {
+										input = lastSample + (lastSample - input);
+									}
+									if (input < lastSample) input = lastSample;
+									if (input > loopPosition) input = loopPosition;
 								}
 							} else {
 								if (input>=lastSample || input <= loopPosition) {
 									rpReverse = !rpReverse;
 									fpSpeed = -fpSpeed;
+									// Reflect input back into [loopPosition, lastSample] range
+									if (input >= lastSample) {
+										input = lastSample - (input - lastSample);
+									} else if (input <= loopPosition) {
+										input = loopPosition + (loopPosition - input);
+									}
+									if (input < loopPosition) input = loopPosition;
+									if (input > lastSample) input = lastSample;
 								}
 							}
 							break;
@@ -959,6 +993,10 @@ bool SampleInstrument::Render(int channel,fixed *buffer,int size,bool updateTick
 						if (rp->cutoff_ > i2fp(1)) rp->cutoff_ = i2fp(1);
 						if (rp->reso_ < 0) rp->reso_ = 0;
 						if (rp->reso_ > i2fp(1)) rp->reso_ = i2fp(1);
+						if (rp->fbTun_ < 0) rp->fbTun_ = 0;
+						if (rp->fbTun_ > FP_ONE) rp->fbTun_ = FP_ONE;
+						if (rp->fbMix_ < 0) rp->fbMix_ = 0;
+						if (rp->fbMix_ > FP_ONE) rp->fbMix_ = FP_ONE;
 
 						set_filter(channel,FLT_LOWPASS,rp->cutoff_,rp->reso_,filterMix,bassyFilter);
 						filtering=(rp->cutoff_<i2fp(1))||(rp->reso_>i2fp(0)) ;

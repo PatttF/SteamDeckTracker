@@ -295,7 +295,10 @@ void MixerView::processNormalButtonMask(unsigned int mask, bool pressed) {
 				} else {
 					int mvol = MixerService::GetInstance()->GetMasterVolume();
 					MixerService::GetInstance()->SetMasterVolume(mvol - 1);
-
+					if (viewData_ && viewData_->project_) {
+						Variable *v = viewData_->project_->FindVariable(VAR_MASTERVOL);
+						if (v) v->SetInt(MixerService::GetInstance()->GetMasterVolume(), true);
+					}
 					int newVol = MixerService::GetInstance()->GetMasterVolume();
 					char nb[32];
 					snprintf(nb, sizeof(nb), "MAS %3d%%", newVol);
@@ -390,8 +393,60 @@ void MixerView::processSelectionButtonMask(unsigned int mask, bool pressed) {
 	}
 }
 
+// ── Pre-computed gradient color LUT for meter rendering ──
+// Built once on first use; indexed by pixel row position (0 = top, MAX-1 = bottom).
+// Avoids per-row floating-point branching in the hot render loop.
+static const int METER_LUT_SIZE = 128; // covers any meter height up to 128px
+struct MeterColor { unsigned char r, g, b; };
+static MeterColor meterGradientLUT[METER_LUT_SIZE];
+static bool meterLUTReady = false;
+
+static void buildMeterGradientLUT() {
+    for (int y = 0; y < METER_LUT_SIZE; y++) {
+        // t = 0.0 at bottom (green), 1.0 at top (red) — row 0 is the top
+        float t = 1.0f - (float)y / (float)METER_LUT_SIZE;
+        int r, g, b;
+        if (t < 0.65f) {
+            float s = t / 0.65f;
+            r = (int)(0x22 + s * (0xCC - 0x22));
+            g = 0xCC;
+            b = (int)(0x44 - s * 0x44);
+        } else if (t < 0.85f) {
+            float s = (t - 0.65f) / 0.20f;
+            r = (int)(0xCC + s * (0xEE - 0xCC));
+            g = (int)(0xCC - s * (0xCC - 0x77));
+            b = 0x00;
+        } else {
+            float s = (t - 0.85f) / 0.15f;
+            r = (int)(0xEE + s * (0xFF - 0xEE));
+            g = (int)(0x77 - s * 0x77);
+            b = 0x00;
+        }
+        meterGradientLUT[y].r = (unsigned char)(r < 0 ? 0 : (r > 255 ? 255 : r));
+        meterGradientLUT[y].g = (unsigned char)(g < 0 ? 0 : (g > 255 ? 255 : g));
+        meterGradientLUT[y].b = (unsigned char)(b < 0 ? 0 : (b > 255 ? 255 : b));
+    }
+    meterLUTReady = true;
+}
+
+// Map a linear amplitude to a meter fraction (0.0 .. 1.0) using dB scale
+static inline float linearToMeterFrac(float linear) {
+    if (linear < 0.0001f) return 0.0f;
+    const float dbMin = -48.0f;
+    const float dbRange = 54.0f; // 6.0 - (-48.0)
+    float db = 20.0f * log10f(linear);
+    float frac = (db - dbMin) / dbRange;
+    if (frac < 0.0f) return 0.0f;
+    if (frac > 1.0f) return 1.0f;
+    return frac;
+}
+
 // Pixel-level meter drawing — called after text buffer flush in AppWindow::Flush()
+// GPU-optimized: uses pre-computed color LUT, merges adjacent same-color rows into
+// single rects, and batches oscilloscope rects to minimize draw calls.
 void MixerView::DrawGraphics() {
+    if (!meterLUTReady) buildMeterGradientLUT();
+
     SDLGUIWindowImp *imp = (SDLGUIWindowImp *)w_.GetImpWindow();
     if (!imp) return;
 
@@ -447,6 +502,8 @@ void MixerView::DrawGraphics() {
     }
 
     // Draw pixel meters for each channel + master
+    // Strategy: merge adjacent 2px rows that share the same gradient color into
+    // single taller rects, cutting ~40 draw calls per meter down to ~3-5.
     for (int i = 0; i <= channels; i++) {
         int colX = meterLeftX_ + i * (dx + gap);
         int vol;
@@ -456,75 +513,70 @@ void MixerView::DrawGraphics() {
             vol = ms->GetMasterVolume();
         }
 
-        float volFrac = (float)vol / 100.0f;
-
         // Pixel coordinates for this meter column (inset 1px each side for gaps)
         int px = colX * charW + 1;
         int py = meterTopY_ * charH;
         int pw = meterCharWidth * charW - 2; // 14 pixels wide (inset)
         int ph = mH * charH;                 // total pixel height
 
-        // Dark background
+        // Dark background — single rect
         SDL_SetRenderDrawColor(renderer, 0x18, 0x18, 0x18, 0xFF);
         SDL_Rect bgRect = { px * mult + ax, py * mult + ay, pw * mult, ph * mult };
         SDL_RenderFillRect(renderer, &bgRect);
 
-        // Live audio peak with smooth gradient (bottom=green, top=red)
+        // Live audio peak — merged gradient rects
         float peak = chPeaks_[i];
         if (peak > 2.0f) peak = 2.0f;
-
-        // Map -48dB..+6dB → 0.0..1.0
-        float meterFrac = 0.0f;
-        if (peak > 0.0001f) {
-            float db = 20.0f * log10f(peak);
-            const float dbMin = -48.0f;
-            const float dbMax = 6.0f;
-            meterFrac = (db - dbMin) / (dbMax - dbMin);
-            if (meterFrac < 0.0f) meterFrac = 0.0f;
-            if (meterFrac > 1.0f) meterFrac = 1.0f;
-        }
+        float meterFrac = linearToMeterFrac(peak);
         int peakPx = (int)(meterFrac * ph);
         if (peakPx > ph) peakPx = ph;
 
         if (peakPx > 0) {
             int meterTop = ph - peakPx;
-            for (int y = meterTop; y < ph; y += 2) {
-                float t = 1.0f - (float)y / (float)ph;
 
-                int r, g, b;
-                if (t < 0.65f) {
-                    float s = t / 0.65f;
-                    r = (int)(0x22 + s * (0xCC - 0x22));
-                    g = 0xCC;
-                    b = (int)(0x44 - s * 0x44);
-                } else if (t < 0.85f) {
-                    float s = (t - 0.65f) / 0.20f;
-                    r = (int)(0xCC + s * (0xEE - 0xCC));
-                    g = (int)(0xCC - s * (0xCC - 0x77));
-                    b = 0x00;
-                } else {
-                    float s = (t - 0.85f) / 0.15f;
-                    r = (int)(0xEE + s * (0xFF - 0xEE));
-                    g = (int)(0x77 - s * 0x77);
-                    b = 0x00;
+            // Merge adjacent rows with same LUT color into single rects
+            int runStart = meterTop;
+            int lutIdx = (meterTop * METER_LUT_SIZE) / ph;
+            if (lutIdx >= METER_LUT_SIZE) lutIdx = METER_LUT_SIZE - 1;
+            unsigned char prevR = clipped ? 0xFF : meterGradientLUT[lutIdx].r;
+            unsigned char prevG = clipped ? 0x00 : meterGradientLUT[lutIdx].g;
+            unsigned char prevB = clipped ? 0x00 : meterGradientLUT[lutIdx].b;
+
+            for (int y = meterTop + 2; y <= ph; y += 2) {
+                // Look up the color for this row from pre-computed LUT
+                int li = (y * METER_LUT_SIZE) / ph;
+                if (li >= METER_LUT_SIZE) li = METER_LUT_SIZE - 1;
+                unsigned char curR = clipped ? 0xFF : meterGradientLUT[li].r;
+                unsigned char curG = clipped ? 0x00 : meterGradientLUT[li].g;
+                unsigned char curB = clipped ? 0x00 : meterGradientLUT[li].b;
+
+                // If color changed or we've reached the end, flush the run
+                bool colorChanged = (curR != prevR || curG != prevG || curB != prevB);
+                bool atEnd = (y >= ph);
+                if (colorChanged || atEnd) {
+                    int runH = y - runStart;
+                    if (atEnd && !colorChanged) runH = ph - runStart;
+                    SDL_SetRenderDrawColor(renderer, prevR, prevG, prevB, 0xFF);
+                    SDL_Rect sr = { px * mult + ax, (py + runStart) * mult + ay,
+                                    pw * mult, runH * mult };
+                    SDL_RenderFillRect(renderer, &sr);
+                    runStart = y;
+                    prevR = curR; prevG = curG; prevB = curB;
                 }
-                if (clipped) { r = 0xFF; g = 0x00; b = 0x00; }
-
-                SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
-                int h2 = (y + 2 <= ph) ? 2 : ph - y;
-                SDL_Rect sr = { (px) * mult + ax, (py + y) * mult + ay, pw * mult, h2 * mult };
+            }
+            // Flush final run
+            if (runStart < ph) {
+                SDL_SetRenderDrawColor(renderer, prevR, prevG, prevB, 0xFF);
+                SDL_Rect sr = { px * mult + ax, (py + runStart) * mult + ay,
+                                pw * mult, (ph - runStart) * mult };
                 SDL_RenderFillRect(renderer, &sr);
             }
         }
 
-        // Volume level marker — thin bright line
+        // Volume level marker — single rect
+        float volFrac = (float)vol / 100.0f;
         if (volFrac > 0.01f) {
-            float volDb = 20.0f * log10f(volFrac);
-            const float dbMin = -48.0f;
-            const float dbMax = 6.0f;
-            float volMeterFrac = (volDb - dbMin) / (dbMax - dbMin);
-            if (volMeterFrac < 0.0f) volMeterFrac = 0.0f;
-            if (volMeterFrac > 1.0f) volMeterFrac = 1.0f;
+            float volMeterFrac = linearToMeterFrac(volFrac);
             int volLineY = (int)(volMeterFrac * ph);
             if (volLineY > ph - 1) volLineY = ph - 1;
             SDL_SetRenderDrawColor(renderer, 0xDD, 0xDD, 0xDD, 0xFF);
@@ -532,15 +584,10 @@ void MixerView::DrawGraphics() {
             SDL_RenderFillRect(renderer, &vlRect);
         }
 
-        // Peak hold marker — thin horizontal line
+        // Peak hold marker — single rect
         float hold = chPeakHold_[i];
         if (hold > 0.01f) {
-            float holdDb = 20.0f * log10f(hold);
-            const float dbMin = -48.0f;
-            const float dbMax = 6.0f;
-            float holdFrac = (holdDb - dbMin) / (dbMax - dbMin);
-            if (holdFrac < 0.0f) holdFrac = 0.0f;
-            if (holdFrac > 1.0f) holdFrac = 1.0f;
+            float holdFrac = linearToMeterFrac(hold);
             int holdPx = (int)(holdFrac * ph);
             if (holdPx > ph - 1) holdPx = ph - 1;
             GUIColor holdColor = AppWindow::cursorColor_;
@@ -551,13 +598,17 @@ void MixerView::DrawGraphics() {
     }
 
     // ── Pixel oscilloscope (M8-style waveform trace) ──
+    // GPU-optimized: batch all glow rects and trace rects into arrays,
+    // then issue two SDL_RenderFillRects() calls instead of 2×N individual ones.
+    // We still need per-column color changes, so we group runs of same-color
+    // columns and batch each run.
     if (scopeWidthPx_ > 0 && scopeHeightPx_ > 0) {
         int sx = scopeLeftPx_;
         int sy = scopeTopPx_;
         int sw = scopeWidthPx_;
         int sh = scopeHeightPx_;
 
-        // Use theme background color for scope area
+        // Use theme background color for scope area — single rect
         SDL_SetRenderDrawColor(renderer,
             AppWindow::backgroundColor_._r & 0xFF,
             AppWindow::backgroundColor_._g & 0xFF,
@@ -565,7 +616,7 @@ void MixerView::DrawGraphics() {
         SDL_Rect scopeBgRect = { sx * mult + ax, sy * mult + ay, sw * mult, sh * mult };
         SDL_RenderFillRect(renderer, &scopeBgRect);
 
-        // Subtle center line
+        // Subtle center line — single rect
         int centerY = sy + sh / 2;
         int clR = (AppWindow::backgroundColor_._r & 0xFF) + 0x10;
         int clG = (AppWindow::backgroundColor_._g & 0xFF) + 0x14;
@@ -584,6 +635,23 @@ void MixerView::DrawGraphics() {
             const int traceR1 = 0x66, traceG1 = 0xDD, traceB1 = 0xFF; // cyan
             const int traceR2 = 0xCC, traceG2 = 0x66, traceB2 = 0xFF; // purple
 
+            // Pre-compute Y positions and colors for all columns to avoid
+            // interleaving computation with draw calls
+            int usableH = sh - 4;
+            int midY = sy + sh / 2;
+            float swInv = 1.0f / (float)(sw > 1 ? sw - 1 : 1);
+
+            // Batch glow and trace rects — each column produces at most one of each
+            // Max sw is ~550, so stack allocation is fine
+            SDL_Rect glowRects[550];
+            SDL_Rect traceRects[550];
+            int glowCount = 0;
+            int traceCount = 0;
+
+            // Track current batch color to flush when gradient changes
+            int batchGlowR = -1, batchGlowG = -1, batchGlowB = -1;
+            int batchTraceR = -1, batchTraceG = -1, batchTraceB = -1;
+
             int prevY = -1;
             for (int x = 0; x < sw; x++) {
                 int sIdx = (x * scopeN) / sw;
@@ -593,11 +661,9 @@ void MixerView::DrawGraphics() {
                 if (sample > 1.0f) sample = 1.0f;
                 if (sample < -1.0f) sample = -1.0f;
 
-                int usableH = sh - 4;
-                int midY = sy + sh / 2;
                 int curY = midY - (int)(sample * (usableH / 2));
 
-                float t = (float)x / (float)(sw > 1 ? sw - 1 : 1);
+                float t = (float)x * swInv;
                 int r = traceR1 + (int)(t * (traceR2 - traceR1));
                 int g = traceG1 + (int)(t * (traceG2 - traceG1));
                 int b = traceB1 + (int)(t * (traceB2 - traceB1));
@@ -607,19 +673,38 @@ void MixerView::DrawGraphics() {
                     int y1 = (prevY < curY) ? curY : prevY;
                     if (y1 - y0 < 1) y1 = y0 + 1;
 
-                    // Dim glow
-                    SDL_SetRenderDrawColor(renderer, r / 4, g / 4, b / 4, 0xFF);
-                    SDL_Rect glowRect = { (sx + x - 1) * mult + ax, (y0 - 1) * mult + ay,
-                                          3 * mult, (y1 - y0 + 3) * mult };
-                    SDL_RenderFillRect(renderer, &glowRect);
+                    int glR = r / 4, glG = g / 4, glB = b / 4;
 
-                    // Bright trace
-                    SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
-                    SDL_Rect traceRect = { (sx + x) * mult + ax, y0 * mult + ay,
-                                           1 * mult, (y1 - y0 + 1) * mult };
-                    SDL_RenderFillRect(renderer, &traceRect);
+                    // If the glow color changed, flush the batch
+                    if (glowCount > 0 && (glR != batchGlowR || glG != batchGlowG || glB != batchGlowB)) {
+                        SDL_SetRenderDrawColor(renderer, batchGlowR, batchGlowG, batchGlowB, 0xFF);
+                        SDL_RenderFillRects(renderer, glowRects, glowCount);
+                        glowCount = 0;
+                    }
+                    batchGlowR = glR; batchGlowG = glG; batchGlowB = glB;
+                    glowRects[glowCount++] = { (sx + x) * mult + ax, (y0) * mult + ay,
+                                               1 * mult, (y1 - y0 + 1) * mult };
+
+                    // If the trace color changed, flush the batch
+                    if (traceCount > 0 && (r != batchTraceR || g != batchTraceG || b != batchTraceB)) {
+                        SDL_SetRenderDrawColor(renderer, batchTraceR, batchTraceG, batchTraceB, 0xFF);
+                        SDL_RenderFillRects(renderer, traceRects, traceCount);
+                        traceCount = 0;
+                    }
+                    batchTraceR = r; batchTraceG = g; batchTraceB = b;
+                    traceRects[traceCount++] = { (sx + x) * mult + ax, y0 * mult + ay,
+                                                 1 * mult, (y1 - y0 + 1) * mult };
                 }
                 prevY = curY;
+            }
+            // Flush remaining batched rects
+            if (glowCount > 0) {
+                SDL_SetRenderDrawColor(renderer, batchGlowR, batchGlowG, batchGlowB, 0xFF);
+                SDL_RenderFillRects(renderer, glowRects, glowCount);
+            }
+            if (traceCount > 0) {
+                SDL_SetRenderDrawColor(renderer, batchTraceR, batchTraceG, batchTraceB, 0xFF);
+                SDL_RenderFillRects(renderer, traceRects, traceCount);
             }
         }
     }
@@ -736,7 +821,6 @@ void MixerView::DrawView() {
 	lastDrawTick_ = now;
 
 	// Draw master as an additional mixer strip to the right of the channel columns
-	Audio *audio = Audio::GetInstance();
 	int colX = pos._x; // pos is already incremented after the last channel
 	// label for master (three chars 'MAS') and selection highlight
 	bool selectedMaster = (viewData_->mixerCol_ == channels);

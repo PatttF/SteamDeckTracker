@@ -346,8 +346,14 @@ void PhraseView::updateCursorValue(ViewUpdateDirection direction, int xOffset,
             if (!isSlicerMode) {
                 // Add/remove from offset to match selected scale
                 int scale = viewData_->project_->GetScale();
-                while (!scaleSteps[scale][(*c + offset) % 12]) {
+                // Guard against infinite loop if scale has no valid steps,
+                // and use safe positive modulo to avoid OOB on negative values
+                int maxSearch = 12;
+                while (maxSearch > 0) {
+                    int idx = ((*c + offset) % 12 + 12) % 12;
+                    if (scaleSteps[scale][idx]) break;
                     offset > 0 ? offset++ : offset--;
+                    maxSearch--;
                 }
             }
         }
@@ -715,8 +721,9 @@ void PhraseView::TriggerAudition(int targetRow, int targetCol) {
             auditionStartMs_ = 0;
             auditionTimeoutMs_ = 0;
         }
-    } else if (instr->GetType() == IT_LV2) {
-        // LV2 instruments always use short audition like oscillator mode
+    } else if (instr->GetType() != IT_SAMPLE) {
+        // All non-sample instruments (LV2, VST3, SoundFont, Midi, MidiOut)
+        // use a short 500ms audition like oscillator-mode samples
         auditionTimeoutMs_ = 500;
         auditionStartMs_ = System::GetInstance()->GetClock();
         Player::GetInstance()->SetChannelTimeToLiveMs(viewData_->songX_, 500);

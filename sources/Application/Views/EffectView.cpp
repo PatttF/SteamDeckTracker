@@ -14,6 +14,7 @@
 #include "ModalDialogs/ImportLV2EffectDialog.h"
 #include "ModalDialogs/ImportVST3EffectDialog.h"
 #include "ModalDialogs/MessageBox.h"
+#include "Application/Player/Player.h"
 #include "System/Console/Trace.h"
 #include <cstring>
 #include <vector>
@@ -40,6 +41,8 @@ EffectView::EffectView(GUIWindow &w, ViewData *data) : FieldView(w, data) {
     current_ = nullptr;
     loadField_ = nullptr;
     currentTypeIndex_ = 0;  // VST3 default
+    pendingTypeEffectIdx_ = -1;
+    pendingEffectType_ = ET_VST3;
     memset(pluginLabel_, 0, sizeof(pluginLabel_));
     memset(paramText_, 0, sizeof(paramText_));
 }
@@ -429,6 +432,30 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
 }
 
 void EffectView::DrawView() {
+
+    // Process any pending type switch before drawing to avoid showing stale UI
+    if (pendingTypeEffectIdx_ != -1) {
+        int idx = pendingTypeEffectIdx_;
+        EffectType type = pendingEffectType_;
+        pendingTypeEffectIdx_ = -1;
+        Trace::Log("EVIEW", "DrawView: processing pending type switch effect=%d type=%d", idx, (int)type);
+        // Stop playback before switching type to prevent crash from
+        // the audio thread calling ProcessAudio on a deleted effect
+        Player *player = Player::GetInstance();
+        if (player && player->IsRunning()) {
+            player->Stop();
+        }
+        EffectBank *bank = project_->GetEffectBank();
+        if (bank) {
+            bank->SetEffectType(idx, type);
+            current_ = bank->GetEffect(idx);
+        }
+        currentTypeIndex_ = (type == ET_VST3) ? 0 : 1;
+        scrollOffset_ = 0;
+        current_ = nullptr;
+        onEffectChange();
+    }
+
     Clear();
     View::EnableNotification();
 
@@ -489,14 +516,12 @@ void EffectView::Update(Observable &o, I_ObservableData *d) {
             int val = tv->GetInt();
             EffectType targetType = (val == 0) ? ET_VST3 : ET_LV2;
             if (current_->GetEffectType() != targetType) {
-                currentTypeIndex_ = val;
-                EffectBank *bank = project_->GetEffectBank();
-                if (bank) {
-                    bank->SetEffectType(currentEffect_, targetType);
-                    current_ = bank->GetEffect(currentEffect_);
-                }
-                scrollOffset_ = 0;
-                onEffectChange();
+                // Defer changing effect type until DrawView(), outside the
+                // variable notification callback. DrawView stops the player
+                // first to prevent the audio thread from using freed memory.
+                pendingTypeEffectIdx_ = currentEffect_;
+                pendingEffectType_ = targetType;
+                Trace::Log("EVIEW", "Update: deferring type switch effect=%d from=%d to=%d", currentEffect_, (int)current_->GetEffectType(), (int)targetType);
                 isDirty_ = true;
                 return;
             }

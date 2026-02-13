@@ -451,26 +451,30 @@ bool SampleEditorView::isPlaying() {
 void SampleEditorView::getColorForDef(ColorDefinition cd,
                                        unsigned short &r, unsigned short &g,
                                        unsigned short &b) {
+    GUIColor c(0xF5, 0xEB, 0xFF);
     switch (cd) {
     case CD_BACKGROUND:
-        r = 0x1D; g = 0x0A; b = 0x1F;
+        c = AppWindow::backgroundColor_;
         break;
     case CD_NORMAL:
-        r = 0xF5; g = 0xEB; b = 0xFF;
+        c = AppWindow::normalColor_;
         break;
     case CD_HILITE1:
-        r = 0xB7; g = 0x50; b = 0xD1;
+        c = AppWindow::highlightColor_;
         break;
     case CD_HILITE2:
-        r = 0xDB; g = 0x33; b = 0xDB;
+        c = AppWindow::highlight2Color_;
         break;
     case CD_CURSOR:
-        r = 0xFF; g = 0x00; b = 0x8C;
+        c = AppWindow::cursorColor_;
         break;
     default:
-        r = 0xF5; g = 0xEB; b = 0xFF;
+        c = AppWindow::normalColor_;
         break;
     }
+    r = c._r;
+    g = c._g;
+    b = c._b;
 }
 
 void SampleEditorView::drawWaveformGraphical() {
@@ -544,6 +548,13 @@ void SampleEditorView::drawWaveformGraphical() {
     }
 
     // Draw waveform column by column
+    // GPU-optimized: batch rects by color (3 groups) and issue one
+    // SDL_RenderFillRects() per group instead of one per column.
+    SDL_Rect normalRects[WAVE_PX_W];
+    SDL_Rect dimmedRects[WAVE_PX_W];
+    SDL_Rect cursorRects[WAVE_PX_W];
+    int normalCount = 0, dimmedCount = 0, cursorCount = 0;
+
     for (int col = 0; col < WAVE_PX_W; col++) {
         int sampleStart = viewStart_ + (int)((long long)col * viewRange / WAVE_PX_W);
         int sampleEnd = viewStart_ + (int)((long long)(col + 1) * viewRange / WAVE_PX_W);
@@ -571,22 +582,35 @@ void SampleEditorView::drawWaveformGraphical() {
             botY = topY + 1;
         }
 
-        bool isCursor = (col >= cursorX_ && col < cursorX_ + 3);
-        bool isOutside = (sampleStart < instrStart || sampleStart >= instrEnd);
-
-        if (isCursor) {
-            SDL_SetRenderDrawColor(renderer, ccr & 0xFF, ccg & 0xFF, ccb & 0xFF, 0xFF);
-        } else if (isOutside) {
-            SDL_SetRenderDrawColor(renderer, wdr & 0xFF, wdg & 0xFF, wdb & 0xFF, 0xFF);
-        } else {
-            SDL_SetRenderDrawColor(renderer, wr & 0xFF, wg & 0xFF, wb & 0xFF, 0xFF);
-        }
-
         if (botY > topY) {
             SDL_Rect bar = { (WAVE_PX_X + col) * mult + ax, topY * mult + ay,
                              1 * mult, (botY - topY) * mult };
-            SDL_RenderFillRect(renderer, &bar);
+
+            bool isCursor = (col >= cursorX_ && col < cursorX_ + 3);
+            bool isOutside = (sampleStart < instrStart || sampleStart >= instrEnd);
+
+            if (isCursor) {
+                cursorRects[cursorCount++] = bar;
+            } else if (isOutside) {
+                dimmedRects[dimmedCount++] = bar;
+            } else {
+                normalRects[normalCount++] = bar;
+            }
         }
+    }
+
+    // Issue 3 batched draw calls instead of ~536 individual ones
+    if (normalCount > 0) {
+        SDL_SetRenderDrawColor(renderer, wr & 0xFF, wg & 0xFF, wb & 0xFF, 0xFF);
+        SDL_RenderFillRects(renderer, normalRects, normalCount);
+    }
+    if (dimmedCount > 0) {
+        SDL_SetRenderDrawColor(renderer, wdr & 0xFF, wdg & 0xFF, wdb & 0xFF, 0xFF);
+        SDL_RenderFillRects(renderer, dimmedRects, dimmedCount);
+    }
+    if (cursorCount > 0) {
+        SDL_SetRenderDrawColor(renderer, ccr & 0xFF, ccg & 0xFF, ccb & 0xFF, 0xFF);
+        SDL_RenderFillRects(renderer, cursorRects, cursorCount);
     }
 
     // Draw start/end boundary markers as vertical lines
@@ -644,7 +668,7 @@ void SampleEditorView::drawSliceMarkersGraphical() {
 
         // Draw slice number label at the top of the waveform area
         char label[4];
-        sprintf(label, "%X", i);
+        snprintf(label, sizeof(label), "%X", i);
         GUITextProperties props;
         if (isSelected) {
             SetColor(CD_CURSOR);
@@ -676,13 +700,13 @@ void SampleEditorView::drawInfo() {
         name = instr->GetName();
     }
 
-    sprintf(title, "Sample Editor: I%02X [%s]", instrIdx, name ? name : "---");
+    snprintf(title, sizeof(title), "Sample Editor: I%02X [%s]", instrIdx, name ? name : "---");
     DrawString(pos._x, pos._y, title, props);
 
     // Slice info on INFO_Y line (only in slice mode)
     if (mode_ == MODE_SLICE) {
         char info[80];
-        sprintf(info, "Slice %d/%d",
+        snprintf(info, sizeof(info), "Slice %d/%d",
                 currentSlice_ + 1, sliceCount_);
         DrawString(1, INFO_Y, info, props);
     }
@@ -690,7 +714,7 @@ void SampleEditorView::drawInfo() {
     // Cursor position - far right, just below waveform (row 24)
     int cursorSample = screenToSample(cursorX_);
     char cursorStr[32];
-    sprintf(cursorStr, "Cursor:%d", cursorSample);
+    snprintf(cursorStr, sizeof(cursorStr), "Cursor:%d", cursorSample);
     int len = (int)strlen(cursorStr);
     DrawString(68 - len, 24, cursorStr, props);
 }

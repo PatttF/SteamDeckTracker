@@ -14,7 +14,10 @@ public:
 	~Mixer() ;
 	void Clear() ;
 
-	inline int GetBus(int i) { return channelBus_[i]  ; } ;
+	inline int GetBus(int i) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return 0;
+		return channelBus_[i];
+	};
 
 	virtual void SaveContent(TiXmlNode *node) ;
 	virtual void RestoreContent(TiXmlElement *element);
@@ -27,14 +30,38 @@ private:
 	bool channelPrevMute_[SONG_CHANNEL_COUNT] ;
 
 public:
-	inline int GetChannelVolume(int i) { return channelVolume_[i]; };
-	inline void SetChannelVolumeField(int i,int v) { channelVolume_[i]=(unsigned char)v; };
-	inline int GetChannelPan(int i) { return channelPan_[i]; };
-	inline void SetChannelPanField(int i,int p) { channelPan_[i]=(char)p; };
-	inline bool IsChannelSolo(int i) { return channelSolo_[i]; };
-	inline void SetChannelSoloField(int i,bool s) { channelSolo_[i]=s; };
-	inline void SetChannelPrevMute(int i,bool m) { channelPrevMute_[i]=m; };
-	inline bool GetChannelPrevMute(int i) { return channelPrevMute_[i]; };
+	inline int GetChannelVolume(int i) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return 100;
+		return channelVolume_[i];
+	};
+	inline void SetChannelVolumeField(int i,int v) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return;
+		channelVolume_[i]=(unsigned char)v;
+	};
+	inline int GetChannelPan(int i) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return 0;
+		return channelPan_[i];
+	};
+	inline void SetChannelPanField(int i,int p) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return;
+		channelPan_[i]=(char)p;
+	};
+	inline bool IsChannelSolo(int i) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return false;
+		return channelSolo_[i];
+	};
+	inline void SetChannelSoloField(int i,bool s) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return;
+		channelSolo_[i]=s;
+	};
+	inline void SetChannelPrevMute(int i,bool m) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return;
+		channelPrevMute_[i]=m;
+	};
+	inline bool GetChannelPrevMute(int i) {
+		if (i < 0 || i >= SONG_CHANNEL_COUNT) return false;
+		return channelPrevMute_[i];
+	};
 } ;
 
 #endif

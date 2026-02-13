@@ -139,7 +139,12 @@ void AudioOutDriver::prepareMixBuffers() {
 	int maxSamples = MIX_BUFFER_SIZE / (2 * (int)sizeof(fixed));
 	if (sampleCount_ > maxSamples) sampleCount_ = maxSamples;
 	clipped_=false ;  
-	finalLastPeak_.store(0.0f, std::memory_order_relaxed);  
+	// NOTE: Do NOT reset finalLastPeak_ here. The previous cycle's value
+	// is harmless and will be overwritten by clipToMix() after Render()
+	// completes. Resetting it to 0 created a race window where the GUI
+	// thread could read 0 during the (potentially long) Render() call,
+	// causing the master meter to show no levels for slow-rendering
+	// plugins (LV2/VST3).
 } ;
 
 void AudioOutDriver::SetSoftclip(int clip, int gain) {
@@ -200,6 +205,7 @@ void AudioOutDriver::clipToMix() {
 
     if (!hasSound_) {
         SYS_MEMSET(mixBuffer_, 0, sampleCount_ * 2 * sizeof(short));
+        finalLastPeak_.store(0.0f, std::memory_order_relaxed);
     } else {
         short *s1 = mixBuffer_;
 		short *s2 = (interlaced) ? s1 + 1 : s1 + sampleCount_;

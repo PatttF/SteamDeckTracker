@@ -168,6 +168,30 @@ void ChainView::clonePosition() {
         *sdst++ = *ssrc++;
     };
 
+    isrc = viewData_->song_->phrase_->cmd3_ + 16 * current;
+    idst = viewData_->song_->phrase_->cmd3_ + 16 * next;
+    for (int i = 0; i < 16; i++) {
+        *idst++ = *isrc++;
+    };
+
+    ssrc = viewData_->song_->phrase_->param3_ + 16 * current;
+    sdst = viewData_->song_->phrase_->param3_ + 16 * next;
+    for (int i = 0; i < 16; i++) {
+        *sdst++ = *ssrc++;
+    };
+
+    isrc = viewData_->song_->phrase_->cmd4_ + 16 * current;
+    idst = viewData_->song_->phrase_->cmd4_ + 16 * next;
+    for (int i = 0; i < 16; i++) {
+        *idst++ = *isrc++;
+    };
+
+    ssrc = viewData_->song_->phrase_->param4_ + 16 * current;
+    sdst = viewData_->song_->phrase_->param4_ + 16 * next;
+    for (int i = 0; i < 16; i++) {
+        *sdst++ = *ssrc++;
+    };
+
     setPhrase((unsigned char)next);
     isDirty_ = true;
 };

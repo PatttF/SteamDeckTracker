@@ -1,5 +1,6 @@
 #include "EffectBank.h"
 #include "Application/Instruments/VST3Effect.h"
+#include "Application/Player/PlayerMixer.h"
 #include "Application/Utils/char.h"
 #include "System/Console/Trace.h"
 
@@ -31,6 +32,11 @@ void EffectBank::SetEffectType(int slot, EffectType type) {
 
     // Purge the old effect first
     old->Purge();
+
+    // Clear any PlayerChannel references to the old effect before deleting
+    // to prevent use-after-free in the audio thread's Render() call.
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    if (pm) pm->ReleaseEffect(old);
 
     // Create new effect of the requested type
     I_Effect *n = nullptr;
@@ -95,6 +101,8 @@ void EffectBank::RestoreContent(TiXmlElement *element) {
                     if (typeAttr && strcmp(typeAttr, "VST3") == 0) {
                         // Ensure slot has a VST3Effect
                         if (effects_[id]->GetEffectType() != ET_VST3) {
+                            PlayerMixer *pm = PlayerMixer::GetInstance();
+                            if (pm) pm->ReleaseEffect(effects_[id]);
                             delete effects_[id];
                             effects_[id] = new VST3Effect();
                             effects_[id]->Init();
@@ -102,6 +110,8 @@ void EffectBank::RestoreContent(TiXmlElement *element) {
                     } else {
                         // Default/legacy: LV2 effect (no TYPE attr or TYPE="LV2")
                         if (effects_[id]->GetEffectType() != ET_LV2) {
+                            PlayerMixer *pm = PlayerMixer::GetInstance();
+                            if (pm) pm->ReleaseEffect(effects_[id]);
                             delete effects_[id];
                             effects_[id] = new LV2Effect();
                             effects_[id]->Init();

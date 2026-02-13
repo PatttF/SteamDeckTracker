@@ -12,6 +12,8 @@
 #include "Services/Audio/AudioOut.h"
 #include <atomic>
 
+class I_Effect;
+
 #define STREAM_MIX_BUS 8
 
 class PlayerMixer: public T_Singleton<PlayerMixer>,public Observable,public I_Observer {
@@ -34,6 +36,11 @@ public:
 	// any lastInstrument_ references to it. Must be called before deleting
 	// an instrument to prevent use-after-free in the audio thread.
 	void ReleaseInstrument(I_Instrument *instrument) ;
+
+	// Clear any PlayerChannel activeEffect_ pointers that reference the
+	// given effect. Must be called before deleting an effect to prevent
+	// use-after-free in the audio thread.
+	void ReleaseEffect(I_Effect *effect) ;
 
 	int GetChannelNote(int Channel) ;
 

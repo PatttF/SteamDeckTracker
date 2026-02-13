@@ -14,6 +14,7 @@
 #include "Services/Audio/AudioOut.h"
 #include "MixBus.h"
 #include "Reverb.h"
+#include <atomic>
 
 enum MixerServiceRenderMode {
     MSRM_PLAYBACK,
@@ -108,12 +109,12 @@ private:
   // Waveform buffer (peak envelope)
   static const int WAVE_SAMPLES_CONST = 512;
   float waveform_[WAVE_SAMPLES_CONST];
-  int waveformPos_;
+  std::atomic<int> waveformPos_;
 
   // Oscilloscope buffer (signed audio samples for waveform display)
   static const int SCOPE_SAMPLES = 640; // enough for full pixel width
   float scopeBuffer_[SCOPE_SAMPLES];
-  int scopeWritePos_;
+  std::atomic<int> scopeWritePos_;
   
   // Reverb effect
   Reverb reverb_;

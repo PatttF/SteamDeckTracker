@@ -32,11 +32,19 @@ public:
 	static std::string ConsumeCapture();
 
 private:
+	// Map an SDL_JoystickID (instance ID) to our device index [0..MAX_JOY_COUNT).
+	// Returns -1 if the instance ID is not recognized.
+	int InstanceToIndex(SDL_JoystickID id) const;
+	// Open a newly connected joystick/controller at the given device index.
+	void OpenDevice(int deviceIndex);
+
 	static bool finished_ ;
 	static bool dumpEvent_ ;
 	static bool capturing_ ;
 	static std::string capturedSource_ ;
 	SDL_Joystick *joystick_[MAX_JOY_COUNT];
+	SDL_GameController *gameController_[MAX_JOY_COUNT];
+	SDL_JoystickID instanceId_[MAX_JOY_COUNT]; // maps device index → instance ID
 	ButtonControllerSource *buttonCS_[MAX_JOY_COUNT] ;
 	JoystickControllerSource *joystickCS_[MAX_JOY_COUNT] ;
 	HatControllerSource *hatCS_[MAX_JOY_COUNT] ;

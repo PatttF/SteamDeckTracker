@@ -86,10 +86,12 @@ void PlayerMixer::Stop() {
 } ;
 
 void PlayerMixer::StartChannel(int channel) {
+	if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
 	isChannelPlaying_[channel]=true ;
 } ;
 
 void PlayerMixer::StopChannel(int channel) {
+	if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
 
     StopInstrument(channel) ;
 	isChannelPlaying_[channel]=false ;
@@ -97,10 +99,12 @@ void PlayerMixer::StopChannel(int channel) {
 
 
 bool PlayerMixer::IsChannelPlaying(int channel) {
+	if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return false;
 	return isChannelPlaying_[channel] ;
 } ;
 
 I_Instrument *PlayerMixer::GetLastInstrument(int channel) {
+	if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return nullptr;
 	return lastInstrument_[channel] ;
 } ;
 
@@ -146,7 +150,17 @@ void PlayerMixer::ReleaseInstrument(I_Instrument *instrument) {
 	}
 }
 
+void PlayerMixer::ReleaseEffect(I_Effect *effect) {
+	if (!effect) return;
+	for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+		// ClearEffect acquires PlayerChannel's startStopMutex_ which
+		// ensures Render() is not mid-flight on that channel.
+		channel_[i]->ClearEffect();
+	}
+}
+
 void PlayerMixer::StartInstrument(int channel,I_Instrument *instrument,unsigned char note,bool newInstrument)  {
+	if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
 	channel_[channel]->StartInstrument(instrument,note,newInstrument) ;
 	lastInstrument_[channel]=instrument ;
 	notes_[channel]=note ;
@@ -154,11 +168,13 @@ void PlayerMixer::StartInstrument(int channel,I_Instrument *instrument,unsigned 
 } ;
 
 void PlayerMixer::StopInstrument(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
     channel_[channel]->StopInstrument() ;
     notes_[channel]=0xFF ;
 }
 
 I_Instrument *PlayerMixer::GetInstrument(int channel) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return nullptr;
     return channel_[channel]->GetInstrument();
 }
 
@@ -168,10 +184,12 @@ int PlayerMixer::GetPlayedBufferPercentage() {
 };
 
 void PlayerMixer::SetChannelMute(int channel,bool mode) {
+     if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return;
      channel_[channel]->SetMute(mode) ;
 }
 
 bool PlayerMixer::IsChannelMuted(int channel) {
+     if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return false;
      return channel_[channel]->IsMuted() ;
 }
 
@@ -201,6 +219,7 @@ void PlayerMixer::OnPlayerStop() {
 static char noteBuffer[5] ;
 
 int PlayerMixer::GetChannelNote(int channel) {
+	if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return 0xFF;
 	return notes_[channel] ;
 }
 

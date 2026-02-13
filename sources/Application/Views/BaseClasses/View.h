@@ -10,6 +10,7 @@
 #include "UIFramework/Interfaces/I_GUIGraphics.h"
 #include "UIFramework/SimpleBaseClasses/GUIWindow.h"
 #include "ViewEvent.h"
+#include <atomic>
 #ifdef SDL2
 #include <SDL2/SDL.h>
 #else
@@ -170,7 +171,7 @@ class View : public Observable {
 
   private:
     unsigned short mask_;
-    bool locked_;
+    std::atomic<bool> locked_;
     uint32_t notificationTime_;
     uint16_t NOTIFICATION_TIMEOUT;
     std::string displayNotification_;

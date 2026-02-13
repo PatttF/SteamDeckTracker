@@ -34,6 +34,8 @@ private:
     UIActionField *loadField_;
     I_Effect *current_;
     int currentTypeIndex_;  // 0=VST3, 1=LV2 (picker index)
+    int pendingTypeEffectIdx_;  // deferred type switch slot (-1 = none)
+    EffectType pendingEffectType_;
     char bankLabel_[80];
     char presetLabel_[80];
 };

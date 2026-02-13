@@ -194,6 +194,18 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
  
   ProcessCommands() ;
 
+  // Fire notes immediately instead of waiting for the first audio-thread
+  // Update() callback.  Without this, every channel's timeToStart_ sits at 1
+  // for one full slice period, causing audible latency — especially noticeable
+  // when many plugin instruments (VST3/LV2) are involved.
+  for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+      if (timeToStart_[i] > 0) {
+          if (--timeToStart_[i] == 0) {
+              playCursorPosition(i);
+          }
+      }
+  }
+
 	startTime_ = mixer_->GetAudioOut()->GetStreamTime() ;
 
 	SetChanged() ;

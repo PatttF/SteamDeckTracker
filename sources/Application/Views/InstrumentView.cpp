@@ -113,8 +113,10 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 		if (instr && instr->FindVariable(MAKE_FOURCC('I','T','Y','P')))
 			lastType_[i] = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'))->GetInt();
 		else {
-			if (instr && instr->GetType() == IT_LV2) lastType_[i] = 1;
-			else if (instr && instr->GetType() == IT_SOUNDFONT) lastType_[i] = 2;
+			if (instr && instr->GetType() == IT_SOUNDFONT) lastType_[i] = 1;
+			else if (instr && instr->GetType() == IT_VST3) lastType_[i] = 2;
+			else if (instr && instr->GetType() == IT_LV2) lastType_[i] = 3;
+			else if (instr && instr->GetType() == IT_MIDIOUT) lastType_[i] = 4;
 			else lastType_[i] = 0;
 		}
 	}
@@ -216,10 +218,10 @@ void InstrumentView::fillSampleParameters() {
     // Local variables used to create fields
     Variable *v = nullptr;
     UIIntVarField *f1 = nullptr;
-// Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut
+// Type selector: Sample vs SF2 vs VST3 vs LV2 vs MidiOut
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+        static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
         WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 0);
         instrument->Insert(wtv);
         tv = wtv;
@@ -434,10 +436,10 @@ void InstrumentView::fillMidiOutParameters() {
 	MidiOutInstrument *instrument=(MidiOutInstrument *)instr ;
 	GUIPoint position=GetAnchor() ;
 
-	// Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut
+	// Type selector: Sample vs SF2 vs VST3 vs LV2 vs MidiOut
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
 	if (!tv) {
-		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
+		static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
 		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 4);
 		instrument->Insert(wtv);
 		tv = wtv;
@@ -537,11 +539,11 @@ void InstrumentView::fillLV2Parameters() {
 	const int MAX_ROWS = 17;       // Max rows for parameters (leaving room for header + footer)
 	const int PARAMS_PER_PAGE = MAX_ROWS * 2;  // Two columns
 
-    // Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut (keep accessible to switch back)
+    // Type selector: Sample vs SF2 vs VST3 vs LV2 vs MidiOut (keep accessible to switch back)
     Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
     if (!tv) {
-        static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
-        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 1);
+        static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
+        WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 3);
         instrument->Insert(wtv);
         tv = wtv;
     }
@@ -794,11 +796,11 @@ void InstrumentView::fillSoundFontParameters() {
 	Variable *v = nullptr;
 	UIIntVarField *f1 = nullptr;
 
-	// Type selector: Sample vs LV2 vs SF2 vs VST3 vs MidiOut
+	// Type selector: Sample vs SF2 vs VST3 vs LV2 vs MidiOut
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
 	if (!tv) {
-		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
-		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 2);
+		static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 1);
 		instrument->Insert(wtv);
 		tv = wtv;
 	}
@@ -900,8 +902,8 @@ void InstrumentView::fillVST3Parameters() {
 	// Type selector
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
 	if (!tv) {
-		static char *instrTypes[] = { (char*)"Sample", (char*)"LV2", (char*)"SF2", (char*)"VST3", (char*)"MidiOut" } ;
-		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 3);
+		static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut" } ;
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 5, 2);
 		instrument->Insert(wtv);
 		tv = wtv;
 	}
@@ -1245,8 +1247,10 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 	            InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	            I_Instrument *instr=bank->GetInstrument(i) ;
                 Variable *v=instr->FindVariable(SIP_TABLE) ;
-                v->SetInt(-1) ;
-                isDirty_=true ;
+                if (v) {
+                    v->SetInt(-1) ;
+                    isDirty_=true ;
+                }
 		   } ;
         }
         if (mask&EPBM_L) {
@@ -1656,7 +1660,7 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
         Variable *tv = instr->FindVariable(MAKE_FOURCC('I','T','Y','P'));
         if (tv) {
             int val = tv->GetInt();
-            // val==0 => Sample, val==1 => SF2, val==2 => VST3, val==3 => LV2, val==4 => MidiOut
+            // val==0 => Sample, val==1 => SF2 (IT_SOUNDFONT), val==2 => VST3, val==3 => LV2, val==4 => MidiOut
             InstrumentType targetType = IT_SAMPLE;
             if (val == 1) targetType = IT_SOUNDFONT;
             else if (val == 2) targetType = IT_VST3;

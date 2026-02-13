@@ -482,11 +482,9 @@ void RecordSampleDialog::DrawView() {
 
 void RecordSampleDialog::drawSetupPhase() {
     int w = 30, h = 9;
-    if (w != lastWindowWidth_ || h != lastWindowHeight_) {
-        SetWindow(w, h);
-        lastWindowWidth_ = w;
-        lastWindowHeight_ = h;
-    }
+    SetWindow(w, h);
+    lastWindowWidth_ = w;
+    lastWindowHeight_ = h;
 
     GUITextProperties props;
     SetColor(CD_NORMAL);
@@ -532,6 +530,18 @@ void RecordSampleDialog::drawSetupPhase() {
     props.invert_ = false;
 }
 
+// Map a linear amplitude to a meter fraction (0.0 .. 1.0) using dB scale
+static inline float linearToMeterFrac(float linear) {
+    if (linear < 0.0001f) return 0.0f;
+    const float dbMin = -48.0f;
+    const float dbRange = 54.0f; // 6.0 - (-48.0)
+    float db = 20.0f * log10f(linear);
+    float frac = (db - dbMin) / dbRange;
+    if (frac < 0.0f) return 0.0f;
+    if (frac > 1.0f) return 1.0f;
+    return frac;
+}
+
 // Pixel-level meter drawing — called after text buffer flush
 void RecordSampleDialog::DrawGraphics() {
     if (phase_ != RP_RECORDING) return;
@@ -561,23 +571,15 @@ void RecordSampleDialog::DrawGraphics() {
     SDL_RenderFillRect(renderer, &bgRect);
 
     // Filled level bar with smooth gradient (left=green, right=red)
-    float meterFrac = 0.0f;
-    if (peakLevel_ > 0.0001f) {
-        float db = 20.0f * log10f(peakLevel_);
-        const float dbMin = -48.0f;
-        const float dbMax = 6.0f;
-        meterFrac = (db - dbMin) / (dbMax - dbMin);
-        if (meterFrac < 0.0f) meterFrac = 0.0f;
-        if (meterFrac > 1.0f) meterFrac = 1.0f;
-    }
+    // GPU-optimized: merge adjacent same-color strips into wider rects
+    float meterFrac = linearToMeterFrac(peakLevel_);
     int filledPx = (int)(meterFrac * pw);
     if (filledPx > pw) filledPx = pw;
     if (filledPx > 0) {
-        // Draw in 2px-wide vertical strips with interpolated color
-        for (int x = 0; x < filledPx; x += 2) {
-            float t = (float)x / (float)pw; // 0.0 at left, 1.0 at right
-
-            int r, g, b;
+        // Merge adjacent strips with same gradient color into single rects
+        int runStart = 0;
+        auto computeColor = [&](int x, int &r, int &g, int &b) {
+            float t = (float)x / (float)pw;
             if (t < 0.65f) {
                 float s = t / 0.65f;
                 r = (int)(0x22 + s * (0xCC - 0x22));
@@ -594,22 +596,44 @@ void RecordSampleDialog::DrawGraphics() {
                 g = (int)(0x77 - s * 0x77);
                 b = 0x00;
             }
+            // Clamp to valid range
+            if (r < 0) r = 0;
+            if (r > 255) r = 255;
+            if (g < 0) g = 0;
+            if (g > 255) g = 255;
+            if (b < 0) b = 0;
+            if (b > 255) b = 255;
+        };
 
-            SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
-            int w2 = (x + 2 <= filledPx) ? 2 : filledPx - x;
-            SDL_Rect sr = { (px + x) * mult + ax, py * mult + ay, w2 * mult, ph * mult };
+        int prevR, prevG, prevB;
+        computeColor(0, prevR, prevG, prevB);
+
+        for (int x = 2; x <= filledPx; x += 2) {
+            int curR, curG, curB;
+            computeColor(x, curR, curG, curB);
+
+            bool colorChanged = (curR != prevR || curG != prevG || curB != prevB);
+            if (colorChanged || x >= filledPx) {
+                int runW = x - runStart;
+                if (x >= filledPx && !colorChanged) runW = filledPx - runStart;
+                SDL_SetRenderDrawColor(renderer, prevR, prevG, prevB, 0xFF);
+                SDL_Rect sr = { (px + runStart) * mult + ax, py * mult + ay, runW * mult, ph * mult };
+                SDL_RenderFillRect(renderer, &sr);
+                runStart = x;
+                prevR = curR; prevG = curG; prevB = curB;
+            }
+        }
+        // Flush final run
+        if (runStart < filledPx) {
+            SDL_SetRenderDrawColor(renderer, prevR, prevG, prevB, 0xFF);
+            SDL_Rect sr = { (px + runStart) * mult + ax, py * mult + ay, (filledPx - runStart) * mult, ph * mult };
             SDL_RenderFillRect(renderer, &sr);
         }
     }
 
     // Peak hold marker — thin vertical line (dB scaled)
     if (peakHold_ > 0.01f) {
-        float holdDb = 20.0f * log10f(peakHold_);
-        const float dbMin = -48.0f;
-        const float dbMax = 6.0f;
-        float holdFrac = (holdDb - dbMin) / (dbMax - dbMin);
-        if (holdFrac < 0.0f) holdFrac = 0.0f;
-        if (holdFrac > 1.0f) holdFrac = 1.0f;
+        float holdFrac = linearToMeterFrac(peakHold_);
         int holdPx = (int)(holdFrac * pw);
         if (holdPx > pw - 1) holdPx = pw - 1;
         SDL_SetRenderDrawColor(renderer, 0xDD, 0xDD, 0xDD, 0xFF);
@@ -621,11 +645,9 @@ void RecordSampleDialog::DrawGraphics() {
 void RecordSampleDialog::drawRecordingPhase() {
     int width = 30;
     int height = 9;
-    if (width != lastWindowWidth_ || height != lastWindowHeight_) {
-        SetWindow(width, height);
-        lastWindowWidth_ = width;
-        lastWindowHeight_ = height;
-    }
+    SetWindow(width, height);
+    lastWindowWidth_ = width;
+    lastWindowHeight_ = height;
 
     GUITextProperties props;
     SetColor(CD_NORMAL);
@@ -677,11 +699,9 @@ void RecordSampleDialog::drawRecordingPhase() {
 void RecordSampleDialog::drawSavePhase() {
     int width = 34;
     int height = keyboardMode_ ? 14 : 7;
-    if (width != lastWindowWidth_ || height != lastWindowHeight_) {
-        SetWindow(width, height);
-        lastWindowWidth_ = width;
-        lastWindowHeight_ = height;
-    }
+    SetWindow(width, height);
+    lastWindowWidth_ = width;
+    lastWindowHeight_ = height;
 
     GUITextProperties props;
     SetColor(CD_NORMAL);

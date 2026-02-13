@@ -82,7 +82,7 @@ void MixerService::initRendering(MixerServiceRenderMode mode) {
     case MSRM_STEMS:
         for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
             char buffer[1024];
-            sprintf(buffer, "project:channel%d.wav", i);
+            snprintf(buffer, sizeof(buffer), "project:channel%d.wav", i);
             bus_[i].SetFileRenderer(buffer);
         }
         break;
@@ -212,7 +212,6 @@ void MixerService::SetChannelVolume(int channel, int percent) {
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     Mixer *m = Mixer::GetInstance();
-    int prev = m->GetChannelVolume(channel);
     m->SetChannelVolumeField(channel, percent);
 
     int bus = m->GetBus(channel);
@@ -262,7 +261,25 @@ void MixerService::ToggleChannelSolo(int channel) {
 
     bool newSolo = !m->IsChannelSolo(channel);
     if (newSolo) {
-        // store previous mutes and mute others
+        // Check if any other channel is currently soloed — if so, unsolo it
+        // first so we don't corrupt the saved mute state. Solo is exclusive.
+        bool hadPreviousSolo = false;
+        for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+            if (m->IsChannelSolo(i)) {
+                hadPreviousSolo = true;
+                m->SetChannelSoloField(i, false);
+            }
+        }
+
+        if (hadPreviousSolo) {
+            // Restore original mutes before re-saving them for the new solo
+            for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+                bool prev = m->GetChannelPrevMute(i);
+                pm->SetChannelMute(i, prev);
+            }
+        }
+
+        // Save current (original) mute states, then mute all except target
         for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
             bool isMuted = pm->IsChannelMuted(i);
             m->SetChannelPrevMute(i, isMuted);
@@ -274,11 +291,11 @@ void MixerService::ToggleChannelSolo(int channel) {
         }
         m->SetChannelSoloField(channel, true);
     } else {
-        // restore prior mutes
+        // Unsolo: restore prior mutes and clear solo flag
+        m->SetChannelSoloField(channel, false);
         for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
             bool prev = m->GetChannelPrevMute(i);
             pm->SetChannelMute(i, prev);
-            m->SetChannelSoloField(i, false);
         }
     }
 }
@@ -335,14 +352,15 @@ float MixerService::GetMasterPeak() {
 void MixerService::PushWaveSample(float v) {
     if (v < 0.0f) v = 0.0f;
     if (v > 1.0f) v = 1.0f;
-    waveformPos_ = (waveformPos_ + 1) % WAVE_SAMPLES_CONST;
-    waveform_[waveformPos_] = v;
+    int pos = (waveformPos_.load(std::memory_order_relaxed) + 1) % WAVE_SAMPLES_CONST;
+    waveform_[pos] = v;
+    waveformPos_.store(pos, std::memory_order_relaxed);
 }
 
 float MixerService::GetWaveSample(int index) const {
     if (index < 0) return 0.0f;
     if (index >= WAVE_SAMPLES_CONST) return 0.0f;
-    int pos = (waveformPos_ + 1 + index) % WAVE_SAMPLES_CONST; // oldest..newest
+    int pos = (waveformPos_.load(std::memory_order_relaxed) + 1 + index) % WAVE_SAMPLES_CONST; // oldest..newest
     return waveform_[pos];
 }
 
@@ -351,16 +369,18 @@ int MixerService::GetWaveSampleCount() const {
 }
 
 void MixerService::PushOscilloscopeSamples(const float *samples, int count) {
+    int pos = scopeWritePos_.load(std::memory_order_relaxed);
     for (int i = 0; i < count; i++) {
-        scopeBuffer_[scopeWritePos_] = samples[i];
-        scopeWritePos_ = (scopeWritePos_ + 1) % SCOPE_SAMPLES;
+        scopeBuffer_[pos] = samples[i];
+        pos = (pos + 1) % SCOPE_SAMPLES;
     }
+    scopeWritePos_.store(pos, std::memory_order_relaxed);
 }
 
 float MixerService::GetOscilloscopeSample(int index) const {
     if (index < 0 || index >= SCOPE_SAMPLES) return 0.0f;
     // Read from oldest to newest
-    int pos = (scopeWritePos_ + index) % SCOPE_SAMPLES;
+    int pos = (scopeWritePos_.load(std::memory_order_relaxed) + index) % SCOPE_SAMPLES;
     return scopeBuffer_[pos];
 }
 

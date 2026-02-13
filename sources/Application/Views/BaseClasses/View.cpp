@@ -65,17 +65,16 @@ GUIPoint View::GetTitlePosition() {
 } ;
 
 bool View::Lock() {
-	if (locked_) return false ;
-	locked_=true ;
-	return true ;
+	bool expected = false;
+	return locked_.compare_exchange_strong(expected, true, std::memory_order_acquire);
 } ;
 
 void View::WaitForObject() {
-	while (locked_) {} ;
+	while (locked_.load(std::memory_order_acquire)) {} ;
 }
 
 void View::Unlock() {
-	locked_=false ;
+	locked_.store(false, std::memory_order_release);
 }
 
 void View::drawMap() {
@@ -277,7 +276,7 @@ void View::ProcessButton(unsigned short mask, bool pressed) {
 	isDirty_=false ;
 	if (modalView_) {
 		modalView_->ProcessButton(mask,pressed);
-		modalView_->isDirty_;
+		if (modalView_->isDirty_) isDirty_ = true;
 		if (modalView_->IsFinished()) {
 			// process callback sending the modal dialog
 			if (modalViewCallback_) {

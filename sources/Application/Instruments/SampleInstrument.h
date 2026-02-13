@@ -11,6 +11,8 @@
 #include "Foundation/Types/Types.h"
 #include "Foundation/Variables/WatchedVariable.h"
 
+#include <atomic>
+
 enum SampleInstrumentLoopMode {
 	SILM_ONESHOT=0,
 	SILM_LOOP,
@@ -118,7 +120,7 @@ protected:
 private:
        SoundSource *source_ ;
        struct renderParams renderParams_[SONG_CHANNEL_COUNT] ;
-       bool running_ ;
+       std::atomic<bool> running_ ;
        bool dirty_ ;
 	   TableSaveState tableState_ ;
 	   

@@ -524,7 +524,7 @@ bool SoundFontInstrument::Render(int channel, fixed *buffer, int size, bool upda
     }
 
     // Apply de-click fade out if requested
-    if (cs.fadeOutSamples > 0) {
+    if (cs.fadeOutSamples > 0 && cs.fadeOutTotal > 0) {
         for (int i = 0; i < size && cs.fadeOutSamples > 0; i++) {
             fixed fade = fl2fp((float)cs.fadeOutSamples / (float)cs.fadeOutTotal);
             buffer[i * 2]     = fp_mul(buffer[i * 2], fade);

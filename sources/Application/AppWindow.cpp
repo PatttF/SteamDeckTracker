@@ -520,6 +520,15 @@ bool AppWindow::onEvent(GUIEvent &event) {
 
     _isDirty = false;
 
+    // Handle lightweight events that don't touch audio/player state
+    // BEFORE acquiring sync_ so they never contend with the audio thread.
+    if (event.GetType() == ET_PLAYERUPDATE) {
+        _isDirty = true;
+        // Skip the sync_ lock entirely — just trigger a redraw
+        goto redraw;
+    }
+
+    {
     unsigned short v = 1 << event.GetValue();
 
     MixerService *sm = MixerService::GetInstance();
@@ -556,14 +565,11 @@ bool AppWindow::onEvent(GUIEvent &event) {
                 };
             } ;*/
 
-    case ET_PLAYERUPDATE:
-        // Pushed from audio thread to force a redraw from the main loop
-        _isDirty = true;
-        break;
     default:
         break;
     }
     sm->Unlock();
+    }
 
     if (_shouldQuit) {
         onQuitApp();
@@ -577,6 +583,7 @@ bool AppWindow::onEvent(GUIEvent &event) {
         _isDirty = true;
         LoadProject(_newProjectToLoad.c_str());
     }
+redraw:
 #ifdef _SHOW_GP2X_
     Redraw();
 #else
@@ -666,12 +673,34 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
         PlayerEvent *pt = (PlayerEvent *)ve;
 
         if (_currentView) {
-            SysMutexLocker locker(drawMutex_);
-            _currentView->OnPlayerUpdate(pt->GetType(), pt->GetTickCount());
-            if (_currentView->HasModal()) {
-                _currentView->ForwardPlayerUpdateToModal(pt->GetType(), pt->GetTickCount());
+            // PET_UPDATE fires on the *audio driver thread* every buffer
+            // cycle while sync_ is held.  Taking drawMutex_ here used to
+            // create a priority-inversion: if the UI thread was inside
+            // Redraw/Flush (holding drawMutex_), the audio thread would
+            // block on drawMutex_ while still holding sync_, starving the
+            // entire audio pipeline until the UI finished rendering.
+            //
+            // Fix: for PET_UPDATE (audio thread) just set the dirty flag.
+            // The views already call OnPlayerUpdate(PET_UPDATE) at the end
+            // of their own Redraw/DrawView, so play-position markers are
+            // drawn on the next UI-thread Redraw cycle which is triggered
+            // by the ET_PLAYERUPDATE SDL event that MixerView::Update
+            // pushes into the main loop.
+            //
+            // PET_START / PET_STOP originate on the UI thread (Player::
+            // Start/Stop called from onEvent), so taking drawMutex_ there
+            // is safe — no cross-thread contention.
+            if (pt->GetType() == PET_UPDATE) {
+                _isDirty = true;
+                SetDirty();
+            } else {
+                SysMutexLocker locker(drawMutex_);
+                _currentView->OnPlayerUpdate(pt->GetType(), pt->GetTickCount());
+                if (_currentView->HasModal()) {
+                    _currentView->ForwardPlayerUpdateToModal(pt->GetType(), pt->GetTickCount());
+                }
+                Invalidate();
             }
-            Invalidate();
         }
 
         break;
