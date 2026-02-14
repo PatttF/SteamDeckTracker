@@ -28,7 +28,7 @@ FFMPEG_LIBS := $(FFMPEG_PREFIX)/lib/libavformat.a \
                $(FFMPEG_PREFIX)/lib/libavcodec.a \
                $(FFMPEG_PREFIX)/lib/libswresample.a \
                $(FFMPEG_PREFIX)/lib/libavutil.a \
-               -lm -lpthread -lz
+               -lm -lpthread -lz -lzstd
 
 # optimization (with debug symbols for profiling)
 OPT_FLAGS := -O3 -g -ffast-math

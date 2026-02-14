@@ -1,4 +1,4 @@
-#include "ThemeView.h"
+/media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/desktop.ini /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/PlugIn.ico /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaDelay.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaFreqEcho.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaPlate.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaRoom.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaShimmer.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaSpaceModulator.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaSupermassive.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaUberMod.vst3 /media/pat/A6D8DACDD8DA9B3F/Program Files/Common Files/VST3/ValhallaDSP/ValhallaVintageVerb.vst3'5/;#include "ThemeView.h"
 #include "Application/AppWindow.h"
 #include "Application/Model/Config.h"
 #include "Application/Utils/char.h"

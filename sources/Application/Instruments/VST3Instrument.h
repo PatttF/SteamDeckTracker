@@ -64,6 +64,8 @@ struct VST3PluginPresetMapping {
     const char *directories[6];         // directories to scan (nullptr terminated)
     const char *extension;              // file extension (e.g. ".fxp")
     int headerSkipBytes;                // bytes to skip at start of file (60 for FXP)
+    const char *extension2;             // optional 2nd extension (nullptr if unused)
+    int headerSkipBytes2;               // header skip for 2nd extension
 };
 
 class VST3Instrument : public I_Instrument, public I_Observer {

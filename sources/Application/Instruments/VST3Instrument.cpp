@@ -26,14 +26,21 @@
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <fstream>
+#include <future>
+#include <memory>
+#include <set>
+#include <thread>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <zlib.h>
+#include <zstd.h>
 
 // ---- VST3 SDK headers (pluginterfaces only — no compiled library needed) ----
 // IID definitions are provided by VST3IIDs.cpp (VST interfaces) and
@@ -1700,123 +1707,6 @@ void VST3Instrument::discoverParameters() {
     Trace::Log("VST3", "Discovered %d parameters for %s", (int)parameters_.size(), name_);
 }
 
-// ====================================================================
-// discoverPresets: enumerate program lists via IUnitInfo
-// ====================================================================
-void VST3Instrument::discoverPresets() {
-    programLists_.clear();
-    filePresetsByBank_.clear();
-    usingFilePresets_ = false;
-    usingMidiPresets_ = false;
-    currentBank_ = 0;
-    currentPreset_ = 0;
-    programChangeParamIdx_ = -1;
-
-    if (!editController_) return;
-
-    IEditController* ctrl = (IEditController*)editController_;
-
-    // Find the kIsProgramChange parameter (if any)
-    int32 paramCount = ctrl->getParameterCount();
-    for (int32 i = 0; i < paramCount; i++) {
-        ParameterInfo info;
-        if (ctrl->getParameterInfo(i, info) != kResultOk) continue;
-        if (info.flags & ParameterInfo::kIsProgramChange) {
-            // Find it in our discovered parameters_ vector
-            for (int p = 0; p < (int)parameters_.size(); p++) {
-                if (parameters_[p].paramId == info.id) {
-                    programChangeParamIdx_ = p;
-                    break;
-                }
-            }
-            // If not found in parameters_ (e.g. it was hidden/readonly), use raw paramId
-            if (programChangeParamIdx_ < 0) {
-                // Create a synthetic entry so we can still use it
-                Trace::Log("VST3", "Program change param %d not in parameters_ list, using raw", (int)info.id);
-            }
-            Trace::Log("VST3", "Found kIsProgramChange parameter: id=%d stepCount=%d",
-                (int)info.id, (int)info.stepCount);
-            break;
-        }
-    }
-
-    // Try to get IUnitInfo from the edit controller
-    IUnitInfo* unitInfo = nullptr;
-    tresult res = ctrl->queryInterface(IUnitInfo::iid, (void**)&unitInfo);
-    if (res != kResultOk || !unitInfo) {
-        Trace::Log("VST3", "No IUnitInfo — plugin does not expose program lists");
-        return;
-    }
-
-    int32 listCount = unitInfo->getProgramListCount();
-    Trace::Log("VST3", "Found %d program list(s)", (int)listCount);
-
-    for (int32 li = 0; li < listCount; li++) {
-        ProgramListInfo plInfo;
-        if (unitInfo->getProgramListInfo(li, plInfo) != kResultOk) continue;
-
-        VST3ProgramList pl;
-        pl.listId = plInfo.id;
-
-        char nameBuf[128];
-        string128ToChar(plInfo.name, nameBuf, 128);
-        pl.name = nameBuf;
-
-        for (int32 pi = 0; pi < plInfo.programCount; pi++) {
-            String128 progName;
-            if (unitInfo->getProgramName(plInfo.id, pi, progName) == kResultOk) {
-                char progBuf[128];
-                string128ToChar(progName, progBuf, 128);
-                pl.programs.push_back(progBuf);
-            } else {
-                char fallback[32];
-                snprintf(fallback, sizeof(fallback), "Program %d", (int)pi);
-                pl.programs.push_back(fallback);
-            }
-        }
-
-        Trace::Log("VST3", "  List[%d] '%s': %d programs", (int)plInfo.id,
-            pl.name.c_str(), (int)pl.programs.size());
-
-        programLists_.push_back(pl);
-    }
-
-    unitInfo->release();
-
-    if (!programLists_.empty()) {
-        Trace::Log("VST3", "Total: %d bank(s), first bank '%s' has %d presets",
-            (int)programLists_.size(),
-            programLists_[0].name.c_str(),
-            (int)programLists_[0].programs.size());
-    }
-
-    // If IUnitInfo yielded no useful presets (0 or only 1), try file-based scanning
-    bool hasUsefulPresets = false;
-    for (size_t i = 0; i < programLists_.size(); i++) {
-        if (programLists_[i].programs.size() > 1) {
-            hasUsefulPresets = true;
-            break;
-        }
-    }
-    if (!hasUsefulPresets) {
-        discoverPresetFiles();
-    }
-
-    // If file-based scanning also didn't find anything, try hardcoded ROM presets
-    if (!usingFilePresets_ && !hasUsefulPresets) {
-        discoverHardcodedPresets();
-    }
-
-    // If no hardcoded presets either, try patchmanager cache (other gearmulator)
-    if (!usingFilePresets_ && !usingMidiPresets_ && !hasUsefulPresets) {
-        discoverPatchManagerPresets();
-    }
-}
-
-// ====================================================================
-// discoverPresetFiles: scan filesystem for native preset files
-// ====================================================================
-
 // Helper: recursively find files with a given extension in a directory
 static void findPresetFiles(const std::string &dir, const char *extension,
                             const std::string &category,
@@ -1863,8 +1753,9 @@ static const VST3PluginPresetMapping knownPresetMappings[] = {
             nullptr
         },
         ".fxp",
-        60  // CcnK(4) + byteSize(4) + FPCh(4) + version(4) + fxID(4) + fxVersion(4) +
-            // numPrograms(4) + prgName(28) + chunkSize(4) = 60 bytes
+        60,  // CcnK(4) + byteSize(4) + FPCh(4) + version(4) + fxID(4) + fxVersion(4) +
+             // numPrograms(4) + prgName(28) + chunkSize(4) = 60 bytes
+        nullptr, 0
     },
     // Vital / Vitalium: .vital JSON files, no header to skip
     {
@@ -1873,11 +1764,169 @@ static const VST3PluginPresetMapping knownPresetMappings[] = {
             nullptr  // No known preset directories installed; user can add their own
         },
         ".vital",
-        0
+        0,
+        nullptr, 0
+    },
+    // Serum 2: .SerumPreset files use the XferJson format, which is the same
+    // format that IComponent::getState() produces. Feed entire file to setState.
+    // (.fxp files contain Serum 1 binary chunk data which is incompatible.)
+    {
+        "Serum",
+        {
+            nullptr  // Directories resolved at runtime from WINEPREFIX
+        },
+        ".SerumPreset",
+        0,   // No header skip — XferJson header is part of the state format
+        nullptr, 0
     },
     // Sentinel
-    { nullptr, {nullptr}, nullptr, 0 }
+    { nullptr, {nullptr}, nullptr, 0, nullptr, 0 }
 };
+
+// ====================================================================
+// discoverPresets: enumerate program lists via IUnitInfo
+// ====================================================================
+
+void VST3Instrument::discoverPresets() {
+    programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = false;
+    usingMidiPresets_ = false;
+    currentBank_ = 0;
+    currentPreset_ = 0;
+    programChangeParamIdx_ = -1;
+
+    if (!editController_) return;
+
+    IEditController* ctrl = (IEditController*)editController_;
+
+    // Find the kIsProgramChange parameter (if any)
+    int32 paramCount = ctrl->getParameterCount();
+    for (int32 i = 0; i < paramCount; i++) {
+        ParameterInfo info;
+        if (ctrl->getParameterInfo(i, info) != kResultOk) continue;
+        if (info.flags & ParameterInfo::kIsProgramChange) {
+            // Find it in our discovered parameters_ vector
+            for (int p = 0; p < (int)parameters_.size(); p++) {
+                if (parameters_[p].paramId == info.id) {
+                    programChangeParamIdx_ = p;
+                    break;
+                }
+            }
+            // If not found in parameters_ (e.g. it was hidden/readonly), use raw paramId
+            if (programChangeParamIdx_ < 0) {
+                // Create a synthetic entry so we can still use it
+                Trace::Log("VST3", "Program change param %d not in parameters_ list, using raw", (int)info.id);
+            }
+            Trace::Log("VST3", "Found kIsProgramChange parameter: id=%d stepCount=%d",
+                (int)info.id, (int)info.stepCount);
+            break;
+        }
+    }
+
+    // Try to get IUnitInfo from the edit controller
+    IUnitInfo* unitInfo = nullptr;
+    tresult res = ctrl->queryInterface(IUnitInfo::iid, (void**)&unitInfo);
+    if (res != kResultOk || !unitInfo) {
+        Trace::Log("VST3", "No IUnitInfo — trying file-based preset scanning");
+        discoverPresetFiles();
+        if (!usingFilePresets_) {
+            discoverHardcodedPresets();
+        }
+        if (!usingFilePresets_ && !usingMidiPresets_) {
+            discoverPatchManagerPresets();
+        }
+        return;
+    }
+
+    int32 listCount = unitInfo->getProgramListCount();
+    Trace::Log("VST3", "Found %d program list(s)", (int)listCount);
+
+    for (int32 li = 0; li < listCount; li++) {
+        ProgramListInfo plInfo;
+        if (unitInfo->getProgramListInfo(li, plInfo) != kResultOk) continue;
+
+        VST3ProgramList pl;
+        pl.listId = plInfo.id;
+
+        char nameBuf[128];
+        string128ToChar(plInfo.name, nameBuf, 128);
+        pl.name = nameBuf;
+
+        for (int32 pi = 0; pi < plInfo.programCount; pi++) {
+            String128 progName;
+            if (unitInfo->getProgramName(plInfo.id, pi, progName) == kResultOk) {
+                char progBuf[128];
+                string128ToChar(progName, progBuf, 128);
+                pl.programs.push_back(progBuf);
+            } else {
+                char fallback[32];
+                snprintf(fallback, sizeof(fallback), "Program %d", (int)pi);
+                pl.programs.push_back(fallback);
+            }
+        }
+
+        Trace::Log("VST3", "  List[%d] '%s': %d programs", (int)plInfo.id,
+            pl.name.c_str(), (int)pl.programs.size());
+
+        programLists_.push_back(pl);
+    }
+
+    unitInfo->release();
+
+    if (!programLists_.empty()) {
+        Trace::Log("VST3", "Total: %d bank(s), first bank '%s' has %d presets",
+            (int)programLists_.size(),
+            programLists_[0].name.c_str(),
+            (int)programLists_[0].programs.size());
+    }
+
+    // If this plugin has a known file-preset mapping, always prefer file-based
+    // presets over IUnitInfo programs (which are often just empty "Init" slots
+    // for JUCE-based plugins like Serum 2, Vital, etc.).
+    bool hasKnownMapping = false;
+    for (int i = 0; knownPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, knownPresetMappings[i].pluginNameSubstring) != nullptr) {
+            hasKnownMapping = true;
+            break;
+        }
+    }
+
+    if (hasKnownMapping) {
+        Trace::Log("VST3", "Known preset mapping found for '%s' — "
+            "trying file-based presets (overriding IUnitInfo)", name_);
+        discoverPresetFiles();
+    }
+
+    // If file scanning didn't find presets, check if IUnitInfo had useful ones
+    bool hasUsefulPresets = false;
+    if (!usingFilePresets_) {
+        for (size_t i = 0; i < programLists_.size(); i++) {
+            if (programLists_[i].programs.size() > 1) {
+                hasUsefulPresets = true;
+                break;
+            }
+        }
+        if (!hasUsefulPresets) {
+            // No file presets and no useful IUnitInfo presets — try other methods
+            discoverPresetFiles();
+        }
+    }
+
+    // If file-based scanning also didn't find anything, try hardcoded ROM presets
+    if (!usingFilePresets_ && !hasUsefulPresets) {
+        discoverHardcodedPresets();
+    }
+
+    // If no hardcoded presets either, try patchmanager cache (other gearmulator)
+    if (!usingFilePresets_ && !usingMidiPresets_ && !hasUsefulPresets) {
+        discoverPatchManagerPresets();
+    }
+}
+
+// ====================================================================
+// discoverPresetFiles: scan filesystem for native preset files
+// ====================================================================
 
 void VST3Instrument::discoverPresetFiles() {
     // Find a matching plugin mapping
@@ -1916,6 +1965,28 @@ void VST3Instrument::discoverPresetFiles() {
             scanDirs.push_back(homeDir + "/Documents/Vital");
             scanDirs.push_back(homeDir + "/.vital/User/Presets");
             scanDirs.push_back(homeDir + "/Music/Vital");
+        } else if (strstr(name_, "Serum") != nullptr) {
+            // Serum 2 presets live inside the Wine prefix.
+            // Try WINEPREFIX env first, then the default SDTracker prefix.
+            std::string pfxBase;
+            const char *wpEnv = getenv("WINEPREFIX");
+            if (wpEnv && wpEnv[0]) {
+                pfxBase = wpEnv;
+            } else {
+                pfxBase = homeDir + "/Documents/SDTracker/wineprefix";
+            }
+            // Try both with and without /pfx (Proton may nest it)
+            const char *userNames[] = { "steamuser", nullptr };
+            const char *prefixes[] = { "", "/pfx", nullptr };
+            for (int pi = 0; prefixes[pi] != nullptr; pi++) {
+                for (int ui = 0; userNames[ui] != nullptr; ui++) {
+                    std::string base = pfxBase + prefixes[pi]
+                        + "/drive_c/users/" + userNames[ui]
+                        + "/Documents/Xfer";
+                    scanDirs.push_back(base + "/Serum 2 Presets/Presets");
+                    scanDirs.push_back(base + "/Serum Presets/Presets");
+                }
+            }
         }
     }
 
@@ -1923,6 +1994,13 @@ void VST3Instrument::discoverPresetFiles() {
     std::map<std::string, std::vector<VST3FilePreset>> bankMap;
     for (size_t i = 0; i < scanDirs.size(); i++) {
         findPresetFiles(scanDirs[i], mapping->extension, "", bankMap);
+    }
+
+    // Also scan for the second extension if present
+    if (mapping->extension2) {
+        for (size_t i = 0; i < scanDirs.size(); i++) {
+            findPresetFiles(scanDirs[i], mapping->extension2, "", bankMap);
+        }
     }
 
     if (bankMap.empty()) {
@@ -2238,6 +2316,514 @@ void VST3Instrument::discoverPatchManagerPresets() {
 }
 
 // ====================================================================
+// ====================================================================
+// Minimal CBOR utilities for merging Serum 2 preset state
+// ====================================================================
+// Serum 2 uses XferJson format: "XferJson\0" (9 bytes) + 8-byte LE JSON length
+// + JSON string + 4-byte LE decompressed size + 4-byte LE version (always 2)
+// + zstd-compressed CBOR data.
+//
+// The CBOR is a map of module names (strings) to module data (maps).
+// Each module map has "plainParams" (map of param names to float/string values)
+// and optional non-param keys (curveData, clip, WTOsc, FX, etc.).
+//
+// getState() returns ALL modules with ALL params (full state).
+// .SerumPreset files contain only CHANGED params plus metadata keys.
+// We merge preset values into the getState CBOR, then re-encode and setState.
+//
+// Tree-based CBOR decode/encode/merge with MD5 hash for Serum 2 XferJson presets
+
+namespace CborMerge {
+
+// ====================================================================
+// MD5 hash computation (RFC 1321)
+// ====================================================================
+static inline uint32_t md5F(uint32_t x, uint32_t y, uint32_t z) { return (x & y) | (~x & z); }
+static inline uint32_t md5G(uint32_t x, uint32_t y, uint32_t z) { return (x & z) | (y & ~z); }
+static inline uint32_t md5H(uint32_t x, uint32_t y, uint32_t z) { return x ^ y ^ z; }
+static inline uint32_t md5I(uint32_t x, uint32_t y, uint32_t z) { return y ^ (x | ~z); }
+static inline uint32_t md5Rotl(uint32_t x, int n) { return (x << n) | (x >> (32 - n)); }
+
+static void md5Transform(uint32_t state[4], const uint8_t block[64]) {
+    static const uint32_t T[64] = {
+        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,
+        0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
+        0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,
+        0x6b901122,0xfd987193,0xa679438e,0x49b40821,
+        0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,
+        0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
+        0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,
+        0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
+        0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,
+        0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
+        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,
+        0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
+        0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,
+        0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
+        0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,
+        0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
+    };
+    static const int S[64] = {
+        7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
+        5, 9,14,20,5, 9,14,20,5, 9,14,20,5, 9,14,20,
+        4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
+        6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21
+    };
+    uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+    uint32_t M[16];
+    for (int i = 0; i < 16; i++) {
+        M[i] = ((uint32_t)block[i*4]) | ((uint32_t)block[i*4+1] << 8) |
+               ((uint32_t)block[i*4+2] << 16) | ((uint32_t)block[i*4+3] << 24);
+    }
+    for (int i = 0; i < 64; i++) {
+        uint32_t f, g;
+        if (i < 16)      { f = md5F(b,c,d); g = (uint32_t)i; }
+        else if (i < 32)  { f = md5G(b,c,d); g = (uint32_t)((5*i+1) % 16); }
+        else if (i < 48)  { f = md5H(b,c,d); g = (uint32_t)((3*i+5) % 16); }
+        else               { f = md5I(b,c,d); g = (uint32_t)((7*i) % 16); }
+        uint32_t tmp = d;
+        d = c; c = b;
+        b = b + md5Rotl(a + f + T[i] + M[g], S[i]);
+        a = tmp;
+    }
+    state[0] += a; state[1] += b; state[2] += c; state[3] += d;
+}
+
+static std::string md5Hex(const uint8_t *data, size_t len) {
+    uint32_t state[4] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 };
+    size_t i = 0;
+    for (; i + 64 <= len; i += 64)
+        md5Transform(state, data + i);
+    uint8_t buf[128];
+    memset(buf, 0, sizeof(buf));
+    size_t rem = len - i;
+    memcpy(buf, data + i, rem);
+    buf[rem] = 0x80;
+    size_t padLen = (rem < 56) ? 64 : 128;
+    uint64_t bitLen = (uint64_t)len * 8;
+    for (int k = 0; k < 8; k++)
+        buf[padLen - 8 + k] = (uint8_t)(bitLen >> (8 * k));
+    for (size_t j = 0; j < padLen; j += 64)
+        md5Transform(state, buf + j);
+    uint8_t digest[16];
+    for (int k = 0; k < 4; k++) {
+        digest[k*4+0] = (uint8_t)(state[k]);
+        digest[k*4+1] = (uint8_t)(state[k] >> 8);
+        digest[k*4+2] = (uint8_t)(state[k] >> 16);
+        digest[k*4+3] = (uint8_t)(state[k] >> 24);
+    }
+    char hex[33];
+    for (int k = 0; k < 16; k++)
+        sprintf(hex + k*2, "%02x", digest[k]);
+    hex[32] = '\0';
+    return std::string(hex);
+}
+
+// ====================================================================
+// JSON hash update — replace the "hash":"..." value in-place
+// ====================================================================
+static std::string updateJsonHash(const std::string &json, const std::string &newHash) {
+    std::string marker = "\"hash\":\"";
+    size_t pos = json.find(marker);
+    if (pos == std::string::npos) return json;
+    size_t hashStart = pos + marker.size();
+    size_t hashEnd = json.find('"', hashStart);
+    if (hashEnd == std::string::npos) return json;
+    return json.substr(0, hashStart) + newHash + json.substr(hashEnd);
+}
+
+// ====================================================================
+// CborValue — recursive tree type for CBOR data
+// ====================================================================
+struct CborValue {
+    enum Type {
+        T_UINT, T_NEGINT, T_FLOAT, T_DOUBLE, T_BOOL, T_NULL, T_UNDEFINED,
+        T_STRING, T_BYTES, T_ARRAY, T_MAP, T_TAG
+    };
+    Type type;
+    uint64_t uint_val;    // T_UINT value, T_NEGINT raw value (actual = -1-val), T_TAG number
+    double float_val;     // T_FLOAT, T_DOUBLE
+    bool bool_val;        // T_BOOL
+    std::string str_val;  // T_STRING
+    std::vector<uint8_t> bytes_val; // T_BYTES
+    std::vector<CborValue> arr_val; // T_ARRAY items, T_TAG content (1 element)
+    std::vector<std::pair<CborValue, CborValue> > map_val; // T_MAP ordered pairs
+
+    CborValue() : type(T_NULL), uint_val(0), float_val(0), bool_val(false) {}
+
+    bool isString() const { return type == T_STRING; }
+    bool isMap() const { return type == T_MAP; }
+
+    // Map lookup by string key — returns pointer or NULL
+    CborValue *mapFind(const std::string &key) {
+        for (size_t i = 0; i < map_val.size(); i++) {
+            if (map_val[i].first.type == T_STRING && map_val[i].first.str_val == key)
+                return &map_val[i].second;
+        }
+        return NULL;
+    }
+    const CborValue *mapFind(const std::string &key) const {
+        for (size_t i = 0; i < map_val.size(); i++) {
+            if (map_val[i].first.type == T_STRING && map_val[i].first.str_val == key)
+                return &map_val[i].second;
+        }
+        return NULL;
+    }
+    // Set a map entry (update existing or append)
+    void mapSet(const std::string &key, const CborValue &val) {
+        for (size_t i = 0; i < map_val.size(); i++) {
+            if (map_val[i].first.type == T_STRING && map_val[i].first.str_val == key) {
+                map_val[i].second = val;
+                return;
+            }
+        }
+        CborValue k;
+        k.type = T_STRING;
+        k.str_val = key;
+        map_val.push_back(std::make_pair(k, val));
+    }
+};
+
+// ====================================================================
+// CBOR decoder — recursive descent
+// ====================================================================
+static CborValue decodeCbor(const uint8_t *data, size_t len, size_t &pos) {
+    CborValue val;
+    if (pos >= len) return val;
+
+    uint8_t ib = data[pos++];
+    int mt = (ib >> 5) & 7;
+    uint8_t ai = ib & 0x1F;
+
+    // Decode additional info to get the argument value
+    uint64_t arg = 0;
+    bool isBreak = false;
+    if (ai < 24) {
+        arg = ai;
+    } else if (ai == 24 && pos < len) {
+        arg = data[pos++];
+    } else if (ai == 25 && pos + 2 <= len) {
+        arg = ((uint64_t)data[pos] << 8) | data[pos+1];
+        pos += 2;
+    } else if (ai == 26 && pos + 4 <= len) {
+        arg = ((uint64_t)data[pos] << 24) | ((uint64_t)data[pos+1] << 16) |
+              ((uint64_t)data[pos+2] << 8) | data[pos+3];
+        pos += 4;
+    } else if (ai == 27 && pos + 8 <= len) {
+        for (int i = 0; i < 8; i++) arg = (arg << 8) | data[pos++];
+    } else if (ai == 31) {
+        isBreak = true;
+        arg = UINT64_MAX;
+    }
+
+    switch (mt) {
+    case 0: // unsigned integer
+        val.type = CborValue::T_UINT;
+        val.uint_val = arg;
+        break;
+    case 1: // negative integer (-1 - arg)
+        val.type = CborValue::T_NEGINT;
+        val.uint_val = arg;
+        break;
+    case 2: // byte string
+        val.type = CborValue::T_BYTES;
+        if (isBreak) {
+            while (pos < len && data[pos] != 0xFF) {
+                CborValue chunk = decodeCbor(data, len, pos);
+                if (chunk.type == CborValue::T_BYTES)
+                    val.bytes_val.insert(val.bytes_val.end(),
+                        chunk.bytes_val.begin(), chunk.bytes_val.end());
+            }
+            if (pos < len) pos++; // skip break
+        } else {
+            size_t n = (size_t)arg;
+            if (pos + n <= len) {
+                val.bytes_val.assign(data + pos, data + pos + n);
+                pos += n;
+            }
+        }
+        break;
+    case 3: // text string
+        val.type = CborValue::T_STRING;
+        if (isBreak) {
+            while (pos < len && data[pos] != 0xFF) {
+                CborValue chunk = decodeCbor(data, len, pos);
+                if (chunk.type == CborValue::T_STRING)
+                    val.str_val += chunk.str_val;
+            }
+            if (pos < len) pos++;
+        } else {
+            size_t n = (size_t)arg;
+            if (pos + n <= len) {
+                val.str_val.assign((const char*)data + pos, n);
+                pos += n;
+            }
+        }
+        break;
+    case 4: // array
+        val.type = CborValue::T_ARRAY;
+        if (isBreak) {
+            while (pos < len && data[pos] != 0xFF)
+                val.arr_val.push_back(decodeCbor(data, len, pos));
+            if (pos < len) pos++;
+        } else {
+            val.arr_val.reserve((size_t)arg);
+            for (uint64_t i = 0; i < arg && pos < len; i++)
+                val.arr_val.push_back(decodeCbor(data, len, pos));
+        }
+        break;
+    case 5: // map
+        val.type = CborValue::T_MAP;
+        if (isBreak) {
+            while (pos < len && data[pos] != 0xFF) {
+                CborValue k = decodeCbor(data, len, pos);
+                CborValue v = decodeCbor(data, len, pos);
+                val.map_val.push_back(std::make_pair(k, v));
+            }
+            if (pos < len) pos++;
+        } else {
+            val.map_val.reserve((size_t)arg);
+            for (uint64_t i = 0; i < arg && pos < len; i++) {
+                CborValue k = decodeCbor(data, len, pos);
+                CborValue v = decodeCbor(data, len, pos);
+                val.map_val.push_back(std::make_pair(k, v));
+            }
+        }
+        break;
+    case 6: // tag
+        val.type = CborValue::T_TAG;
+        val.uint_val = arg;
+        val.arr_val.push_back(decodeCbor(data, len, pos));
+        break;
+    case 7: // simple/float
+        if (ai == 20)      { val.type = CborValue::T_BOOL; val.bool_val = false; }
+        else if (ai == 21)  { val.type = CborValue::T_BOOL; val.bool_val = true; }
+        else if (ai == 22)  { val.type = CborValue::T_NULL; }
+        else if (ai == 23)  { val.type = CborValue::T_UNDEFINED; }
+        else if (ai == 25) {
+            // Half-precision float (16-bit IEEE 754)
+            uint16_t h = (uint16_t)arg;
+            int sign = (h >> 15) & 1;
+            int exp = (h >> 10) & 0x1F;
+            int mant = h & 0x3FF;
+            double fval;
+            if (exp == 0)       fval = ldexp(mant, -24);
+            else if (exp == 31) fval = (mant == 0) ? INFINITY : NAN;
+            else                fval = ldexp(mant + 1024, exp - 25);
+            if (sign) fval = -fval;
+            val.type = CborValue::T_FLOAT;
+            val.float_val = fval;
+        } else if (ai == 26) {
+            // Single-precision float (IEEE 754)
+            uint32_t bits = (uint32_t)arg;
+            float f;
+            memcpy(&f, &bits, sizeof(f));
+            val.type = CborValue::T_FLOAT;
+            val.float_val = (double)f;
+        } else if (ai == 27) {
+            // Double-precision float (IEEE 754)
+            double d;
+            memcpy(&d, &arg, sizeof(d));
+            val.type = CborValue::T_DOUBLE;
+            val.float_val = d;
+        }
+        break;
+    }
+    return val;
+}
+
+// ====================================================================
+// CBOR encoder
+// ====================================================================
+static void writeHead(std::vector<uint8_t> &out, int mt, uint64_t val) {
+    uint8_t major = (uint8_t)(mt << 5);
+    if (val < 24) {
+        out.push_back(major | (uint8_t)val);
+    } else if (val <= 0xFF) {
+        out.push_back(major | 24);
+        out.push_back((uint8_t)val);
+    } else if (val <= 0xFFFF) {
+        out.push_back(major | 25);
+        out.push_back((uint8_t)(val >> 8));
+        out.push_back((uint8_t)val);
+    } else if (val <= 0xFFFFFFFFULL) {
+        out.push_back(major | 26);
+        out.push_back((uint8_t)(val >> 24));
+        out.push_back((uint8_t)(val >> 16));
+        out.push_back((uint8_t)(val >> 8));
+        out.push_back((uint8_t)val);
+    } else {
+        out.push_back(major | 27);
+        for (int i = 7; i >= 0; i--) out.push_back((uint8_t)(val >> (8*i)));
+    }
+}
+
+static void encodeCbor(const CborValue &val, std::vector<uint8_t> &out) {
+    switch (val.type) {
+    case CborValue::T_UINT:
+        writeHead(out, 0, val.uint_val);
+        break;
+    case CborValue::T_NEGINT:
+        writeHead(out, 1, val.uint_val);
+        break;
+    case CborValue::T_BYTES:
+        writeHead(out, 2, val.bytes_val.size());
+        out.insert(out.end(), val.bytes_val.begin(), val.bytes_val.end());
+        break;
+    case CborValue::T_STRING:
+        writeHead(out, 3, val.str_val.size());
+        out.insert(out.end(), val.str_val.begin(), val.str_val.end());
+        break;
+    case CborValue::T_ARRAY:
+        writeHead(out, 4, val.arr_val.size());
+        for (size_t i = 0; i < val.arr_val.size(); i++)
+            encodeCbor(val.arr_val[i], out);
+        break;
+    case CborValue::T_MAP:
+        writeHead(out, 5, val.map_val.size());
+        for (size_t i = 0; i < val.map_val.size(); i++) {
+            encodeCbor(val.map_val[i].first, out);
+            encodeCbor(val.map_val[i].second, out);
+        }
+        break;
+    case CborValue::T_TAG:
+        writeHead(out, 6, val.uint_val);
+        if (!val.arr_val.empty())
+            encodeCbor(val.arr_val[0], out);
+        break;
+    case CborValue::T_BOOL:
+        out.push_back(val.bool_val ? 0xF5 : 0xF4);
+        break;
+    case CborValue::T_NULL:
+        out.push_back(0xF6);
+        break;
+    case CborValue::T_UNDEFINED:
+        out.push_back(0xF7);
+        break;
+    case CborValue::T_FLOAT: {
+        float f = (float)val.float_val;
+        uint32_t bits;
+        memcpy(&bits, &f, sizeof(bits));
+        out.push_back(0xFA); // major 7, ai 26
+        out.push_back((uint8_t)(bits >> 24));
+        out.push_back((uint8_t)(bits >> 16));
+        out.push_back((uint8_t)(bits >> 8));
+        out.push_back((uint8_t)bits);
+        break;
+    }
+    case CborValue::T_DOUBLE: {
+        uint64_t bits;
+        memcpy(&bits, &val.float_val, sizeof(bits));
+        out.push_back(0xFB); // major 7, ai 27
+        for (int i = 7; i >= 0; i--) out.push_back((uint8_t)(bits >> (8*i)));
+        break;
+    }
+    }
+}
+
+// ====================================================================
+// Merge logic — tree-level merge like Python cbor2
+// ====================================================================
+static bool isSkipKey(const std::string &key) {
+    static const char *skip[] = {
+        "fileType", "presetAuthor", "presetDescription", "presetName",
+        "arpBankDisplayName", "clipBankDisplayName", NULL
+    };
+    for (const char **s = skip; *s; s++) {
+        if (key == *s) return true;
+    }
+    return false;
+}
+
+// Merge preset CBOR tree into getState CBOR tree.
+// Both are top-level maps: { moduleName: { "plainParams": {...}, ...otherKeys... }, ... }
+// For each module in preset: merge into getState copy.
+// plainParams: if both maps, merge param-by-param; if preset says "default", keep getState.
+// Non-plainParams keys: replace entirely with preset value.
+static std::vector<uint8_t> mergeCbor(const uint8_t *gsData, size_t gsLen,
+                                       const uint8_t *prData, size_t prLen) {
+    size_t gsPos = 0, prPos = 0;
+    CborValue gsTree = decodeCbor(gsData, gsLen, gsPos);
+    CborValue prTree = decodeCbor(prData, prLen, prPos);
+
+    if (!gsTree.isMap() || !prTree.isMap()) {
+        // Not both maps — return getState as-is
+        return std::vector<uint8_t>(gsData, gsData + gsLen);
+    }
+
+    // Deep copy getState tree (CborValue is value-type, this copies everything)
+    CborValue merged = gsTree;
+
+    // For each module in preset, overlay onto merged tree
+    for (size_t pi = 0; pi < prTree.map_val.size(); pi++) {
+        const CborValue &pKey = prTree.map_val[pi].first;
+        const CborValue &pVal = prTree.map_val[pi].second;
+
+        if (!pKey.isString()) continue;
+        const std::string &modName = pKey.str_val;
+
+        // Skip preset metadata keys
+        if (isSkipKey(modName)) continue;
+
+        // Find matching module in merged tree
+        CborValue *gsMod = merged.mapFind(modName);
+
+        if (!gsMod) {
+            // Module only in preset — add to merged
+            merged.mapSet(modName, pVal);
+            continue;
+        }
+
+        // Both exist — merge at module level
+        if (gsMod->isMap() && pVal.isMap()) {
+            // Iterate preset module's sub-keys
+            for (size_t mi = 0; mi < pVal.map_val.size(); mi++) {
+                const CborValue &subKey = pVal.map_val[mi].first;
+                const CborValue &subVal = pVal.map_val[mi].second;
+
+                if (!subKey.isString()) continue;
+                const std::string &subName = subKey.str_val;
+
+                if (subName == "plainParams") {
+                    // Deep merge plainParams
+                    CborValue *gsParams = gsMod->mapFind("plainParams");
+                    if (gsParams && gsParams->isMap() && subVal.isMap()) {
+                        // Both are maps — merge param by param
+                        for (size_t pk = 0; pk < subVal.map_val.size(); pk++) {
+                            const CborValue &paramKey = subVal.map_val[pk].first;
+                            const CborValue &paramVal = subVal.map_val[pk].second;
+                            if (paramKey.isString())
+                                gsParams->mapSet(paramKey.str_val, paramVal);
+                        }
+                    } else if (gsParams && gsParams->isMap() &&
+                               subVal.isString() && subVal.str_val == "default") {
+                        // Preset says "default" — keep getState values (no-op)
+                    } else if (gsParams && gsParams->isString() && subVal.isMap()) {
+                        // getState says "default", preset has actual params — use preset
+                        *gsParams = subVal;
+                    } else {
+                        // Fallback: replace with preset value
+                        gsMod->mapSet("plainParams", subVal);
+                    }
+                } else {
+                    // Non-plainParams key — replace entirely with preset value
+                    gsMod->mapSet(subName, subVal);
+                }
+            }
+        } else {
+            // Not both maps — replace entirely with preset value
+            *gsMod = pVal;
+        }
+    }
+
+    // Encode merged tree back to CBOR bytes
+    std::vector<uint8_t> out;
+    encodeCbor(merged, out);
+    return out;
+}
+
+} // namespace CborMerge
+
 // loadPresetFromFile: read a preset file and feed it to IComponent::setState
 // ====================================================================
 bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerSkipBytes) {
@@ -2274,16 +2860,240 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         return false;
     }
 
-    // Feed the data to IComponent::setState via our SimpleMemoryStream
+    // If the data starts with a zlib header (0x78), it may be compressed
+    // (e.g. Serum 1/2 .fxp presets use zlib-compressed chunks).
+    // Try feeding the decompressed data first; if setState rejects it,
+    // fall back to the raw (compressed) data.
+    std::vector<uint8_t> decompressed;
+    bool isZlib = (data.size() >= 2 && data[0] == 0x78);
+    if (isZlib) {
+        // Estimate decompressed size (try 10x, grow if needed)
+        uLongf destLen = (uLongf)data.size() * 10;
+        decompressed.resize(destLen);
+        int zret = uncompress(&decompressed[0], &destLen,
+                              &data[0], (uLong)data.size());
+        if (zret == Z_BUF_ERROR) {
+            // Buffer too small — try larger
+            destLen = (uLongf)data.size() * 50;
+            decompressed.resize(destLen);
+            zret = uncompress(&decompressed[0], &destLen,
+                              &data[0], (uLong)data.size());
+        }
+        if (zret == Z_OK) {
+            decompressed.resize(destLen);
+            Trace::Log("VST3", "Decompressed preset: %ld -> %ld bytes",
+                (long)data.size(), (long)destLen);
+        } else {
+            Trace::Log("VST3", "Zlib decompression failed (ret=%d), using raw data", zret);
+            isZlib = false;
+            decompressed.clear();
+        }
+    }
+
+    // XferJson format handler (Serum 2 .SerumPreset files)
+    // ================================================
+    // Both getState() and .SerumPreset use XferJson: header + JSON + binary.
+    // Binary = 4-byte LE decompressed_size + 4-byte LE version + zstd data.
+    // The zstd data decompresses to CBOR (map of modules with parameters).
+    // getState CBOR has ALL parameters; preset CBOR has only CHANGED ones.
+    // We merge preset values into getState CBOR, re-encode, and setState.
+    bool isXferJson = (data.size() > 17 &&
+                       memcmp(&data[0], "XferJson\0", 9) == 0);
+    if (isXferJson) {
+        IComponent *comp = (IComponent *)component_;
+
+        // 1. Get current state from the plugin
+        SimpleMemoryStream gsStream;
+        tresult gsRes = comp->getState(&gsStream);
+        if (gsRes != kResultOk || gsStream.size() < 17) {
+            Trace::Error("VST3: getState failed for CBOR merge (res=%d)", (int)gsRes);
+            return false;
+        }
+        const uint8_t *gsRaw = (const uint8_t *)gsStream.data();
+        size_t gsRawLen = gsStream.size();
+
+        // 2. Parse XferJson headers from both getState and preset
+        if (memcmp(gsRaw, "XferJson\0", 9) != 0) {
+            Trace::Error("VST3: getState is not XferJson format");
+            return false;
+        }
+        uint64_t gsJsonLen = 0;
+        for (int i = 0; i < 8; i++) gsJsonLen |= ((uint64_t)gsRaw[9+i]) << (8*i);
+        size_t gsBinaryOff = 17 + (size_t)gsJsonLen;
+        if (gsBinaryOff + 8 >= gsRawLen) {
+            Trace::Error("VST3: getState XferJson too short");
+            return false;
+        }
+
+        uint64_t prJsonLen = 0;
+        for (int i = 0; i < 8; i++) prJsonLen |= ((uint64_t)data[9+i]) << (8*i);
+        size_t prBinaryOff = 17 + (size_t)prJsonLen;
+        if (prBinaryOff + 8 >= data.size()) {
+            Trace::Error("VST3: preset XferJson too short");
+            return false;
+        }
+
+        // 3. Parse binary sub-headers (4-byte LE decompressed size + 4-byte LE version)
+        uint32_t gsDecompSz = 0, gsVersion = 0;
+        memcpy(&gsDecompSz, &gsRaw[gsBinaryOff], 4);
+        memcpy(&gsVersion, &gsRaw[gsBinaryOff + 4], 4);
+
+        uint32_t prDecompSz = 0, prVersion = 0;
+        memcpy(&prDecompSz, &data[prBinaryOff], 4);
+        memcpy(&prVersion, &data[prBinaryOff + 4], 4);
+
+        // 4. Decompress both zstd blobs
+        const uint8_t *gsZstd = &gsRaw[gsBinaryOff + 8];
+        size_t gsZstdLen = gsRawLen - gsBinaryOff - 8;
+        std::vector<uint8_t> gsCbor(gsDecompSz);
+        size_t gsActual = ZSTD_decompress(&gsCbor[0], gsDecompSz, gsZstd, gsZstdLen);
+        if (ZSTD_isError(gsActual)) {
+            Trace::Error("VST3: zstd decompress getState failed: %s", ZSTD_getErrorName(gsActual));
+            return false;
+        }
+        gsCbor.resize(gsActual);
+
+        const uint8_t *prZstd = &data[prBinaryOff + 8];
+        size_t prZstdLen = data.size() - prBinaryOff - 8;
+        std::vector<uint8_t> prCbor(prDecompSz);
+        size_t prActual = ZSTD_decompress(&prCbor[0], prDecompSz, prZstd, prZstdLen);
+        if (ZSTD_isError(prActual)) {
+            Trace::Error("VST3: zstd decompress preset failed: %s", ZSTD_getErrorName(prActual));
+            return false;
+        }
+        prCbor.resize(prActual);
+
+        Trace::Log("VST3", "CBOR merge: getState=%ld bytes, preset=%ld bytes",
+            (long)gsActual, (long)prActual);
+
+        // 5. Merge preset CBOR into getState CBOR
+        std::vector<uint8_t> merged = CborMerge::mergeCbor(
+            &gsCbor[0], gsCbor.size(), &prCbor[0], prCbor.size());
+        Trace::Log("VST3", "CBOR merged: %ld bytes", (long)merged.size());
+
+        // 6. Compress merged CBOR with zstd
+        size_t compBound = ZSTD_compressBound(merged.size());
+        std::vector<uint8_t> compBuf(compBound);
+        size_t compSz = ZSTD_compress(&compBuf[0], compBound,
+                                       &merged[0], merged.size(), 19);
+        if (ZSTD_isError(compSz)) {
+            Trace::Error("VST3: zstd compress merged failed: %s", ZSTD_getErrorName(compSz));
+            return false;
+        }
+        compBuf.resize(compSz);
+
+        // 7. Compute MD5 of compressed data and update JSON hash
+        std::string compMd5 = CborMerge::md5Hex(&compBuf[0], compSz);
+        std::string gsJson((const char*)gsRaw + 17, (size_t)gsJsonLen);
+        std::string updatedJson = CborMerge::updateJsonHash(gsJson, compMd5);
+        Trace::Log("VST3", "XferJson hash updated: %s", compMd5.c_str());
+
+        // 8. Reassemble XferJson with updated JSON and merged binary
+        uint32_t mergedDecompSz = (uint32_t)merged.size();
+        uint64_t newJsonLen = (uint64_t)updatedJson.size();
+        std::vector<uint8_t> output;
+        output.reserve(9 + 8 + (size_t)newJsonLen + 8 + compSz);
+        // XferJson\0
+        output.insert(output.end(), gsRaw, gsRaw + 9);
+        // JSON length (8 bytes LE)
+        for (int i = 0; i < 8; i++)
+            output.push_back((uint8_t)(newJsonLen >> (8*i)));
+        // JSON body (with updated hash)
+        output.insert(output.end(), updatedJson.begin(), updatedJson.end());
+        // Binary sub-header: decompressed size (4 LE) + version (4 LE)
+        output.push_back(mergedDecompSz & 0xFF);
+        output.push_back((mergedDecompSz >> 8) & 0xFF);
+        output.push_back((mergedDecompSz >> 16) & 0xFF);
+        output.push_back((mergedDecompSz >> 24) & 0xFF);
+        output.push_back(gsVersion & 0xFF);
+        output.push_back((gsVersion >> 8) & 0xFF);
+        output.push_back((gsVersion >> 16) & 0xFF);
+        output.push_back((gsVersion >> 24) & 0xFF);
+        // Compressed CBOR
+        output.insert(output.end(), compBuf.begin(), compBuf.end());
+
+        Trace::Log("VST3", "XferJson assembled: %ld bytes (JSON=%ld, binary=%ld+%ld)",
+            (long)output.size(), (long)newJsonLen, (long)8, (long)compSz);
+
+        // 9. Feed to setState (with timeout to survive Wine stack overflows)
+        auto stateStreamPtr = std::make_shared<SimpleMemoryStream>();
+        stateStreamPtr->setData(&output[0], output.size());
+        {
+            auto promisePtr = std::make_shared<std::promise<tresult>>();
+            auto future = promisePtr->get_future();
+            std::thread t([comp, stateStreamPtr, promisePtr]() {
+                tresult r = comp->setState(stateStreamPtr.get());
+                promisePtr->set_value(r);
+            });
+            auto status = future.wait_for(std::chrono::seconds(15));
+            if (status == std::future_status::timeout) {
+                t.detach();
+                Trace::Error("VST3: setState timed out after 15s (probable Wine stack overflow), skipping preset");
+                return false;
+            }
+            t.join();
+            tresult setRes = future.get();
+            if (setRes != kResultOk) {
+                Trace::Error("VST3: setState failed with merged CBOR (res=%d)", (int)setRes);
+                return false;
+            }
+        }
+        Trace::Log("VST3", "setState succeeded with merged CBOR preset");
+
+        // Sync controller
+        if (editController_ && !componentIsController_) {
+            IEditController *ctrl = (IEditController *)editController_;
+            stateStreamPtr->resetRead();
+            ctrl->setComponentState(stateStreamPtr.get());
+        }
+        // Sync parameter values back into our Variables
+        if (editController_) {
+            IEditController *ctrl = (IEditController *)editController_;
+            for (size_t i = 0; i < parameters_.size(); ++i) {
+                VST3PluginParameter &p = parameters_[i];
+                double norm = ctrl->getParamNormalized(p.paramId);
+                p.currentValue = norm;
+                if (p.variable) {
+                    int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                    int scaled = (int)(norm * maxVal + 0.5);
+                    if (scaled < 0) scaled = 0;
+                    if (scaled > maxVal) scaled = maxVal;
+                    p.variable->SetInt(scaled, false);
+                }
+            }
+        }
+        Trace::Log("VST3", "Loaded preset from file: %s", filePath.c_str());
+        return true;
+    }
+
+    // Non-XferJson fallback path (for other plugins like Surge)
+    // Feed the data to IComponent::setState via our SimpleMemoryStream.
     IComponent *comp = (IComponent *)component_;
     SimpleMemoryStream stream;
-    stream.setData(&data[0], data.size());
+    bool loaded = false;
 
-    tresult res = comp->setState(&stream);
-    if (res != kResultOk) {
-        Trace::Error("VST3: setState failed for preset file: %s (result=%d)",
-            filePath.c_str(), (int)res);
-        return false;
+    // Try zlib-decompressed data (for FXP files with compressed chunks)
+    if (!loaded && isZlib && !decompressed.empty()) {
+        stream.setData(&decompressed[0], decompressed.size());
+        tresult res = comp->setState(&stream);
+        if (res == kResultOk) {
+            Trace::Log("VST3", "setState succeeded with decompressed data");
+            loaded = true;
+        } else {
+            Trace::Log("VST3", "setState rejected decompressed data (res=%d)", (int)res);
+        }
+    }
+
+    // Fall back to raw data as-is
+    if (!loaded) {
+        stream.setData(&data[0], data.size());
+        tresult res = comp->setState(&stream);
+        if (res != kResultOk) {
+            Trace::Error("VST3: setState failed for preset file: %s (result=%d)",
+                filePath.c_str(), (int)res);
+            return false;
+        }
+        Trace::Log("VST3", "setState succeeded with raw data");
     }
 
     // Also notify the controller about the component state change
@@ -2358,7 +3168,9 @@ bool VST3Instrument::savePresetToFile(const std::string &filePath) {
         return false;
     }
 
-    // For Surge XT, prepend a 60-byte FXP header
+    // Determine whether to prepend an FXP header based on save extension
+    // (e.g. Surge XT saves as .fxp with header; Serum saves as .SerumPreset
+    //  with no header even though it also reads .fxp)
     if (mapping->headerSkipBytes > 0) {
         uint8_t fxpHeader[60];
         memset(fxpHeader, 0, 60);
@@ -2521,11 +3333,20 @@ void VST3Instrument::SetPreset(int presetIdx) {
 
             const VST3FilePreset &fp = filePresetsByBank_[currentBank_][presetIdx];
 
-            // Determine headerSkipBytes from the known mappings table
+            // Determine headerSkipBytes from the actual file extension
             int headerSkip = 0;
             for (int m = 0; knownPresetMappings[m].pluginNameSubstring != nullptr; m++) {
                 if (strstr(name_, knownPresetMappings[m].pluginNameSubstring) != nullptr) {
                     headerSkip = knownPresetMappings[m].headerSkipBytes;
+                    // If a second extension is defined, check if this file uses it
+                    if (knownPresetMappings[m].extension2) {
+                        size_t ext2Len = strlen(knownPresetMappings[m].extension2);
+                        if (fp.filePath.size() > ext2Len &&
+                            fp.filePath.substr(fp.filePath.size() - ext2Len) ==
+                                knownPresetMappings[m].extension2) {
+                            headerSkip = knownPresetMappings[m].headerSkipBytes2;
+                        }
+                    }
                     break;
                 }
             }

@@ -652,6 +652,20 @@ void bridgeWindowsVST3s() {
         }
     }
 
+    // Ensure the standard Windows VST3 install directory exists inside the
+    // Wine prefix so that Windows installers (run via Wine) drop .vst3
+    // bundles in the expected location and we can discover them.
+    {
+        std::string cfVst3 = winePrefix + "/drive_c/Program Files/Common Files/VST3";
+        struct stat vst3St;
+        if (stat(cfVst3.c_str(), &vst3St) != 0) {
+            std::string mkCmd = "mkdir -p \"" + cfVst3 + "\"";
+            if (system(mkCmd.c_str()) == 0) {
+                Trace::Log("BRIDGE", "Created %s", cfVst3.c_str());
+            }
+        }
+    }
+
     // Extract embedded yabridge into ~/Documents/SDTracker/yabridge/ if needed
     extractEmbeddedYabridge(home);
 
@@ -701,12 +715,39 @@ void bridgeWindowsVST3s() {
         (void)system(mkdirCmd.c_str());
     }
 
+    // Collect all plugin directories: our manual ~/.vst3/win/ dir plus the
+    // standard Windows VST3 install locations inside the Wine prefix so
+    // users can run a Windows installer (via Wine) and have the plugin
+    // discovered automatically.
+    std::vector<std::string> pluginDirs;
+    pluginDirs.push_back(vst3WinDir);
+    {
+        // Standard Windows VST3 paths mapped into the Wine prefix
+        const char *winVst3Subdirs[] = {
+            "/drive_c/Program Files/Common Files/VST3",
+            "/drive_c/Program Files (x86)/Common Files/VST3",
+        };
+        for (size_t i = 0; i < sizeof(winVst3Subdirs)/sizeof(winVst3Subdirs[0]); i++) {
+            std::string d = winePrefix + winVst3Subdirs[i];
+            struct stat dst;
+            if (stat(d.c_str(), &dst) == 0 && S_ISDIR(dst.st_mode)) {
+                pluginDirs.push_back(d);
+                Trace::Log("BRIDGE", "Added Wine prefix VST3 dir: %s", d.c_str());
+            }
+        }
+    }
+
     // Read existing config to preserve user settings, but always update path
-    // and ensure our plugin_dirs entry is present
+    // and ensure our plugin_dirs entries are present
     {
         std::string toml;
         toml += "yabridge_home = '" + yabridgeLibDir + "'\n";
-        toml += "plugin_dirs = ['" + vst3WinDir + "']\n";
+        toml += "plugin_dirs = [";
+        for (size_t i = 0; i < pluginDirs.size(); i++) {
+            if (i > 0) toml += ", ";
+            toml += "'" + pluginDirs[i] + "'";
+        }
+        toml += "]\n";
         toml += "vst2_location = 'centralized'\n";
         toml += "no_verify = false\n";
         toml += "blacklist = []\n";
@@ -776,30 +817,31 @@ void bridgeWindowsVST3s() {
         }
     }
 
-    // Run yabridgectl add "~/.vst3/win/"
-    std::string addCmd =
-        "\"" + yabridgectlBin + "\" add \"" + vst3WinDir + "\" 2>&1";
-    Trace::Log("BRIDGE", "Running: %s", addCmd.c_str());
+    // Run yabridgectl add for each plugin directory
+    for (size_t pd = 0; pd < pluginDirs.size(); pd++) {
+        std::string addCmd =
+            "\"" + yabridgectlBin + "\" add \"" + pluginDirs[pd] + "\" 2>&1";
+        Trace::Log("BRIDGE", "Running: %s", addCmd.c_str());
 
-    FILE *addPipe = popen(addCmd.c_str(), "r");
-    if (addPipe) {
-        char line[256];
-        while (fgets(line, sizeof(line), addPipe)) {
-            // Strip trailing newline
-            size_t len = strlen(line);
-            if (len > 0 && line[len - 1] == '\n') {
-                line[len - 1] = '\0';
+        FILE *addPipe = popen(addCmd.c_str(), "r");
+        if (addPipe) {
+            char line[256];
+            while (fgets(line, sizeof(line), addPipe)) {
+                size_t len = strlen(line);
+                if (len > 0 && line[len - 1] == '\n') {
+                    line[len - 1] = '\0';
+                }
+                Trace::Log("BRIDGE", "  %s", line);
             }
-            Trace::Log("BRIDGE", "  %s", line);
+            int addResult = pclose(addPipe);
+            if (addResult != 0) {
+                Trace::Log("BRIDGE", "yabridgectl add failed for %s (code %d)",
+                           pluginDirs[pd].c_str(), addResult);
+            }
+        } else {
+            Trace::Log("BRIDGE", "Failed to run yabridgectl add for %s",
+                       pluginDirs[pd].c_str());
         }
-        int addResult = pclose(addPipe);
-        if (addResult != 0) {
-            Trace::Log("BRIDGE", "yabridgectl add failed with code %d",
-                       addResult);
-        }
-    } else {
-        Trace::Log("BRIDGE", "Failed to run yabridgectl add");
-        return;
     }
 
     // Run WINELOADER="..." yabridgectl sync
@@ -825,7 +867,9 @@ void bridgeWindowsVST3s() {
 
             // Propagate / generate moduleinfo.json so the scanner can
             // enumerate bridged plugins without dlopen'ing them.
-            propagateModuleInfo(home, vst3WinDir);
+            for (size_t pd = 0; pd < pluginDirs.size(); pd++) {
+                propagateModuleInfo(home, pluginDirs[pd]);
+            }
         } else {
             Trace::Log("BRIDGE", "yabridgectl sync failed with code %d",
                        syncResult);
