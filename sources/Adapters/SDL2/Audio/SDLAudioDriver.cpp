@@ -59,30 +59,85 @@ SDLAudioDriver::SDLAudioDriver(AudioSettings &settings):AudioDriver(settings),
 	thread_=0 ;
 	sampleRate_=AUDIO_DEFAULT_SAMPLE_RATE ;
 	channelCount_=2 ;
+	audioDeviceId_=0 ;
 }
 
 SDLAudioDriver::~SDLAudioDriver() {
 }
 
-struct SDL_AudioSpec input ;
-struct SDL_AudioSpec returned ;
-
 bool SDLAudioDriver::InitDriver() {
 
   //set sound — request the configured sample rate, allow SDL to negotiate
   int requestedRate = settings_.sampleRate_ > 0 ? settings_.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ;
-  input.freq=requestedRate ;
-  input.format=AUDIO_S16SYS ;
-  input.channels=2 ;
-  input.callback=sdl_callback ;
-  input.samples=settings_.bufferSize_ ;
-  input.userdata=this ;
 
-  // Allow SDL to return a different sample rate if needed
-  int ret = SDL_OpenAudio(&input,&returned);
-  if ( ret != 0 )
+  SDL_AudioSpec desired ;
+  SDL_memset(&desired, 0, sizeof(desired)) ;
+  desired.freq=requestedRate ;
+  desired.format=AUDIO_S16SYS ;
+  desired.channels=2 ;
+  desired.callback=sdl_callback ;
+  desired.samples=settings_.bufferSize_ ;
+  desired.userdata=this ;
+
+  // Log which SDL audio driver is currently active and all available drivers
+  const char *currentDriver = SDL_GetCurrentAudioDriver() ;
+  Trace::Log("AUDIO","SDL audio driver in use: %s", currentDriver ? currentDriver : "(none)") ;
+  int numDrivers = SDL_GetNumAudioDrivers() ;
+  for (int i = 0; i < numDrivers; i++) {
+    Trace::Log("AUDIO","  Available SDL audio driver [%d]: %s", i, SDL_GetAudioDriver(i)) ;
+  }
+  int numDevices = SDL_GetNumAudioDevices(0) ;
+  for (int i = 0; i < numDevices; i++) {
+    Trace::Log("AUDIO","  Output device [%d]: %s", i, SDL_GetAudioDeviceName(i, 0)) ;
+  }
+
+  // Use the modern SDL2 API: SDL_OpenAudioDevice.
+  // Allow SDL to negotiate sample rate and channels but NOT format.
+  // This forces SDL to convert to S16 internally, which is critical
+  // on systems like the Steam Deck where PipeWire returns AUDIO_F32SYS
+  // natively — writing S16 into a float buffer produces silence.
+  SDL_AudioSpec returned ;
+  int allowFlags = SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_CHANNELS_CHANGE ;
+
+  audioDeviceId_ = SDL_OpenAudioDevice(
+      NULL, 0, &desired, &returned, allowFlags) ;
+
+  // If that fails, retry with SDL_AUDIO_ALLOW_ANY_CHANGE so the device can
+  // open in whatever format it wants — we will still get a callback and SDL
+  // handles any conversion internally when allowFlags are passed.
+  if (audioDeviceId_ == 0) {
+    Trace::Log("AUDIO","First SDL_OpenAudioDevice attempt failed: %s — retrying with ALLOW_ANY_CHANGE",
+        SDL_GetError()) ;
+    audioDeviceId_ = SDL_OpenAudioDevice(
+        NULL, 0, &desired, &returned, SDL_AUDIO_ALLOW_ANY_CHANGE) ;
+  }
+
+  // Last resort: try forcing specific audio drivers that work on Steam Deck.
+  // PipeWire is the native server on SteamOS; its PulseAudio compat layer is
+  // also very reliable.  Fall back through pipewire → pulseaudio → alsa.
+  if (audioDeviceId_ == 0) {
+    Trace::Log("AUDIO","SDL_OpenAudioDevice still failed: %s — trying alternative drivers",
+        SDL_GetError()) ;
+    static const char *tryDrivers[] = { "pipewire", "pulseaudio", "alsa", NULL } ;
+    for (int d = 0; tryDrivers[d] != NULL && audioDeviceId_ == 0; d++) {
+      // Shut down the current audio subsystem and reinit with a specific driver
+      SDL_AudioQuit() ;
+      if (SDL_AudioInit(tryDrivers[d]) == 0) {
+        Trace::Log("AUDIO","Retrying with SDL audio driver: %s", tryDrivers[d]) ;
+        audioDeviceId_ = SDL_OpenAudioDevice(
+            NULL, 0, &desired, &returned, allowFlags) ;
+        if (audioDeviceId_ == 0) {
+          Trace::Log("AUDIO","  -> failed: %s", SDL_GetError()) ;
+        }
+      } else {
+        Trace::Log("AUDIO","  -> SDL_AudioInit('%s') failed: %s", tryDrivers[d], SDL_GetError()) ;
+      }
+    }
+  }
+
+  if (audioDeviceId_ == 0)
   {
-    Trace::Error("Couldn't open sdl audio: %s\n", SDL_GetError());
+    Trace::Error("Couldn't open sdl audio after all attempts: %s", SDL_GetError());
   	return false ;
   } 
   const char * driverName = SDL_GetCurrentAudioDriver() ;
@@ -94,8 +149,9 @@ bool SDLAudioDriver::InitDriver() {
   settings_.sampleRate_ = sampleRate_ ;
   settings_.channelCount_ = channelCount_ ;
 
-  Trace::Log("AUDIO","Requested rate: %d Hz, obtained: %d Hz, channels: %d",
-    requestedRate, sampleRate_, channelCount_) ;
+  Trace::Log("AUDIO","Opened audio: driver=%s, rate=%d Hz, channels=%d, format=0x%04X, samples=%d, size=%d",
+    driverName ? driverName : "?",
+    sampleRate_, channelCount_, (int)returned.format, (int)returned.samples, (int)returned.size) ;
 
   fragSize_=returned.size ;
   // Allocates a rotating sound buffer
@@ -128,7 +184,10 @@ void SDLAudioDriver::CloseDriver() {
 		SYS_FREE (unalignedMain_) ;
 		unalignedMain_=0 ;
 	} ; 
-	SDL_CloseAudio();
+	if (audioDeviceId_ != 0) {
+		SDL_CloseAudioDevice(audioDeviceId_) ;
+		audioDeviceId_ = 0 ;
+	}
 } ;
 
 bool SDLAudioDriver::StartDriver() {
@@ -151,7 +210,7 @@ bool SDLAudioDriver::StartDriver() {
 		thread_->Notify() ;
 	}
 
-    SDL_PauseAudio(0);
+    SDL_PauseAudioDevice(audioDeviceId_, 0);
 	startTime_=SDL_GetTicks() ;
 	
     return 1 ;
@@ -162,7 +221,7 @@ void SDLAudioDriver::StopDriver() {
 		thread_->RequestTermination() ;
 		SysThread *thread=thread_ ;
 		thread_=0 ;
-		SDL_PauseAudio(1);
+		SDL_PauseAudioDevice(audioDeviceId_, 1);
 		delete thread ;
  	} ;
 } ;

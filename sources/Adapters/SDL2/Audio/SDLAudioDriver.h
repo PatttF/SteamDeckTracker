@@ -48,6 +48,7 @@ private:
   int bufferSize_ ;
   int sampleRate_ ;   // Actual obtained sample rate from audio device
   int channelCount_ ; // Actual obtained channel count from audio device
+  SDL_AudioDeviceID audioDeviceId_ ; // Modern SDL2 audio device handle
   SDLAudioDriverThread *thread_ ;
 	Uint32 startTime_ ;
 } ;

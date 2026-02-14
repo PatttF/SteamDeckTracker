@@ -1,4 +1,4 @@
-g???#ifndef _I_EFFECT_H_
+#ifndef _I_EFFECT_H_
 #define _I_EFFECT_H_
 
 #include "Foundation/Variables/VariableContainer.h"

@@ -182,7 +182,7 @@ void LINUXSystem::Boot(int argc,char **argv) {
 	// Install Threads
 	SysProcessFactory::Install(new UnixProcessFactory());
 
-	if ( SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER) < 0 ) {
+	if ( SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER) < 0 ) {
 		return;
 	}
 	SDL_ShowCursor(SDL_DISABLE);
