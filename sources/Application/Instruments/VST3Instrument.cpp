@@ -3421,21 +3421,34 @@ void VST3Instrument::setupProcessing(int bufferSize) {
     Trace::Log("VST3", "setupProcessing: audioIn=%d audioOut=%d eventIn=%d block=%d rate=%d",
         (int)numInputBuses, (int)numOutputBuses, (int)numEventInputBuses, bufferSize, sampleRate);
 
+    // Activate bus 0 for input/output, explicitly deactivate all others.
+    // Some plugins (e.g. Serum 2 via yabridge) crash if unused buses are
+    // not explicitly deactivated.
+    for (int32 i = 0; i < numOutputBuses; i++) {
+        comp->activateBus(kAudio, kOutput, i, i == 0);
+    }
+    Trace::Log("VST3", "  activateBus(audioOut,0) = active, deactivated %d extra", (int)(numOutputBuses - 1));
+
+    for (int32 i = 0; i < numInputBuses; i++) {
+        comp->activateBus(kAudio, kInput, i, i == 0);
+    }
+
+    // Build speaker arrangement arrays matching the full bus count.
+    // The VST3 spec requires the array sizes to match the plugin's bus
+    // count — passing fewer elements causes out-of-bounds reads in some
+    // plugins (Serum 2 via yabridge in game mode).
     if (numOutputBuses > 0) {
-        // Activate output bus 0
-        tresult actRes = comp->activateBus(kAudio, kOutput, 0, true);
-        Trace::Log("VST3", "  activateBus(audioOut,0) = %d", (int)actRes);
+        std::vector<SpeakerArrangement> outputs(numOutputBuses, 0);
+        outputs[0] = stereo;
 
         if (numInputBuses > 0) {
-            comp->activateBus(kAudio, kInput, 0, true);
-            SpeakerArrangement inputs[1] = { stereo };
-            SpeakerArrangement outputs[1] = { stereo };
-            tresult busRes = proc->setBusArrangements(inputs, 1, outputs, 1);
-            Trace::Log("VST3", "  setBusArrangements(in=1,out=1) = %d", (int)busRes);
+            std::vector<SpeakerArrangement> inputs(numInputBuses, 0);
+            inputs[0] = stereo;
+            tresult busRes = proc->setBusArrangements(inputs.data(), numInputBuses, outputs.data(), numOutputBuses);
+            Trace::Log("VST3", "  setBusArrangements(in=%d,out=%d) = %d", (int)numInputBuses, (int)numOutputBuses, (int)busRes);
         } else {
-            SpeakerArrangement outputs[1] = { stereo };
-            tresult busRes = proc->setBusArrangements(nullptr, 0, outputs, 1);
-            Trace::Log("VST3", "  setBusArrangements(in=0,out=1) = %d", (int)busRes);
+            tresult busRes = proc->setBusArrangements(nullptr, 0, outputs.data(), numOutputBuses);
+            Trace::Log("VST3", "  setBusArrangements(in=0,out=%d) = %d", (int)numOutputBuses, (int)busRes);
         }
     }
 
@@ -3445,8 +3458,10 @@ void VST3Instrument::setupProcessing(int bufferSize) {
         Trace::Log("VST3", "  activateBus(eventIn,%d) = %d", (int)i, (int)evtRes);
     }
 
-    // Setup processing
+    // Setup processing — zero-init to avoid garbage in padding bytes
+    // that yabridge may serialize across the IPC boundary.
     ProcessSetup setup;
+    memset(&setup, 0, sizeof(setup));
     setup.processMode = kRealtime;
     setup.symbolicSampleSize = kSample32;
     setup.maxSamplesPerBlock = bufferSize;
