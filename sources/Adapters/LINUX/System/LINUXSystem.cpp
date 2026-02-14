@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string>
+#include "System/Console/Trace.h"
 #include "Adapters/SDL2/GUI/GUIFactory.h"
 #include "Adapters/SDL2/GUI/SDLEventManager.h"
 #include "Adapters/SDL2/GUI/SDLGUIWindowImp.h"
@@ -181,6 +182,49 @@ void LINUXSystem::Boot(int argc,char **argv) {
 
 	// Install Threads
 	SysProcessFactory::Install(new UnixProcessFactory());
+
+	// ── Audio environment setup ─────────────────────────────────────────
+	// Must happen BEFORE SDL_Init(SDL_INIT_AUDIO) so SDL's audio subsystem
+	// initialization can find PipeWire / PulseAudio sockets.
+	//
+	// On the Steam Deck in Gaming Mode, XDG_RUNTIME_DIR is often not set
+	// when launching from a .desktop shortcut or Steam itself, which makes
+	// PipeWire and PulseAudio unreachable for SDL.
+	{
+		const char *xdgRuntimeDir = getenv("XDG_RUNTIME_DIR") ;
+		if (!xdgRuntimeDir || xdgRuntimeDir[0] == '\0') {
+			char runtimeBuf[256] ;
+			snprintf(runtimeBuf, sizeof(runtimeBuf), "/run/user/%d", (int)getuid()) ;
+			struct stat st ;
+			if (stat(runtimeBuf, &st) == 0 && S_ISDIR(st.st_mode)) {
+				setenv("XDG_RUNTIME_DIR", runtimeBuf, 0) ;
+				Trace::Log("AUDIO","Boot: set XDG_RUNTIME_DIR = %s (was missing)", runtimeBuf) ;
+				xdgRuntimeDir = getenv("XDG_RUNTIME_DIR") ;
+			}
+		}
+
+		// If SDL_AUDIODRIVER is not already forced, pick the best available
+		// sound server.  PipeWire is native on SteamOS / Steam Deck;
+		// PulseAudio is its compat layer and works everywhere else.
+		if (!getenv("SDL_AUDIODRIVER") && xdgRuntimeDir && xdgRuntimeDir[0]) {
+			char socketBuf[512] ;
+			struct stat st ;
+
+			// Check for PipeWire socket
+			snprintf(socketBuf, sizeof(socketBuf), "%s/pipewire-0", xdgRuntimeDir) ;
+			if (stat(socketBuf, &st) == 0) {
+				SDL_setenv("SDL_AUDIODRIVER", "pipewire", 0) ;
+				Trace::Log("AUDIO","Boot: detected PipeWire socket, set SDL_AUDIODRIVER=pipewire") ;
+			} else {
+				// Check for PulseAudio socket
+				snprintf(socketBuf, sizeof(socketBuf), "%s/pulse/native", xdgRuntimeDir) ;
+				if (stat(socketBuf, &st) == 0) {
+					SDL_setenv("SDL_AUDIODRIVER", "pulseaudio", 0) ;
+					Trace::Log("AUDIO","Boot: detected PulseAudio socket, set SDL_AUDIODRIVER=pulseaudio") ;
+				}
+			}
+		}
+	}
 
 	if ( SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER) < 0 ) {
 		return;

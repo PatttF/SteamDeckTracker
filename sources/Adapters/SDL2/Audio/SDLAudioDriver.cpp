@@ -4,6 +4,8 @@
 #include "Services/Audio/Audio.h"
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
+#include <cstdlib>
+#include <cstdio>
 
 void sdl_callback(void *userdata, Uint8 *stream, int len) {
 	SDLAudioDriver *sound=(SDLAudioDriver *)userdata ;
@@ -66,6 +68,11 @@ SDLAudioDriver::~SDLAudioDriver() {
 }
 
 bool SDLAudioDriver::InitDriver() {
+
+  // Log the audio environment (setup happens earlier in LINUXSystem::Boot)
+  Trace::Log("AUDIO","XDG_RUNTIME_DIR = %s", getenv("XDG_RUNTIME_DIR") ? getenv("XDG_RUNTIME_DIR") : "(not set)") ;
+  Trace::Log("AUDIO","SDL_AUDIODRIVER = %s", getenv("SDL_AUDIODRIVER") ? getenv("SDL_AUDIODRIVER") : "(not set)") ;
+  Trace::Log("AUDIO","PULSE_SERVER    = %s", getenv("PULSE_SERVER") ? getenv("PULSE_SERVER") : "(not set)") ;
 
   //set sound — request the configured sample rate, allow SDL to negotiate
   int requestedRate = settings_.sampleRate_ > 0 ? settings_.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ;
