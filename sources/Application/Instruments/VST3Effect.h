@@ -110,6 +110,7 @@ private:
 
     // Helper methods
     void loadPlugin();
+    void loadPluginInner();
     void cleanupPlugin();
     void discoverParameters();
     void discoverPresets();

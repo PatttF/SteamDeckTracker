@@ -26,6 +26,8 @@
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
+#include <exception>
+#include <fstream>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
@@ -906,12 +908,14 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         // Log every call that has events — read from the actual output pointers
         if (evtCount > 0) {
             float p = 0.0f;
+            int sentinelCount = 0;
             float *checkBuf = postProcL ? postProcL : audioBufferL_;
             for (int i = 0; i < size && i < 32; i++) {
                 float a = fabsf(checkBuf[i]);
                 if (a > p) p = a;
+                if (fabsf(checkBuf[i] - 0.12345f) < 0.0001f) sentinelCount++;
             }
-            Trace::Log("VST3DBG", "EVENTS=%d  ret=%d  peak32=%.6f  outPtr=%p postPtr=%p", evtCount, (int)processResult, p, (void*)audioBufferL_, (void*)postProcL);
+            Trace::Log("VST3DBG", "EVENTS=%d  ret=%d  peak32=%.6f  sentinel=%d/32  outPtr=%p postPtr=%p", evtCount, (int)processResult, p, sentinelCount, (void*)audioBufferL_, (void*)postProcL);
         }
 
         // Debug: log process result and peak levels every ~1 second (86 calls at 44100/512)
@@ -1305,6 +1309,23 @@ std::string VST3Instrument::GetParameterDisplayString(int index, double normaliz
 void VST3Instrument::loadPlugin() {
     if (pluginPath_[0] == '\0') return;
 
+    // Wrap everything in a try/catch — yabridge's chainloader may throw
+    // a C++ exception if the Wine host process fails to start or the
+    // Windows plugin cannot be loaded (e.g. missing DLL dependencies).
+    // Without this, std::terminate is called and the whole app aborts.
+    try {
+        loadPluginInner();
+    } catch (const std::exception& ex) {
+        Trace::Error("VST3: Exception loading plugin: %s", ex.what());
+        cleanupPlugin();
+    } catch (...) {
+        Trace::Error("VST3: Unknown exception loading plugin %s", pluginPath_);
+        cleanupPlugin();
+    }
+}
+
+void VST3Instrument::loadPluginInner() {
+
     std::string soPath = resolveVST3SOPath(pluginPath_);
     if (soPath.empty()) {
         Trace::Error("VST3: Could not resolve .so path for %s", pluginPath_);
@@ -1364,6 +1385,9 @@ void VST3Instrument::loadPlugin() {
         }
         if (cidIsZero) {
             int nClasses = factory->countClasses();
+            IPluginFactory2* factory2 = nullptr;
+            factory->queryInterface(IPluginFactory2::iid, (void**)&factory2);
+            std::string resolvedSub;
             for (int i = 0; i < nClasses; i++) {
                 PClassInfo ci;
                 if (factory->getClassInfo(i, &ci) == kResultOk &&
@@ -1371,6 +1395,15 @@ void VST3Instrument::loadPlugin() {
                     memcpy(pluginClassId_, ci.cid, 16);
                     Trace::Log("VST3", "Resolved zero CID -> %s",
                                tuidToHex(pluginClassId_).c_str());
+                    // Also grab subcategories so we can fix moduleinfo.json
+                    if (factory2) {
+                        PClassInfo2 ci2;
+                        if (factory2->getClassInfo2(i, &ci2) == kResultOk) {
+                            resolvedSub = ci2.subCategories;
+                            Trace::Log("VST3", "Resolved subcategories: '%s'",
+                                       resolvedSub.c_str());
+                        }
+                    }
                     // Update stored variable
                     Variable *plugVar = FindVariable(VST3IP_PLUGIN);
                     if (plugVar) {
@@ -1380,6 +1413,49 @@ void VST3Instrument::loadPlugin() {
                         plugVar->SetString(combined.c_str());
                     }
                     break;
+                }
+            }
+            if (factory2) factory2->release();
+
+            // Write the resolved CID and subcategories back to
+            // moduleinfo.json so future scans can correctly distinguish
+            // instruments from effects without loading the plugin.
+            if (!resolvedSub.empty() || !cidIsZero) {
+                std::string jsonPath =
+                    std::string(pluginPath_) + "/Contents/moduleinfo.json";
+                struct stat jsonSt;
+                if (stat(jsonPath.c_str(), &jsonSt) == 0) {
+                    // Extract plugin name from path
+                    std::string stem = pluginPath_;
+                    size_t sl = stem.rfind('/');
+                    if (sl != std::string::npos) stem = stem.substr(sl + 1);
+                    size_t ep = stem.rfind(".vst3");
+                    if (ep != std::string::npos) stem = stem.substr(0, ep);
+
+                    std::string json;
+                    json += "{\n";
+                    json += "  \"Classes\": [\n";
+                    json += "    {\n";
+                    json += "      \"CID\": \"" +
+                            tuidToHex(pluginClassId_) + "\",\n";
+                    json += "      \"Category\": \"Audio Module Class\",\n";
+                    json += "      \"Name\": \"" + stem + "\",\n";
+                    json += "      \"Sub Categories\": \"" +
+                            resolvedSub + "\"\n";
+                    json += "    }\n";
+                    json += "  ]\n";
+                    json += "}\n";
+
+                    std::ofstream jf(jsonPath.c_str(),
+                                     std::ios::out | std::ios::trunc);
+                    if (jf.is_open()) {
+                        jf << json;
+                        jf.close();
+                        Trace::Log("VST3",
+                            "Updated moduleinfo.json: CID=%s sub='%s'",
+                            tuidToHex(pluginClassId_).c_str(),
+                            resolvedSub.c_str());
+                    }
                 }
             }
         }
@@ -1533,6 +1609,30 @@ void VST3Instrument::loadPlugin() {
         setupProcessing(initBlock);
         Trace::Log("VST3", "Pre-initialized processing (block=%d rate=%d)",
                    initBlock, sampleRate);
+
+        // Force-load preset 0 via setParamNormalized on the controller —
+        // some plugins (especially JUCE-based) don't load their init preset
+        // automatically after initialize()+setActive().
+        if (programChangeParamIdx_ >= 0 && editController_) {
+            IEditController* ctrl = (IEditController*)editController_;
+            ParameterInfo info;
+            if (ctrl->getParameterInfo(0, info) == kResultOk || true) {
+                // Use the stored program change param
+                ParamID pcId = parameters_[programChangeParamIdx_].paramId;
+                int stepCount = parameters_[programChangeParamIdx_].stepCount;
+                double norm = (stepCount > 0) ? (1.0 / (double)stepCount) : 0.0; // preset 1
+                ctrl->setParamNormalized(pcId, norm);
+
+                // Queue it for the audio processor too
+                PendingParamChange pc;
+                pc.paramId = pcId;
+                pc.value = norm;
+                pendingEventsMutex_.Lock();
+                pendingParamChanges_.push_back(pc);
+                pendingEventsMutex_.Unlock();
+                Trace::Log("VST3", "Force-loaded preset 0 via param %d", (int)pcId);
+            }
+        }
     }
 }
 

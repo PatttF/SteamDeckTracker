@@ -13,7 +13,7 @@ Key Enhancements:
 
     Expanded Phrase Editor: 4 command columns per phrase step (up from 2), allowing complex per-step automation without needing tables.
 
-    Plugin Integration: Support for LV2 plugins, allowing for professional-grade synthesis and effects within the tracker environment. This will be a per plugin process so bare with me while I work through it.
+    Plugin Integration: Support for LV2 plugins and Windows VST3 plugins (via bundled yabridge + Proton), allowing for professional-grade synthesis and effects within the tracker environment.
 
     LV2 Effects: A dedicated Effects page (to the right of the Instrument page, accessed via the 'E' legend shortcut) provides 16 effect slots for loading LV2 audio effect plugins. Effects are applied to channels using the FXSN command on the Phrase or Table pages.
 
@@ -199,6 +199,82 @@ After stopping, you can name and save the recording:
 Use **Left / Right** to move between Preview, Save, and Discard. Press **A** to activate. Press **B** at any time to discard and close.
 
 The saved file is a standard 16-bit PCM WAV at the device's native sample rate and channel count.
+
+---
+
+## Windows VST3 Plugins (via yabridge + Proton)
+
+SDTracker can load **Windows VST3 instrument and effect plugins** on the Steam Deck (and any Linux x86_64 system with Steam installed) using [yabridge](https://github.com/robbert-vdh/yabridge) and Valve's Proton. This is fully automatic — no manual Wine or yabridge configuration is required.
+
+### How It Works
+
+On startup SDTracker:
+
+1. Locates Proton (prefers **Proton Experimental**) from your Steam installation.
+2. Extracts its bundled copy of **yabridge 5.1.1** to `~/Documents/SDTracker/yabridge/`.
+3. Initialises a dedicated Wine prefix at `~/Documents/SDTracker/wineprefix/`.
+4. Runs `yabridgectl sync` to create Linux bridge bundles for every `.vst3` in `~/.vst3/win/`.
+5. Copies essential DLLs (DirectX/vkd3d) from Proton's default prefix so plugins with GPU-accelerated GUIs can load.
+6. Sets `WINELOADER`, `WINEPREFIX`, `LD_LIBRARY_PATH`, and `PATH` so the yabridge chainloader can find everything at runtime.
+
+After this, bridged plugins appear in the **Import VST3 Instrument** and **Import VST3 Effect** dialogs alongside native Linux plugins.
+
+### Installing Windows VST3 Plugins
+
+Place your Windows `.vst3` files (or `.vst3` bundle directories) in:
+
+```
+~/.vst3/win/
+```
+
+Examples:
+```
+~/.vst3/win/TAL-NoiseMaker.vst3/          ← bundle directory
+~/.vst3/win/TAL-NoiseMaker.vst3/Contents/x86_64-win/TAL-NoiseMaker.vst3
+
+~/.vst3/win/fb3300.vst3                    ← flat .vst3 file (also works)
+```
+
+Both proper VST3 bundle directories and flat `.vst3` files are supported. The next time SDTracker starts, `yabridgectl sync` will create the corresponding Linux bridge bundles automatically.
+
+### Plugins That Need External Files
+
+Many Windows VST3 plugins ship with presets, sample libraries, or configuration files that live outside the `.vst3` bundle itself. Here's where those files go:
+
+| What the plugin expects | Windows path | Place files here (Linux) |
+|---|---|---|
+| Files next to the `.vst3` | Same folder as the DLL | `~/.vst3/win/` (alongside the `.vst3`) |
+| Companion directories | e.g. `Grand Piano.instruments/` | `~/.vst3/win/Grand Piano.instruments/` (yabridge copies these automatically) |
+| User presets / config | `%APPDATA%\VendorName\` | `~/Documents/SDTracker/wineprefix/drive_c/users/steamuser/AppData/Roaming/VendorName/` |
+| Local data | `%LOCALAPPDATA%\VendorName\` | `~/Documents/SDTracker/wineprefix/drive_c/users/steamuser/AppData/Local/VendorName/` |
+| Shared data | `C:\ProgramData\VendorName\` | `~/Documents/SDTracker/wineprefix/drive_c/ProgramData/VendorName/` |
+| Installed programs | `C:\Program Files\VendorName\` | `~/Documents/SDTracker/wineprefix/drive_c/Program Files/VendorName/` |
+| User documents | `C:\Users\<user>\Documents\` | `~/Documents/SDTracker/wineprefix/drive_c/users/steamuser/Documents/` |
+
+> **Tip:** Wine's `Z:` drive maps to `/` (the entire Linux filesystem), so plugins can technically access any Linux path. But most plugins use standard Windows paths listed above.
+
+> **Tip:** If a plugin came with a Windows installer, you can run it through the same Wine prefix:
+> ```
+> WINEPREFIX=~/Documents/SDTracker/wineprefix \
+> WINELOADER=$(find ~/.steam/steam/steamapps/common -path "*/Proton*/files/bin/wine" | head -1) \
+> "$WINELOADER" /path/to/installer.exe
+> ```
+
+### Requirements
+
+- **Steam** installed with **Proton Experimental** (downloaded automatically when you first run any Proton game, or install it manually from Steam → Library → Search "Proton Experimental").
+- An **x86_64 Linux** system (Steam Deck, desktop Linux, etc.).
+- No manual yabridge or Wine installation needed — SDTracker bundles everything.
+
+### Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Plugin doesn't appear in the import dialog | Make sure the `.vst3` is in `~/.vst3/win/` and restart SDTracker |
+| "Library not found" errors in the log | The Wine prefix may be missing DLLs — delete `~/Documents/SDTracker/wineprefix/` and restart (it will be recreated) |
+| Plugin loads but produces no audio | Some plugins need their external resource files installed (see table above). Check the plugin vendor's documentation for required file locations |
+| App crashes when loading a plugin | Fixed in current version — yabridge load failures are caught gracefully. If it still crashes, check the terminal output for details |
+| "low memory locking limit" warnings | Add `* - memlock unlimited` to `/etc/security/limits.d/99-memlock.conf` and reboot |
 
 ---
 

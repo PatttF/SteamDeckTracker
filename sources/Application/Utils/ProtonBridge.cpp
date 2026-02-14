@@ -614,6 +614,44 @@ void bridgeWindowsVST3s() {
         }
     }
 
+    // Copy essential DLLs that Proton's default prefix ships but that our
+    // wineboot-created prefix may be missing.  In particular libvkd3d-1.dll
+    // and libvkd3d-shader-1.dll are required by wined3d.dll → dxgi.dll
+    // which many Windows VST3 plugins link against for their GUI.
+    {
+        std::string defaultPfx = protonBase + "/files/share/default_pfx";
+        const char *dllNames[] = {
+            "libvkd3d-1.dll",
+            "libvkd3d-shader-1.dll",
+        };
+        const char *subdirs[] = { "system32", "syswow64" };
+        for (size_t s = 0; s < sizeof(subdirs) / sizeof(subdirs[0]); s++) {
+            std::string ourDir  = winePrefix + "/drive_c/windows/" + subdirs[s];
+            std::string srcDir  = defaultPfx + "/drive_c/windows/" + subdirs[s];
+            struct stat dirSt;
+            if (stat(ourDir.c_str(), &dirSt) != 0) continue; // subdir doesn't exist
+            for (size_t d = 0; d < sizeof(dllNames) / sizeof(dllNames[0]); d++) {
+                std::string dst = ourDir  + "/" + dllNames[d];
+                std::string src = srcDir  + "/" + dllNames[d];
+                struct stat dstSt, srcSt;
+                if (stat(dst.c_str(), &dstSt) == 0) continue; // already present
+                if (stat(src.c_str(), &srcSt) != 0) continue; // source missing
+                FILE *sf = fopen(src.c_str(), "rb");
+                if (!sf) continue;
+                FILE *df = fopen(dst.c_str(), "wb");
+                if (!df) { fclose(sf); continue; }
+                char cpBuf[8192];
+                size_t n;
+                while ((n = fread(cpBuf, 1, sizeof(cpBuf), sf)) > 0)
+                    fwrite(cpBuf, 1, n, df);
+                fclose(sf); fclose(df);
+                chmod(dst.c_str(), 0755);
+                Trace::Log("BRIDGE", "Copied %s/%s from Proton default prefix",
+                           subdirs[s], dllNames[d]);
+            }
+        }
+    }
+
     // Extract embedded yabridge into ~/Documents/SDTracker/yabridge/ if needed
     extractEmbeddedYabridge(home);
 

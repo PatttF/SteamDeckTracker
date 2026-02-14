@@ -18,6 +18,8 @@
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
+#include <exception>
+#include <fstream>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
@@ -422,6 +424,19 @@ void VST3Effect::SetPlugin(const char *path, const uint8_t classId[16]) {
 void VST3Effect::loadPlugin() {
     if (pluginPath_[0] == '\0') return;
 
+    try {
+        loadPluginInner();
+    } catch (const std::exception& ex) {
+        Trace::Error("VST3FX: Exception loading plugin: %s", ex.what());
+        cleanupPlugin();
+    } catch (...) {
+        Trace::Error("VST3FX: Unknown exception loading plugin %s", pluginPath_);
+        cleanupPlugin();
+    }
+}
+
+void VST3Effect::loadPluginInner() {
+
     std::string soPath = resolveSoPath(pluginPath_);
     if (soPath.empty()) {
         Trace::Error("VST3FX: Could not resolve .so path for %s", pluginPath_);
@@ -472,6 +487,9 @@ void VST3Effect::loadPlugin() {
         }
         if (cidIsZero) {
             int nClasses = factory->countClasses();
+            IPluginFactory2* factory2 = nullptr;
+            factory->queryInterface(IPluginFactory2::iid, (void**)&factory2);
+            std::string resolvedSub;
             for (int i = 0; i < nClasses; i++) {
                 PClassInfo ci;
                 if (factory->getClassInfo(i, &ci) == kResultOk &&
@@ -479,7 +497,55 @@ void VST3Effect::loadPlugin() {
                     memcpy(pluginClassId_, ci.cid, 16);
                     Trace::Log("VST3FX", "Resolved zero CID -> %s",
                                tuidHex(pluginClassId_).c_str());
+                    if (factory2) {
+                        PClassInfo2 ci2;
+                        if (factory2->getClassInfo2(i, &ci2) == kResultOk) {
+                            resolvedSub = ci2.subCategories;
+                            Trace::Log("VST3FX", "Resolved subcategories: '%s'",
+                                       resolvedSub.c_str());
+                        }
+                    }
                     break;
+                }
+            }
+            if (factory2) factory2->release();
+
+            // Write resolved CID and subcategories back to moduleinfo.json
+            if (!resolvedSub.empty()) {
+                std::string jsonPath =
+                    std::string(pluginPath_) + "/Contents/moduleinfo.json";
+                struct stat jsonSt;
+                if (stat(jsonPath.c_str(), &jsonSt) == 0) {
+                    std::string stem = pluginPath_;
+                    size_t sl = stem.rfind('/');
+                    if (sl != std::string::npos) stem = stem.substr(sl + 1);
+                    size_t ep = stem.rfind(".vst3");
+                    if (ep != std::string::npos) stem = stem.substr(0, ep);
+
+                    std::string json;
+                    json += "{\n";
+                    json += "  \"Classes\": [\n";
+                    json += "    {\n";
+                    json += "      \"CID\": \"" +
+                            tuidHex(pluginClassId_) + "\",\n";
+                    json += "      \"Category\": \"Audio Module Class\",\n";
+                    json += "      \"Name\": \"" + stem + "\",\n";
+                    json += "      \"Sub Categories\": \"" +
+                            resolvedSub + "\"\n";
+                    json += "    }\n";
+                    json += "  ]\n";
+                    json += "}\n";
+
+                    std::ofstream jf(jsonPath.c_str(),
+                                     std::ios::out | std::ios::trunc);
+                    if (jf.is_open()) {
+                        jf << json;
+                        jf.close();
+                        Trace::Log("VST3FX",
+                            "Updated moduleinfo.json: CID=%s sub='%s'",
+                            tuidHex(pluginClassId_).c_str(),
+                            resolvedSub.c_str());
+                    }
                 }
             }
         }
