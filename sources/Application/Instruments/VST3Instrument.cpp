@@ -49,6 +49,7 @@
 #include "pluginterfaces/vst/vsttypes.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/ivstunits.h"
+#include "pluginterfaces/vst/ivstprocesscontext.h"
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -499,6 +500,7 @@ VST3Instrument::VST3Instrument() {
 
     isActive_ = false;
     isProcessing_ = false;
+    projectTimeSamples_ = 0;
 
     currentBank_ = 0;
     currentPreset_ = 0;
@@ -611,6 +613,8 @@ void VST3Instrument::OnStart() {
 bool VST3Instrument::Start(int channel, unsigned char note, bool retrigger) {
     if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return false;
     if (!audioProcessor_) return false;
+
+    Trace::Log("VST3DBG", "Start ch=%d note=%d retrigger=%d", channel, (int)note, (int)retrigger);
 
     // Queue note on
     PendingNoteEvent evt;
@@ -811,9 +815,11 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         }
         renderLocalParams_.clear();
 
-        // Clear audio buffers
-        memset(audioBufferL_, 0, size * sizeof(float));
-        memset(audioBufferR_, 0, size * sizeof(float));
+        // Fill output buffers with sentinel value to detect if yabridge writes them
+        for (int i = 0; i < size; i++) {
+            audioBufferL_[i] = 0.12345f;
+            audioBufferR_[i] = 0.12345f;
+        }
         memset(audioInputL_, 0, size * sizeof(float));
         memset(audioInputR_, 0, size * sizeof(float));
 
@@ -860,11 +866,72 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         processData.inputParameterChanges = &paramChanges;
         processData.outputParameterChanges = nullptr;
         processData.outputEvents = nullptr;
-        processData.processContext = nullptr;
+
+        // Provide a valid ProcessContext — many VST3 plugins (especially
+        // Windows ones running via yabridge) produce silence without one.
+        ProcessContext processContext;
+        memset(&processContext, 0, sizeof(processContext));
+        processContext.sampleRate = (double)Audio::GetInstance()->GetSampleRate();
+        processContext.projectTimeSamples = projectTimeSamples_;
+        processContext.tempo = 120.0; // default BPM
+        processContext.timeSigNumerator = 4;
+        processContext.timeSigDenominator = 4;
+        processContext.state = ProcessContext::kPlaying
+                             | ProcessContext::kTempoValid
+                             | ProcessContext::kTimeSigValid
+                             | ProcessContext::kContTimeValid;
+        processContext.continousTimeSamples = projectTimeSamples_;
+        processData.processContext = &processContext;
+
+        projectTimeSamples_ += size;
 
         // Run the plugin
         processData.numSamples = size;
-        proc->process(processData);
+        int evtCount = eventList.getEventCount();
+        float* preProcL = outputBus.channelBuffers32[0];
+        float* preProcR = outputBus.channelBuffers32[1];
+        tresult processResult = proc->process(processData);
+        float* postProcL = outputBus.channelBuffers32[0];
+        float* postProcR = outputBus.channelBuffers32[1];
+
+        // If yabridge replaced the output buffer pointers, read from the new ones
+        if (postProcL != preProcL || postProcR != preProcR) {
+            Trace::Log("VST3DBG", "OUTPUT POINTERS CHANGED! pre=%p/%p post=%p/%p",
+                (void*)preProcL, (void*)preProcR, (void*)postProcL, (void*)postProcR);
+            // Copy from yabridge's buffers to ours
+            if (postProcL) memcpy(audioBufferL_, postProcL, size * sizeof(float));
+            if (postProcR) memcpy(audioBufferR_, postProcR, size * sizeof(float));
+        }
+
+        // Log every call that has events — read from the actual output pointers
+        if (evtCount > 0) {
+            float p = 0.0f;
+            float *checkBuf = postProcL ? postProcL : audioBufferL_;
+            for (int i = 0; i < size && i < 32; i++) {
+                float a = fabsf(checkBuf[i]);
+                if (a > p) p = a;
+            }
+            Trace::Log("VST3DBG", "EVENTS=%d  ret=%d  peak32=%.6f  outPtr=%p postPtr=%p", evtCount, (int)processResult, p, (void*)audioBufferL_, (void*)postProcL);
+        }
+
+        // Debug: log process result and peak levels every ~1 second (86 calls at 44100/512)
+        static int renderDbgCount = 0;
+        if (++renderDbgCount >= 86) {
+            renderDbgCount = 0;
+            float peakL = 0.0f, peakR = 0.0f;
+            for (int i = 0; i < size; i++) {
+                float al = fabsf(audioBufferL_[i]);
+                float ar = fabsf(audioBufferR_[i]);
+                if (al > peakL) peakL = al;
+                if (ar > peakR) peakR = ar;
+            }
+            // Also check output bus pointers and silence flags
+            Trace::Log("VST3DBG", "process() ret=%d  size=%d  events=%d  peakL=%.6f  peakR=%.6f  active=%d processing=%d  outBufL=%p outBufR=%p silFlg=%llu",
+                (int)processResult, size, eventList.getEventCount(),
+                peakL, peakR, (int)isActive_, (int)isProcessing_,
+                (void*)outputBus.channelBuffers32[0], (void*)outputBus.channelBuffers32[1],
+                (unsigned long long)outputBus.silenceFlags);
+        }
 
         // Sanitise NaN/Inf
         {
@@ -1288,6 +1355,36 @@ void VST3Instrument::loadPlugin() {
     }
     pluginFactory_ = factory;
 
+    // If classId is all zeros (stub from generated moduleinfo.json for a
+    // yabridge-bridged plugin), resolve the real CID from the factory.
+    {
+        bool cidIsZero = true;
+        for (int i = 0; i < 16; i++) {
+            if (pluginClassId_[i] != 0) { cidIsZero = false; break; }
+        }
+        if (cidIsZero) {
+            int nClasses = factory->countClasses();
+            for (int i = 0; i < nClasses; i++) {
+                PClassInfo ci;
+                if (factory->getClassInfo(i, &ci) == kResultOk &&
+                    strcmp(ci.category, kVstAudioEffectClass) == 0) {
+                    memcpy(pluginClassId_, ci.cid, 16);
+                    Trace::Log("VST3", "Resolved zero CID -> %s",
+                               tuidToHex(pluginClassId_).c_str());
+                    // Update stored variable
+                    Variable *plugVar = FindVariable(VST3IP_PLUGIN);
+                    if (plugVar) {
+                        std::string combined =
+                            std::string(pluginPath_) + "|" +
+                            tuidToHex(pluginClassId_);
+                        plugVar->SetString(combined.c_str());
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     // Create the processor component
     IComponent* component = nullptr;
     tresult res = factory->createInstance(
@@ -1414,11 +1511,29 @@ void VST3Instrument::loadPlugin() {
     // Discover presets/programs via IUnitInfo
     discoverPresets();
 
-    // Set up processing with a default buffer size
-    int sampleRate = Audio::GetInstance()->GetSampleRate();
-    if (sampleRate <= 0) sampleRate = 44100;
-    // Don't set up processing yet — it will happen on first Render() call
-    // when we know the actual buffer size
+    // Set up processing now on the main thread so the potentially slow
+    // IPC round-trips (yabridge/Wine: setActive, setProcessing) don't
+    // happen on the audio render thread where they'd block and flood
+    // the semaphore.
+    {
+        int sampleRate = Audio::GetInstance()->GetSampleRate();
+        if (sampleRate <= 0) sampleRate = 44100;
+        int initBlock = 4096; // generous maxSamplesPerBlock
+
+        // Pre-allocate audio buffers
+        audioBufferL_ = (float*)calloc(initBlock, sizeof(float));
+        audioBufferR_ = (float*)calloc(initBlock, sizeof(float));
+        audioInputL_ = (float*)calloc(initBlock, sizeof(float));
+        audioInputR_ = (float*)calloc(initBlock, sizeof(float));
+        bufferSize_ = initBlock;
+
+        cachedOutputBuffer_ = (fixed*)calloc(initBlock * 2, sizeof(fixed));
+        cachedOutputSize_ = initBlock;
+
+        setupProcessing(initBlock);
+        Trace::Log("VST3", "Pre-initialized processing (block=%d rate=%d)",
+                   initBlock, sampleRate);
+    }
 }
 
 // ====================================================================
@@ -2434,26 +2549,33 @@ void VST3Instrument::setupProcessing(int bufferSize) {
     SpeakerArrangement stereo = 0x3; // kSpeakerL | kSpeakerR
     int32 numInputBuses = comp->getBusCount(kAudio, kInput);
     int32 numOutputBuses = comp->getBusCount(kAudio, kOutput);
+    int32 numEventInputBuses = comp->getBusCount(kEvent, kInput);
+
+    Trace::Log("VST3", "setupProcessing: audioIn=%d audioOut=%d eventIn=%d block=%d rate=%d",
+        (int)numInputBuses, (int)numOutputBuses, (int)numEventInputBuses, bufferSize, sampleRate);
 
     if (numOutputBuses > 0) {
         // Activate output bus 0
-        comp->activateBus(kAudio, kOutput, 0, true);
+        tresult actRes = comp->activateBus(kAudio, kOutput, 0, true);
+        Trace::Log("VST3", "  activateBus(audioOut,0) = %d", (int)actRes);
 
         if (numInputBuses > 0) {
             comp->activateBus(kAudio, kInput, 0, true);
             SpeakerArrangement inputs[1] = { stereo };
             SpeakerArrangement outputs[1] = { stereo };
-            proc->setBusArrangements(inputs, 1, outputs, 1);
+            tresult busRes = proc->setBusArrangements(inputs, 1, outputs, 1);
+            Trace::Log("VST3", "  setBusArrangements(in=1,out=1) = %d", (int)busRes);
         } else {
             SpeakerArrangement outputs[1] = { stereo };
-            proc->setBusArrangements(nullptr, 0, outputs, 1);
+            tresult busRes = proc->setBusArrangements(nullptr, 0, outputs, 1);
+            Trace::Log("VST3", "  setBusArrangements(in=0,out=1) = %d", (int)busRes);
         }
     }
 
     // Activate event (MIDI) buses
-    int32 numEventInputBuses = comp->getBusCount(kEvent, kInput);
     for (int32 i = 0; i < numEventInputBuses; i++) {
-        comp->activateBus(kEvent, kInput, i, true);
+        tresult evtRes = comp->activateBus(kEvent, kInput, i, true);
+        Trace::Log("VST3", "  activateBus(eventIn,%d) = %d", (int)i, (int)evtRes);
     }
 
     // Setup processing
@@ -2550,6 +2672,102 @@ void VST3Instrument::cleanupPlugin() {
 }
 
 // ====================================================================
+// Try to parse a .vst3 bundle's Contents/moduleinfo.json (VST 3.7.5+) to get
+// plugin class info without dlopen'ing the module. This is essential for
+// yabridge-bridged bundles where dlopen would trigger a Wine launch.
+// Returns true if moduleinfo.json was found (even if no matching classes).
+static bool tryParseModuleInfo(const std::string& bundlePath,
+                               const char* filterCategory,
+                               std::vector<VST3PluginInfo>& result) {
+    std::string jsonPath = bundlePath + "/Contents/moduleinfo.json";
+    struct stat st;
+    if (stat(jsonPath.c_str(), &st) != 0 || st.st_size <= 0)
+        return false;
+
+    FILE* f = fopen(jsonPath.c_str(), "r");
+    if (!f) return false;
+    std::string json;
+    json.resize(st.st_size);
+    size_t nread = fread(&json[0], 1, st.st_size, f);
+    fclose(f);
+    if ((off_t)nread != st.st_size) return false;
+
+    // Simple JSON field extractor for a known-flat object
+    auto extractString = [](const std::string& obj,
+                            const char* key) -> std::string {
+        std::string needle = std::string("\"")
+                             + key + "\"";
+        size_t kpos = obj.find(needle);
+        if (kpos == std::string::npos) return "";
+        size_t colon = obj.find(':', kpos + needle.size());
+        if (colon == std::string::npos) return "";
+        size_t qstart = obj.find('"', colon + 1);
+        if (qstart == std::string::npos) return "";
+        size_t qend = obj.find('"', qstart + 1);
+        if (qend == std::string::npos) return "";
+        return obj.substr(qstart + 1, qend - qstart - 1);
+    };
+
+    // Find "Classes" array
+    size_t classesPos = json.find("\"Classes\"");
+    if (classesPos == std::string::npos) return true; // file found, no classes
+
+    size_t arrStart = json.find('[', classesPos);
+    if (arrStart == std::string::npos) return true;
+
+    // Iterate {…} objects inside the array
+    size_t pos = arrStart + 1;
+    while (pos < json.size()) {
+        size_t objStart = json.find('{', pos);
+        if (objStart == std::string::npos) break;
+        // Check we haven't left the Classes array
+        size_t arrEnd = json.find(']', arrStart);
+        if (arrEnd != std::string::npos && objStart > arrEnd) break;
+
+        size_t objEnd = objStart + 1;
+        int depth = 1;
+        while (objEnd < json.size() && depth > 0) {
+            if (json[objEnd] == '{') depth++;
+            else if (json[objEnd] == '}') depth--;
+            if (depth > 0) objEnd++;
+        }
+        if (depth != 0) break;
+
+        std::string obj = json.substr(objStart, objEnd - objStart + 1);
+
+        std::string cid  = extractString(obj, "CID");
+        std::string cat  = extractString(obj, "Category");
+        std::string name = extractString(obj, "Name");
+        std::string sub  = extractString(obj, "Sub Categories");
+
+        if (cat == "Audio Module Class" && !cid.empty() && !name.empty()) {
+            bool matches = false;
+            if (strcmp(filterCategory, "Instrument") == 0) {
+                matches = sub.find("Instrument") != std::string::npos;
+            } else if (strcmp(filterCategory, "Fx") == 0) {
+                matches = sub.find("Fx") != std::string::npos
+                          && sub.find("Instrument") == std::string::npos;
+            }
+            // If no subcategories at all, include as fallback
+            if (sub.empty()) matches = true;
+
+            if (matches) {
+                if (name.find("Steam") == std::string::npos &&
+                    name.find("Valve") == std::string::npos) {
+                    VST3PluginInfo info;
+                    info.name = name;
+                    info.path = bundlePath;
+                    info.classIdStr = cid;
+                    hexToTuid(cid, info.classId);
+                    result.push_back(info);
+                }
+            }
+        }
+        pos = objEnd + 1;
+    }
+    return true; // moduleinfo.json was found and handled
+}
+
 // ScanPlugins: find all VST3 instrument plugins on the system
 // ====================================================================
 std::vector<VST3PluginInfo> VST3Instrument::ScanPlugins() {
@@ -2572,6 +2790,19 @@ std::vector<VST3PluginInfo> VST3Instrument::ScanPlugins() {
 
     // For each bundle, load temporarily to get class info
     for (auto& bundlePath : bundles) {
+        // Try moduleinfo.json first (fast, no loading / Wine needed)
+        if (tryParseModuleInfo(bundlePath, "Instrument", result)) {
+            continue;
+        }
+
+        // Skip yabridge bridge bundles that lack moduleinfo.json — dlopen'ing
+        // them would trigger the chainloader which needs Wine and shows a
+        // desktop error notification if libyabridge-vst3.so isn't reachable.
+        if (bundlePath.find("/yabridge/") != std::string::npos) {
+            continue;
+        }
+
+        // Fall back to dlopen for native plugins without moduleinfo.json
         std::string soPath = resolveVST3SOPath(bundlePath);
         if (soPath.empty()) continue;
 

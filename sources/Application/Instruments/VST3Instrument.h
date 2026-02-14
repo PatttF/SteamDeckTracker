@@ -259,6 +259,7 @@ private:
 
     bool isActive_;
     bool isProcessing_;
+    int64_t projectTimeSamples_;  // running sample counter for ProcessContext
 
     // Helper methods
     void loadPlugin();

@@ -19,5 +19,6 @@ public:
 	virtual SysSemaphoreResult Post() ;
 private:
 	SDL_sem *handle_ ;
+	int maxcount_ ;
 } ;
 #endif

@@ -66,11 +66,24 @@ void AudioDriver::AddBuffer(short *buffer,int samplecount) {
 
   // size_>0 means the slot still has unconsumed data
   if (pool_[poolQueuePosition_].size_>0) {
-  Trace::Error("Audio overrun, please report") ;
-  // Buffer still has unconsumed data — skip this write to prevent stuck loop.
-  // Advance position so subsequent writes don't keep hitting the same slot.
-  poolQueuePosition_=(poolQueuePosition_+1)%SOUND_BUFFER_COUNT ;
-  return ;
+  // Resync: snap the queue position to the play position (where the
+  // consumer just freed a slot) instead of blindly advancing.  This
+  // prevents the permanent desynchronisation that occurs when an IPC
+  // stall (e.g. yabridge/Wine) floods the semaphore and the producer
+  // burns through all pool slots in one burst.
+  int candidate=poolPlayPosition_ ;
+  bool found=false ;
+  for (int i=0;i<SOUND_BUFFER_COUNT;i++) {
+    if (pool_[candidate].size_==0) { found=true; break; }
+    candidate=(candidate+1)%SOUND_BUFFER_COUNT ;
+  }
+  if (found) {
+    poolQueuePosition_=candidate ;
+    // Fall through to write the buffer at the recovered position
+  } else {
+    Trace::Error("Audio overrun — pool full, dropping buffer") ;
+    return ;
+  }
   }
 
   // Pre-allocate buffer on first use, reuse thereafter (avoid malloc/free in audio path)

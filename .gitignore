@@ -2,6 +2,7 @@ bin/**
 build/**
 projects/build**
 tracks/**
+yabridge/
 *.dat
 *.wav
 *exe*
@@ -9,6 +10,7 @@ tracks/**
 *dge*
 .vscode
 font.h
+yabridge_blob.h
 projects/resources/packaging/samplelib
 projects/resources/packaging/lgpt_BETA
 .DS_Store

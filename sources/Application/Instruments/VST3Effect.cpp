@@ -463,6 +463,28 @@ void VST3Effect::loadPlugin() {
     }
     pluginFactory_ = factory;
 
+    // If classId is all zeros (stub from generated moduleinfo.json for a
+    // yabridge-bridged plugin), resolve the real CID from the factory.
+    {
+        bool cidIsZero = true;
+        for (int i = 0; i < 16; i++) {
+            if (pluginClassId_[i] != 0) { cidIsZero = false; break; }
+        }
+        if (cidIsZero) {
+            int nClasses = factory->countClasses();
+            for (int i = 0; i < nClasses; i++) {
+                PClassInfo ci;
+                if (factory->getClassInfo(i, &ci) == kResultOk &&
+                    strcmp(ci.category, kVstAudioEffectClass) == 0) {
+                    memcpy(pluginClassId_, ci.cid, 16);
+                    Trace::Log("VST3FX", "Resolved zero CID -> %s",
+                               tuidHex(pluginClassId_).c_str());
+                    break;
+                }
+            }
+        }
+    }
+
     // Create processor component
     IComponent* component = nullptr;
     tresult res = factory->createInstance(
@@ -553,6 +575,24 @@ void VST3Effect::loadPlugin() {
 
     discoverParameters();
     discoverPresets();
+
+    // Pre-initialize processing on the main thread so potentially slow
+    // IPC (yabridge/Wine) doesn't block the audio render thread.
+    {
+        int sampleRate = Audio::GetInstance()->GetSampleRate();
+        if (sampleRate <= 0) sampleRate = 44100;
+        int initBlock = 4096;
+
+        audioBufferL_ = (float*)calloc(initBlock, sizeof(float));
+        audioBufferR_ = (float*)calloc(initBlock, sizeof(float));
+        audioInputL_ = (float*)calloc(initBlock, sizeof(float));
+        audioInputR_ = (float*)calloc(initBlock, sizeof(float));
+        bufferSize_ = initBlock;
+
+        setupProcessing(initBlock);
+        Trace::Log("VST3FX", "Pre-initialized processing (block=%d rate=%d)",
+                   initBlock, sampleRate);
+    }
 
     Trace::Log("VST3FX", "Loaded effect: %s (%d params, %d banks)", name_, (int)parameters_.size(), (int)programLists_.size());
 }
@@ -1216,6 +1256,97 @@ void VST3Effect::RestoreContent(TiXmlElement *element) {
 // ====================================================================
 // ScanEffectPlugins: find VST3 effect plugins (Fx category, NOT Instrument)
 // ====================================================================
+// Try to parse a .vst3 bundle's Contents/moduleinfo.json (VST 3.7.5+) to get
+// plugin class info without dlopen'ing the module. This is essential for
+// yabridge-bridged bundles where dlopen would trigger a Wine launch.
+// Returns true if moduleinfo.json was found (even if no matching classes).
+static bool tryParseModuleInfoFX(const std::string& bundlePath,
+                                 const char* filterCategory,
+                                 std::vector<VST3PluginInfo>& result) {
+    std::string jsonPath = bundlePath + "/Contents/moduleinfo.json";
+    struct stat st;
+    if (stat(jsonPath.c_str(), &st) != 0 || st.st_size <= 0)
+        return false;
+
+    FILE* f = fopen(jsonPath.c_str(), "r");
+    if (!f) return false;
+    std::string json;
+    json.resize(st.st_size);
+    size_t nread = fread(&json[0], 1, st.st_size, f);
+    fclose(f);
+    if ((off_t)nread != st.st_size) return false;
+
+    auto extractString = [](const std::string& obj,
+                            const char* key) -> std::string {
+        std::string needle = std::string("\"")
+                             + key + "\"";
+        size_t kpos = obj.find(needle);
+        if (kpos == std::string::npos) return "";
+        size_t colon = obj.find(':', kpos + needle.size());
+        if (colon == std::string::npos) return "";
+        size_t qstart = obj.find('"', colon + 1);
+        if (qstart == std::string::npos) return "";
+        size_t qend = obj.find('"', qstart + 1);
+        if (qend == std::string::npos) return "";
+        return obj.substr(qstart + 1, qend - qstart - 1);
+    };
+
+    size_t classesPos = json.find("\"Classes\"");
+    if (classesPos == std::string::npos) return true;
+
+    size_t arrStart = json.find('[', classesPos);
+    if (arrStart == std::string::npos) return true;
+
+    size_t pos = arrStart + 1;
+    while (pos < json.size()) {
+        size_t objStart = json.find('{', pos);
+        if (objStart == std::string::npos) break;
+        size_t arrEnd = json.find(']', arrStart);
+        if (arrEnd != std::string::npos && objStart > arrEnd) break;
+
+        size_t objEnd = objStart + 1;
+        int depth = 1;
+        while (objEnd < json.size() && depth > 0) {
+            if (json[objEnd] == '{') depth++;
+            else if (json[objEnd] == '}') depth--;
+            if (depth > 0) objEnd++;
+        }
+        if (depth != 0) break;
+
+        std::string obj = json.substr(objStart, objEnd - objStart + 1);
+
+        std::string cid  = extractString(obj, "CID");
+        std::string cat  = extractString(obj, "Category");
+        std::string name = extractString(obj, "Name");
+        std::string sub  = extractString(obj, "Sub Categories");
+
+        if (cat == "Audio Module Class" && !cid.empty() && !name.empty()) {
+            bool matches = false;
+            if (strcmp(filterCategory, "Fx") == 0) {
+                matches = sub.find("Fx") != std::string::npos
+                          && sub.find("Instrument") == std::string::npos;
+            } else if (strcmp(filterCategory, "Instrument") == 0) {
+                matches = sub.find("Instrument") != std::string::npos;
+            }
+            if (sub.empty()) matches = true;
+
+            if (matches) {
+                if (name.find("Steam") == std::string::npos &&
+                    name.find("Valve") == std::string::npos) {
+                    VST3PluginInfo info;
+                    info.name = name;
+                    info.path = bundlePath;
+                    info.classIdStr = cid;
+                    hexTuid(cid, info.classId);
+                    result.push_back(info);
+                }
+            }
+        }
+        pos = objEnd + 1;
+    }
+    return true;
+}
+
 std::vector<VST3PluginInfo> VST3Effect::ScanEffectPlugins() {
     std::vector<VST3PluginInfo> result;
 
@@ -1231,6 +1362,19 @@ std::vector<VST3PluginInfo> VST3Effect::ScanEffectPlugins() {
     }
 
     for (auto& bundlePath : bundles) {
+        // Try moduleinfo.json first (fast, no loading / Wine needed)
+        if (tryParseModuleInfoFX(bundlePath, "Fx", result)) {
+            continue;
+        }
+
+        // Skip yabridge bridge bundles that lack moduleinfo.json — dlopen'ing
+        // them would trigger the chainloader which needs Wine and shows a
+        // desktop error notification if libyabridge-vst3.so isn't reachable.
+        if (bundlePath.find("/yabridge/") != std::string::npos) {
+            continue;
+        }
+
+        // Fall back to dlopen for native plugins without moduleinfo.json
         std::string soPath = resolveSoPath(bundlePath);
         if (soPath.empty()) continue;
 

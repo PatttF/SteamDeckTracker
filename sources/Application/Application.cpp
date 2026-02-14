@@ -88,6 +88,7 @@ bool Application::Init(GUICreateWindowParams &params) {
 	} ;
 	window_=AppWindow::Create(params) ;
 	PersistencyService::GetInstance() ;
+
   Audio *audio=Audio::GetInstance() ;
   audio->Init() ;
 	CommandDispatcher::GetInstance()->Init() ;

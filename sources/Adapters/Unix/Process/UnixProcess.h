@@ -20,5 +20,7 @@ public:
 	virtual SysSemaphoreResult Post() ;
 private:
 	sem_t *sem_ ;
+	int maxcount_ ;
+	char semName_[64] ;
 } ;
 #endif

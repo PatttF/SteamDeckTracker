@@ -512,16 +512,30 @@ export INCLUDE := \
 					-I$(CURDIR)/$(BUILD)
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean
+.PHONY: $(BUILD) clean yabridge
 
 #---------------------------------------------------------------------------------
 
-$(BUILD):
+$(BUILD): yabridge
 	python3 "$(abspath $(PWD)/../sources/Resources/mkfont.py)" "$(abspath $(PWD)/../sources/Resources/$(FONT))" "$(abspath $(PWD)/../sources/Resources/font.h)"
 	@[ -d $@ ] || mkdir -p $@
 	@make --no-print-directory -C $(BUILD) -f $(PWD)/Makefile
 
 #---------------------------------------------------------------------------------
+# Fetch pre-built yabridge binaries and embed them into a C header for
+# self-extraction at runtime.  Force a re-fetch with:
+#   make yabridge FORCE=--force
+#---------------------------------------------------------------------------------
+YABRIDGE_DIR := $(PWD)/../yabridge
+YABRIDGE_BLOB := $(PWD)/../sources/Application/Utils/yabridge_blob.h
+FORCE :=
+
+yabridge:
+	@if [ ! -f "$(YABRIDGE_DIR)/.version" ]; then \
+		echo "--- Fetching yabridge binaries ---"; \
+		bash "$(PWD)/fetch_yabridge.sh" $(FORCE); \
+	fi
+	@bash "$(PWD)/embed_yabridge.sh"
 
 clean:
 	@echo clean ...
