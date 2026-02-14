@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -516,6 +517,12 @@ void bridgeWindowsVST3s() {
         std::string(home) + "/Documents/SDTracker/wineprefix";
     setenv("WINEPREFIX", winePrefix.c_str(), 1);
     setenv("WINEFSYNC", "1", 0); // enable fsync if available (don't override)
+    // Suppress Wine debug output.  Without this, Wine logs hundreds of
+    // "fixme:unwind:execute_cfa_instructions unknown CFA opcode" messages
+    // during Serum 2 preset loading.  Each log call consumes stack space
+    // on the unwinder thread, and 468+ of them overflow Wine's 1 MB thread
+    // stack, crashing the host process and killing SDTracker (SIGABRT/134).
+    setenv("WINEDEBUG", "-all", 0);  // don't override if user set it
     Trace::Log("BRIDGE", "Set WINEPREFIX=%s", winePrefix.c_str());
 
     // Initialise the prefix if it doesn't exist yet.
@@ -610,6 +617,35 @@ void bridgeWindowsVST3s() {
                            "Proton created prefix in pfx/ — updated "
                            "WINEPREFIX=%s",
                            winePrefix.c_str());
+            }
+        }
+    }
+
+    // If the Wine prefix was created by Proton (user "steamuser") but the
+    // host system user is different, create a symlink so plugins like u-he
+    // Diva can find their data in C:\users\<host-user>\Documents.
+    {
+        const char *hostUser = getenv("USER");
+        if (!hostUser) hostUser = getenv("LOGNAME");
+        if (hostUser && hostUser[0] && strcmp(hostUser, "steamuser") != 0) {
+            std::string usersDir = winePrefix + "/drive_c/users";
+            std::string steamDir = usersDir + "/steamuser";
+            std::string hostDir  = usersDir + "/" + hostUser;
+            struct stat steamSt, hostSt;
+            if (stat(steamDir.c_str(), &steamSt) == 0 &&
+                S_ISDIR(steamSt.st_mode)) {
+                if (lstat(hostDir.c_str(), &hostSt) != 0) {
+                    // Doesn't exist — create a symlink
+                    if (symlink("steamuser", hostDir.c_str()) == 0) {
+                        Trace::Log("BRIDGE",
+                            "Created symlink %s -> steamuser for plugin data",
+                            hostDir.c_str());
+                    } else {
+                        Trace::Log("BRIDGE",
+                            "WARNING: Failed to symlink %s -> steamuser: %s",
+                            hostDir.c_str(), strerror(errno));
+                    }
+                }
             }
         }
     }

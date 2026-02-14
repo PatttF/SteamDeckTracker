@@ -204,6 +204,15 @@ private:
     // Mutex protecting pending events
     SysMutex pendingEventsMutex_;
 
+    // Mutex protecting VST3 component state (process vs setState synchronization)
+    // Render uses TryLock (never blocks audio thread), loadPresetFromFile uses Lock.
+    SysMutex componentMutex_;
+
+    // Set to true when setState times out — the Wine process is stuck and any
+    // further IPC calls (setActive, setProcessing, process) would also hang.
+    // Once set, Render outputs silence and loadPresetFromFile returns early.
+    bool componentDead_;
+
     // Pending MIDI note events
     struct PendingNoteEvent {
         int16_t channel;
