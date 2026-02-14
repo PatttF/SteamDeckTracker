@@ -1,0 +1,572 @@
+[CONFIG] Trying config path=/home/deck/Documents/SDTracker/config.xml
+[System] Installing SDL audio
+[AUDIO] Audio object initialised with
+[AUDIO] Api:
+[AUDIO] Device:
+[AUDIO] Buffer size:512
+[AUDIO] Pre Buffer Count:2
+[AUDIO] Requested Sample Rate:44100
+[System] Installing RT MIDI
+[CONFIG] Got value for DUMPEVENT=YES
+[EVENT] GameController[0] opened: Steam Deck
+[EVENT] joystick[0]=745c1c20 instanceId=0
+[EVENT] Number of axis:6
+[EVENT] Number of buttons:20
+[EVENT] Number of hats:0
+[DISPLAY] Using driver x11. Screen (1280,800) Bpp:24
+[CONFIG] Got value for SCREENMULT=1
+[DISPLAY] Creating SDL Window (550,240)
+[CONFIG] Got value for FONTTYPE=0
+[DISPLAY] Preparing fonts
+[DISPLAY] Preparing font cache
+[CONFIG] Got value for BACKGROUND=000000
+[CONFIG] Got value for FOREGROUND=6D6D6D
+[DISPLAY] Preparing full font cache
+[RTMidiService] 1 input port(s)
+[CONFIG] Got value for DUMPEVENT=YES
+[RTMidiService]  Midi Through:0
+[RTMidiService] 1 output port(s)
+[RTMidiService]  Midi Through:0
+[CONFIG] Got value for BACKGROUND=000000
+[CONFIG] Got value for FOREGROUND=6D6D6D
+[CONFIG] Got value for BORDER=6F6F6F
+[CONFIG] Got value for CLIPCOLOR=FF0000
+[CONFIG] Got value for SONGVIEW_FE=A55B8F
+[CONFIG] Got value for SONGVIEW_00=853B6F
+[CONFIG] Got value for HICOLOR1=7050C1
+[CONFIG] Got value for HICOLOR2=5F63EF
+[CONFIG] Got value for CURSORCOLOR=FF008C
+[CONFIG] Got value for PLAYCOLOR=FF008C
+[CONFIG] Got value for MUTECOLOR=F5EBFF
+[CONFIG] Got value for ROWCOLOR1=0028F9
+[CONFIG] Got value for ROWCOLOR2=2F009F
+[CONFIG] Got value for ALTROWNUMBER=4
+[AppWindow] Auto-loading last project: /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite
+[AUDIO] Audio system running at 44100 Hz, 2 channels
+[MAPPING] Attached /event/lshoulder to key:0:q
+[MAPPING] Attached /event/rshoulder to key:0:w
+[MAPPING] Attached /event/up to key:0:up
+[MAPPING] Attached /event/down to key:0:down
+[MAPPING] Attached /event/left to key:0:left
+[MAPPING] Attached /event/right to key:0:right
+[MAPPING] Attached /event/b to key:0:a
+[MAPPING] Attached /event/a to key:0:s
+[MAPPING] Attached /event/start to key:0:space
+[MAPPING] Attached /event/select to key:0:e
+[MAPPING] Attached /event/pgback to key:0:,
+[MAPPING] Attached /event/pgfwd to key:0:.
+[MAPPING] Attached /event/b to but:0:0
+[APP] No bundled LV2 installer script found to copy to /home/deck/Documents/SDTracker/scripts/install_lv2_steamos.sh
+[BRIDGE] Current RLIMIT_MEMLOCK: soft=8388608 hard=8388608
+[BRIDGE] WARNING: Could not raise memlock limit above 8388608 — Wine may print warnings. Add a /etc/security/limits.d/ entry for unlimited memlock if audio doesn't work.
+[BRIDGE] Found 3 Proton installation(s)
+[BRIDGE]   [0] Proton - Experimental -> /home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine
+[BRIDGE]   [1] Proton 10.0 -> /home/deck/.steam/steam/steamapps/common/Proton 10.0/files/bin/wine
+[BRIDGE]   [2] Proton 9.0 (Beta) -> /home/deck/.steam/steam/steamapps/common/Proton 9.0 (Beta)/files/bin/wine
+[BRIDGE] Auto-selected Proton: Proton - Experimental
+[BRIDGE] Set WINELOADER=/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine
+[BRIDGE] Set LD_LIBRARY_PATH=/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/lib:/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/lib64
+[BRIDGE] Prepended yabridge to PATH
+[BRIDGE] Set WINEPREFIX=/home/deck/Documents/SDTracker/wineprefix
+[BRIDGE] yabridge already present at /home/deck/Documents/SDTracker/yabridge
+[BRIDGE] Found yabridgectl: /home/deck/Documents/SDTracker/yabridge/yabridgectl
+[BRIDGE] Wrote yabridgectl config: path = '/home/deck/Documents/SDTracker/yabridge'
+[BRIDGE] Running: "/home/deck/Documents/SDTracker/yabridge/yabridgectl" add "/home/deck/.vst3/win" 2>&1
+[BRIDGE] Running: WINELOADER="/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine" "/home/deck/Documents/SDTracker/yabridge/yabridgectl" sync 2>&1
+[BRIDGE]   Setting up VST2, VST3, and CLAP plugins using:
+[BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-vst2.so
+[BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-vst3.so
+[BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-clap.so
+[BRIDGE]
+[BRIDGE]   Found 1 leftover file, rerun with the '--prune' option to remove them:
+[BRIDGE]   - /home/deck/.vst3/yabridge/fb3300.vst3/Contents/moduleinfo.json
+[BRIDGE]
+[BRIDGE]   Finished setting up 1 plugins (0 new), skipped 0 non-plugin .dll files
+[BRIDGE] Windows VST3 bridge setup completed successfully
+[EVENT] SDL_JOYDEVICEADDED: deviceIndex=0
+[EVENT] SDL_CONTROLLERDEVICEADDED: deviceIndex=0
+[LoadProject] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite
+
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Aint Got Time Kick (@gordito_chinito).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Aint Got Time Kick (@gordito_chinito).wav: 1528341 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Aint Got Time Kick (@gordito_chinito).wav (44100 Hz, 2 ch, 1528341 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/funky_mule_sharp3ned_clipped.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/funky_mule_sharp3ned_clipped.wav: 125272 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: funky_mule_sharp3ned_clipped.wav (44100 Hz, 2 ch, 125272 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Sound 11.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Sound 11.wav: 414720 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Sound 11.wav (44100 Hz, 2 ch, 414720 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Kick5.WAV
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Kick5.WAV: 17072 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Kick5.WAV (44100 Hz, 2 ch, 17072 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Vox (10).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Vox (10).wav: 22272 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Vox (10).wav (44100 Hz, 2 ch, 22272 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/The Price Is Right.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/The Price Is Right.wav: 2093056 frames, 2 channels, 48000 Hz
+[SamplePool] Loaded via FFmpeg: The Price Is Right.wav (48000 Hz, 2 ch, 2093056 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Luper Kick.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Luper Kick.wav: 27169 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Luper Kick.wav (44100 Hz, 2 ch, 27169 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/clap - a list @adieu_xo.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/clap - a list @adieu_xo.wav: 5357 frames, 2 channels, 48000 Hz
+[SamplePool] Loaded via FFmpeg: clap - a list @adieu_xo.wav (48000 Hz, 2 ch, 5357 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/pico1trkDtKd.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/pico1trkDtKd.wav: 12926 frames, 1 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: pico1trkDtKd.wav (44100 Hz, 1 ch, 12926 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/KS - A Night Of Scope D.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/KS - A Night Of Scope D.wav: 125517 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: KS - A Night Of Scope D.wav (44100 Hz, 2 ch, 125517 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Sound 11_.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Sound 11_.wav: 414720 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Sound 11_.wav (44100 Hz, 2 ch, 414720 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Hi-Hat (1).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Hi-Hat (1).wav: 7072 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Hi-Hat (1).wav (44100 Hz, 2 ch, 7072 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Snare + Clap (17).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Snare + Clap (17).wav: 5821 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Snare + Clap (17).wav (44100 Hz, 2 ch, 5821 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Vox (13).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Vox (13).wav: 40397 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Vox (13).wav (44100 Hz, 2 ch, 40397 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Champion_Break.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Champion_Break.wav: 65534 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Champion_Break.wav (44100 Hz, 2 ch, 65534 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/bitch_mode_lofi_reduxed_consolidated.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/bitch_mode_lofi_reduxed_consolidated.wav: 460174 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: bitch_mode_lofi_reduxed_consolidated.wav (44100 Hz, 2 ch, 460174 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/A BASS YOU DIDNT KNOW YOU NEEDED ~ (C) @prod.kidnxtdoor.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/A BASS YOU DIDNT KNOW YOU NEEDED ~ (C) @prod.kidnxtdoor.wav: 753231 frames, 2 channels, 48000 Hz
+[SamplePool] Loaded via FFmpeg: A BASS YOU DIDNT KNOW YOU NEEDED ~ (C) @prod.kidnxtdoor.wav (48000 Hz, 2 ch, 753231 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/808 - Hoodlumz - 2 - C#.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/808 - Hoodlumz - 2 - C#.wav: 38177 frames, 1 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: 808 - Hoodlumz - 2 - C#.wav (44100 Hz, 1 ch, 38177 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/@mickarbenz_C_Guitar_4.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/@mickarbenz_C_Guitar_4.wav: 101724 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: @mickarbenz_C_Guitar_4.wav (44100 Hz, 2 ch, 101724 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/60s_Rock_Guitar_E.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/60s_Rock_Guitar_E.wav: 184070 frames, 1 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: 60s_Rock_Guitar_E.wav (44100 Hz, 1 ch, 184070 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/7A - 88 - FS BREAK lv 1.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/7A - 88 - FS BREAK lv 1.wav: 483840 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: 7A - 88 - FS BREAK lv 1.wav (44100 Hz, 2 ch, 483840 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/clap - bright @adieu_xo.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/clap - bright @adieu_xo.wav: 6214 frames, 2 channels, 48000 Hz
+[SamplePool] Loaded via FFmpeg: clap - bright @adieu_xo.wav (48000 Hz, 2 ch, 6214 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/909kick.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/909kick.wav: 9248 frames, 1 channels, 22050 Hz
+[SamplePool] Loaded via FFmpeg: 909kick.wav (22050 Hz, 1 ch, 9248 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/reflect - 113BPM Am ( Scent ).mp3
+[mp3 @ 0x564d755cc140] Estimating duration from bitrate, this may be inaccurate
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/reflect - 113BPM Am ( Scent ).mp3: 6371712 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: reflect - 113BPM Am ( Scent ).mp3 (44100 Hz, 2 ch, 6371712 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/dreadnought-acid-techno-synth.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/dreadnought-acid-techno-synth.wav: 325662 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: dreadnought-acid-techno-synth.wav (44100 Hz, 2 ch, 325662 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Angles Break.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Angles Break.wav: 64174 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Angles Break.wav (44100 Hz, 2 ch, 64174 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Kick (14).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Kick (14).wav: 8019 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Kick (14).wav (44100 Hz, 2 ch, 8019 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/AssMilk_Perc.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/AssMilk_Perc.wav: 16002 frames, 2 channels, 48000 Hz
+[SamplePool] Loaded via FFmpeg: AssMilk_Perc.wav (48000 Hz, 2 ch, 16002 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/808 - candy (C) @adieu_xo.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/808 - candy (C) @adieu_xo.wav: 56571 frames, 2 channels, 48000 Hz
+[SamplePool] Loaded via FFmpeg: 808 - candy (C) @adieu_xo.wav (48000 Hz, 2 ch, 56571 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/KS - A Night Of Scope.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/KS - A Night Of Scope.wav: 258049 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: KS - A Night Of Scope.wav (44100 Hz, 2 ch, 258049 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Blaze_Break.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Blaze_Break.wav: 62235 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Blaze_Break.wav (44100 Hz, 2 ch, 62235 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Kick (11).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/Kick (11).wav: 10792 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Kick (11).wav (44100 Hz, 2 ch, 10792 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/reflect - Midnight (C).wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_WobblyBite/samples/reflect - Midnight (C).wav: 132153 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: reflect - Midnight (C).wav (44100 Hz, 2 ch, 132153 frames)
+[SampleInstrument] Sample size: 38177 frames
+[SampleInstrument] Set loopEnd to 38177
+[SampleInstrument] Sample size: 56571 frames
+[SampleInstrument] Set loopEnd to 56571
+[SampleInstrument] Sample size: 9248 frames
+[SampleInstrument] Set loopEnd to 9248
+[SampleInstrument] Sample size: 753231 frames
+[SampleInstrument] Set loopEnd to 753231
+[SampleInstrument] Sample size: 7072 frames
+[SampleInstrument] Set loopEnd to 7072
+[SampleInstrument] Sample size: 10792 frames
+[SampleInstrument] Set loopEnd to 10792
+[SampleInstrument] Sample size: 8019 frames
+[SampleInstrument] Set loopEnd to 8019
+[SampleInstrument] Sample size: 27169 frames
+[SampleInstrument] Set loopEnd to 27169
+[SampleInstrument] Sample size: 5821 frames
+[SampleInstrument] Set loopEnd to 5821
+[SampleInstrument] Sample size: 414720 frames
+[SampleInstrument] Set loopEnd to 414720
+[SampleInstrument] Sample size: 414720 frames
+[SampleInstrument] Set loopEnd to 414720
+[SampleInstrument] Sample size: 5357 frames
+[SampleInstrument] Set loopEnd to 5357
+[SampleInstrument] Sample size: 6214 frames
+[SampleInstrument] Set loopEnd to 6214
+[SampleInstrument] Sample size: 12926 frames
+[SampleInstrument] Set loopEnd to 12926
+[SampleInstrument] Sample size: 6371712 frames
+[SampleInstrument] Set loopEnd to 6371712
+[SampleInstrument] Sample size: 132153 frames
+[SampleInstrument] Set loopEnd to 132153
+[AUDIO] Requested rate: 44100 Hz, obtained: 44100 Hz, channels: 2
+[AUDIO] pulseaudio successfully opened with 512 samples
+[EVENT] key(W:26):1
+[EVENT] key(Down:81):1
+[SongView] Requesting switch to MIXER (songY=0, offset=0)
+[AppWindow] VET_SWITCH_VIEW request -> 9
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 9
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Up:82):1
+[AppWindow] VET_SWITCH_VIEW request -> 0
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 0
+[EVENT] key(Up:82):0
+[EVENT] key(Right:79):1
+[AppWindow] VET_SWITCH_VIEW request -> 1
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 1
+[EVENT] key(Right:79):0
+[EVENT] key(Right:79):1
+[AppWindow] VET_SWITCH_VIEW request -> 2
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 2
+[EVENT] key(Right:79):0
+[EVENT] key(Right:79):1
+[AppWindow] VET_SWITCH_VIEW request -> 4
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 4
+[IVIEW] onInstrumentChange: inst=0 type=0 current=0x564d755e9720 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(W:26):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(S:22):1
+[EVENT] key(Right:79):1
+[IVIEW] Update: deferring type switch inst=0 from=0 to=3
+[IVIEW] DrawView: processing pending type switch idx=0 type=3
+[IVIEW] onInstrumentChange: inst=0 type=3 current=0x564d7576f380 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(Right:79):1
+[IVIEW] Update: deferring type switch inst=0 from=3 to=4
+[IVIEW] DrawView: processing pending type switch idx=0 type=4
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x564d771fd7e0 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(Right:79):1
+[IVIEW] Update: deferring type switch inst=0 from=4 to=2
+[IVIEW] DrawView: processing pending type switch idx=0 type=2
+[IVIEW] onInstrumentChange: inst=0 type=2 current=0x564d76736010 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(Left:80):1
+[IVIEW] Update: deferring type switch inst=0 from=2 to=4
+[IVIEW] DrawView: processing pending type switch idx=0 type=4
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x564d771fd7e0 old=(nil)
+[EVENT] key(Left:80):0
+[EVENT] key(S:22):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(S:22):1
+[VST3] Found 8 VST3 plugins
+[EVENT] key(S:22):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(S:22):1
+21:03:05 [fb3300-JKLVabju] Initializing yabridge version 5.1.1
+21:03:05 [fb3300-JKLVabju] library:       '/home/deck/Documents/SDTracker/yabridge/libyabridge-vst3.so'
+21:03:05 [fb3300-JKLVabju] host:          '/home/deck/Documents/SDTracker/yabridge/yabridge-host.exe'
+21:03:05 [fb3300-JKLVabju] plugin:        '/home/deck/.vst3/win/fb3300.vst3'
+21:03:05 [fb3300-JKLVabju] plugin type:   'VST3'
+21:03:05 [fb3300-JKLVabju] realtime:      'no'
+21:03:05 [fb3300-JKLVabju] memlock limit: '8388608 bytes, see below'
+21:03:05 [fb3300-JKLVabju]
+21:03:05 [fb3300-JKLVabju]    With a low memory locking limit, yabridge may not be
+21:03:05 [fb3300-JKLVabju]    be able to lock its shared memory audio buffers into
+21:03:05 [fb3300-JKLVabju]    main memory. Performance may be degraded until you fix
+21:03:05 [fb3300-JKLVabju]    this. Check the readme for instructions on how to do that.
+21:03:05 [fb3300-JKLVabju]
+21:03:05 [fb3300-JKLVabju] sockets:       '/run/user/1000/yabridge-fb3300-JKLVabju'
+21:03:05 [fb3300-JKLVabju] wine prefix:   '/home/deck/Documents/SDTracker/wineprefix <overridden>'
+21:03:05 [fb3300-JKLVabju] wine version:  '10.0'
+21:03:05 [fb3300-JKLVabju]
+21:03:05 [fb3300-JKLVabju] config from:   '<defaults>'
+21:03:05 [fb3300-JKLVabju] hosting mode:  'individually, 64-bit'
+21:03:05 [fb3300-JKLVabju] other options: '<none>'
+21:03:05 [fb3300-JKLVabju]
+21:03:05 [fb3300-JKLVabju] Enabled features:
+21:03:05 [fb3300-JKLVabju] - bitbridge support
+21:03:05 [fb3300-JKLVabju] - CLAP support
+21:03:05 [fb3300-JKLVabju] - VST3 support
+21:03:05 [fb3300-JKLVabju]
+21:03:05 [fb3300-JKLVabju] [Wine STDERR] fsync: up and running.
+21:03:06 [fb3300-JKLVabju] [Wine STDERR] 00b4:err:hid:get_container_id_for_usb_udev_device Failed to get parent device.
+21:03:06 [fb3300-JKLVabju] [Wine STDERR] 00b4:fixme:xinput:pdo_pnp code 0xc, not implemented!
+21:03:06 [fb3300-JKLVabju] [Wine STDERR] 00b4:fixme:xinput:pdo_pnp code 0xc, not implemented!
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00b8:fixme:xinput:pdo_pnp code 0xc, not implemented!
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00b8:fixme:xinput:pdo_pnp code 0xc, not implemented!
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00e4:fixme:winebth:pdo_pnp Unhandled minor function IRP_MN_QUERY_DEVICE_TEXT.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:add_usb_device Interface 1 has 6 alternate settings; using the first one.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:07 [fb3300-JKLVabju] [Wine STDERR] 00dc:fixme:wineusb:query_id Unhandled ID query type 0x5.
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] Initializing yabridge host version 5.1.1
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] Preparing to load VST3 plugin at '/home/deck/.vst3/win/fb3300.vst3'
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] 013c:fixme:oleacc:find_class_data unhandled window class: L"#32769"
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] 013c:fixme:uiautomation:uia_get_providers_for_hwnd Override provider callback currently unimplemented.
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] 013c:fixme:uiautomation:default_uia_provider_callback Default ProviderType_NonClientArea provider unimplemented.
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] Finished initializing '/home/deck/.vst3/win/fb3300.vst3'
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] 013c:fixme:oleacc:find_class_data unhandled window class: L"#32769"
+[VST3] Resolved zero CID -> F2AEE70D00DE4F4E4675427566623333
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] 013c:fixme:uiautomation:base_hwnd_fragment_get_FragmentRoot 00000000008151E8, 000000000021F9A0: stub!
+21:03:08 [fb3300-JKLVabju] [Wine STDERR] 013c:fixme:uiautomation:base_hwnd_fragment_GetEmbeddedFragmentRoots 00000000008151E8, 000000000021F9B0: stub!
+[VST3] Component implements IEditController directly
+[VST3] Discovered 360 parameters for FB-3300
+[VST3] Found kIsProgramChange parameter: id=65537 stepCount=63
+[VST3] Found 1 program list(s)
+[VST3]   List[65537] 'Factory Presets': 64 programs
+[VST3] Total: 1 bank(s), first bank 'Factory Presets' has 64 presets
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x564d771fd7e0 old=0x564d771fd7e0
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[EVENT] key(S:22):0
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[*ERROR*] Audio overrun, please report
+[EVENT] SDEM:PostQuitMessage()
