@@ -213,15 +213,32 @@ On startup SDTracker:
 1. Locates Proton (prefers **Proton Experimental**) from your Steam installation.
 2. Extracts its bundled copy of **yabridge 5.1.1** to `~/Documents/SDTracker/yabridge/`.
 3. Initialises a dedicated Wine prefix at `~/Documents/SDTracker/wineprefix/`.
-4. Runs `yabridgectl sync` to create Linux bridge bundles for every `.vst3` in `~/.vst3/win/`.
-5. Copies essential DLLs (DirectX/vkd3d) from Proton's default prefix so plugins with GPU-accelerated GUIs can load.
-6. Sets `WINELOADER`, `WINEPREFIX`, `LD_LIBRARY_PATH`, and `PATH` so the yabridge chainloader can find everything at runtime.
+4. Creates the standard Windows VST3 directory (`Program Files/Common Files/VST3/`) inside the Wine prefix so Windows installers drop plugins in the right place.
+5. Scans **all** plugin directories — `~/.vst3/win/` plus the standard Windows install locations inside the prefix — and runs `yabridgectl sync` to create Linux bridge bundles.
+6. Copies essential DLLs (DirectX/vkd3d) from Proton's default prefix so plugins with GPU-accelerated GUIs can load.
+7. Sets `WINELOADER`, `WINEPREFIX`, `LD_LIBRARY_PATH`, and `PATH` so the yabridge chainloader can find everything at runtime.
 
 After this, bridged plugins appear in the **Import VST3 Instrument** and **Import VST3 Effect** dialogs alongside native Linux plugins.
 
 ### Installing Windows VST3 Plugins
 
-Place your Windows `.vst3` files (or `.vst3` bundle directories) in:
+#### Method 1: Run the Windows Installer (Recommended)
+
+The easiest way is to run the plugin's Windows installer directly through Wine/Proton. SDTracker's Wine prefix already has the standard `Program Files/Common Files/VST3/` directory, so installers will put the `.vst3` in the right place and any extra files (presets, samples, licence data) will land where the plugin expects them.
+
+```bash
+# Find Proton's wine binary
+WINELOADER=$(find ~/.steam/steam/steamapps/common -path "*/Proton*/files/bin/wine" | head -1)
+
+# Run the installer into SDTracker's Wine prefix
+WINEPREFIX=~/Documents/SDTracker/wineprefix "$WINELOADER" /path/to/PluginInstaller.exe
+```
+
+The installed plugin will be discovered automatically on next launch — no extra steps needed.
+
+#### Method 2: Copy Files Manually
+
+You can also drop Windows `.vst3` files (or `.vst3` bundle directories) directly into:
 
 ```
 ~/.vst3/win/
@@ -236,6 +253,18 @@ Examples:
 ```
 
 Both proper VST3 bundle directories and flat `.vst3` files are supported. The next time SDTracker starts, `yabridgectl sync` will create the corresponding Linux bridge bundles automatically.
+
+#### Scanned Directories
+
+SDTracker automatically scans all of these locations for Windows VST3 plugins:
+
+| Location | Description |
+|----------|-------------|
+| `~/.vst3/win/` | Manual drop-in directory |
+| `{wineprefix}/drive_c/Program Files/Common Files/VST3/` | Standard Windows 64-bit install path |
+| `{wineprefix}/drive_c/Program Files (x86)/Common Files/VST3/` | Standard Windows 32-bit install path |
+
+Where `{wineprefix}` is `~/Documents/SDTracker/wineprefix/` (or its `pfx/` subdirectory when using Proton).
 
 ### Plugins That Need External Files
 
@@ -253,12 +282,7 @@ Many Windows VST3 plugins ship with presets, sample libraries, or configuration 
 
 > **Tip:** Wine's `Z:` drive maps to `/` (the entire Linux filesystem), so plugins can technically access any Linux path. But most plugins use standard Windows paths listed above.
 
-> **Tip:** If a plugin came with a Windows installer, you can run it through the same Wine prefix:
-> ```
-> WINEPREFIX=~/Documents/SDTracker/wineprefix \
-> WINELOADER=$(find ~/.steam/steam/steamapps/common -path "*/Proton*/files/bin/wine" | head -1) \
-> "$WINELOADER" /path/to/installer.exe
-> ```
+> **Tip:** If a plugin needs external files, the simplest approach is to use **Method 1** (run the Windows installer) — it will place everything in the correct locations automatically.
 
 ### Requirements
 
