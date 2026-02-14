@@ -1009,20 +1009,35 @@ void VST3Effect::setupProcessing(int bufferSize) {
     int32 numInputBuses = comp->getBusCount(kAudio, kInput);
     int32 numOutputBuses = comp->getBusCount(kAudio, kOutput);
 
+    // Activate bus 0 for input/output, explicitly deactivate all others.
+    for (int32 i = 0; i < numOutputBuses; i++) {
+        comp->activateBus(kAudio, kOutput, i, i == 0);
+    }
+    for (int32 i = 0; i < numInputBuses; i++) {
+        comp->activateBus(kAudio, kInput, i, i == 0);
+    }
+
+    // Build speaker arrangement arrays matching the full bus count.
+    // The VST3 spec requires the array sizes to match the plugin's bus
+    // count — passing fewer elements causes out-of-bounds reads in some
+    // plugins (Serum 2 via yabridge in game mode).
     if (numOutputBuses > 0) {
-        comp->activateBus(kAudio, kOutput, 0, true);
+        std::vector<SpeakerArrangement> outputs(numOutputBuses, 0);
+        outputs[0] = stereo;
+
         if (numInputBuses > 0) {
-            comp->activateBus(kAudio, kInput, 0, true);
-            SpeakerArrangement inputs[1] = { stereo };
-            SpeakerArrangement outputs[1] = { stereo };
-            proc->setBusArrangements(inputs, 1, outputs, 1);
+            std::vector<SpeakerArrangement> inputs(numInputBuses, 0);
+            inputs[0] = stereo;
+            proc->setBusArrangements(inputs.data(), numInputBuses, outputs.data(), numOutputBuses);
         } else {
-            SpeakerArrangement outputs[1] = { stereo };
-            proc->setBusArrangements(nullptr, 0, outputs, 1);
+            proc->setBusArrangements(nullptr, 0, outputs.data(), numOutputBuses);
         }
     }
 
+    // Zero-init to avoid garbage in padding bytes that yabridge may
+    // serialize across the IPC boundary.
     ProcessSetup setup;
+    memset(&setup, 0, sizeof(setup));
     setup.processMode = kRealtime;
     setup.symbolicSampleSize = kSample32;
     setup.maxSamplesPerBlock = bufferSize;
