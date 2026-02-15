@@ -62,6 +62,7 @@
 [BRIDGE] Set LD_LIBRARY_PATH=/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/lib:/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/lib64
 [BRIDGE] Prepended yabridge to PATH
 [BRIDGE] Set WINEPREFIX=/home/deck/Documents/SDTracker/wineprefix
+[BRIDGE] dxgi.dll looks good (717945 bytes)
 [BRIDGE] yabridge already present at /home/deck/Documents/SDTracker/yabridge
 [BRIDGE] Found yabridgectl: /home/deck/Documents/SDTracker/yabridge/yabridgectl
 [BRIDGE] Added Wine prefix VST3 dir: /home/deck/Documents/SDTracker/wineprefix/drive_c/Program Files/Common Files/VST3
@@ -131,7 +132,7 @@
 [AppWindow] VET_SWITCH_VIEW request -> 4
 [AppWindow] Current view loose focus
 [AppWindow] Setting focus to view -> 4
-[IVIEW] onInstrumentChange: inst=0 type=0 current=0x55fccd19bba0 old=(nil)
+[IVIEW] onInstrumentChange: inst=0 type=0 current=0x5616df5a7d40 old=(nil)
 [EVENT] key(Right:79):0
 [EVENT] key(W:26):0
 [EVENT] key(Up:82):1
@@ -144,12 +145,12 @@
 [EVENT] key(Right:79):1
 [IVIEW] Update: deferring type switch inst=0 from=0 to=3
 [IVIEW] DrawView: processing pending type switch idx=0 type=3
-[IVIEW] onInstrumentChange: inst=0 type=3 current=0x55fcce931e70 old=(nil)
+[IVIEW] onInstrumentChange: inst=0 type=3 current=0x5616e0d3e450 old=(nil)
 [EVENT] key(Right:79):0
 [EVENT] key(Right:79):1
 [IVIEW] Update: deferring type switch inst=0 from=3 to=4
 [IVIEW] DrawView: processing pending type switch idx=0 type=4
-[IVIEW] onInstrumentChange: inst=0 type=4 current=0x55fccd19bba0 old=(nil)
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x5616df5a7d40 old=(nil)
 [EVENT] key(Right:79):0
 [EVENT] key(S:22):0
 [EVENT] key(Down:81):1
@@ -186,64 +187,65 @@
 [VST3] --- Wine probe output start ---
 [VST3]   wine> CHILD: calling ModuleEntry...
 [VST3]   wine> terminate called without an active exception
-[VST3]   wine> *** Crash: signal 6 pid=15373
-[VST3]   wine> /home/deck/Desktop/SDTracker(+0xd431e) [0x55fc9a21a31e]
-[VST3]   wine> /usr/lib/libc.so.6(+0x3dd10) [0x7ff4accebd10]
-[VST3]   wine> /usr/lib/libc.so.6(+0x975a4) [0x7ff4acd455a4]
-[VST3]   wine> /usr/lib/libc.so.6(gsignal+0x20) [0x7ff4accebbe0]
-[VST3]   wine> /usr/lib/libc.so.6(abort+0x26) [0x7ff4accd3582]
-[VST3]   wine> /usr/lib/libstdc++.so.6(+0x97b2c) [0x7ff4a8297b2c]
-[VST3]   wine> /usr/lib/libstdc++.so.6(+0xadf3a) [0x7ff4a82adf3a]
-[VST3]   wine> /usr/lib/libstdc++.so.6(_ZSt10unexpectedv+0x0) [0x7ff4a829752a]
-[VST3]   wine> /home/deck/Documents/SDTracker/yabridge/libyabridge-vst3.so(+0xc57d0) [0x7ff4843687d0]
-[VST3]   wine> /usr/lib/libstdc++.so.6(+0xe1c34) [0x7ff4a82e1c34]
-[VST3]   wine> /usr/lib/libc.so.6(+0x95688) [0x7ff4acd43688]
-[VST3]   wine> /usr/lib/libc.so.6(+0x11996c) [0x7ff4acdc796c]
-[VST3]   wine> rum2-04FHMiwy] 
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] config from:   '<defaults>'
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] hosting mode:  'individually, 64-bit'
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] other options: '<none>'
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] 
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] Enabled features:
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] - bitbridge support
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] - CLAP support
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] - VST3 support
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] 
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] [Wine STDERR] fsync: up and running.
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:02 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:03 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:03 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:03 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:03 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] ATTENTION: default value of option vk_khr_present_wait overridden by environment.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] ATTENTION: default value of option vk_xwayland_wait_ready overridden by environment.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] [Gamescope WSI] Application info:
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR]   pApplicationName: (null)
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR]   applicationVersion: 0
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR]   pEngineName: (null)
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR]   engineVersion: 0
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR]   apiVersion: 4198400
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] [Gamescope WSI] Executable name: explorer.exe
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] Initializing yabridge host version 5.1.1
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] Preparing to load VST3 plugin at '/home/deck/.vst3/win/Serum2.vst3/Contents/x86_64-win/Serum2.vst3'
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library dxgi.dll (which is needed by L"C:\\windows\\system32\\d3d11.dll") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library d3d11.dll (which is needed by L"Z:\\home\\deck\\.vst3\\win\\Serum2.vst3\\Contents\\x86_64-win\\Serum2.vst3") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library dxgi.dll (which is needed by L"C:\\windows\\system32\\d3d10core.dll") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library d3d10core.dll (which is needed by L"C:\\windows\\system32\\d3d10_1.dll") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library dxgi.dll (which is needed by L"C:\\windows\\system32\\d3d10_1.dll") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library d3d10_1.dll (which is needed by L"C:\\windows\\system32\\d2d1.dll") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 00d0:err:module:import_dll Library d2d1.dll (which is needed by L"Z:\\home\\deck\\.vst3\\win\\Serum2.vst3\\Contents\\x86_64-win\\Serum2.vst3") not found
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] Error while initializing the Wine plugin host:
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] Could not load the VST3 module for '/home/deck/.vst3/win/Serum2.vst3/Contents/x86_64-win/Serum2.vst3': LoadLibray failed: Module not found.
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] [Wine STDERR] 
-[VST3]   wine> 19:33:04 [Serum2-04FHMiwy] The Wine host process has exited unexpectedly. Check the output above for more information.
+[VST3]   wine> *** Crash: signal 6 pid=19366
+[VST3]   wine> /home/deck/Desktop/SDTracker(+0xd435e) [0x5616bcd6935e]
+[VST3]   wine> /usr/lib/libc.so.6(+0x3dd10) [0x7f786b155d10]
+[VST3]   wine> /usr/lib/libc.so.6(+0x975a4) [0x7f786b1af5a4]
+[VST3]   wine> /usr/lib/libc.so.6(gsignal+0x20) [0x7f786b155be0]
+[VST3]   wine> /usr/lib/libc.so.6(abort+0x26) [0x7f786b13d582]
+[VST3]   wine> /usr/lib/libstdc++.so.6(+0x97b2c) [0x7f785a297b2c]
+[VST3]   wine> /usr/lib/libstdc++.so.6(+0xadf3a) [0x7f785a2adf3a]
+[VST3]   wine> /usr/lib/libstdc++.so.6(_ZSt10unexpectedv+0x0) [0x7f785a29752a]
+[VST3]   wine> /home/deck/Documents/SDTracker/yabridge/libyabridge-vst3.so(+0xc57d0) [0x7f7841f257d0]
+[VST3]   wine> /usr/lib/libstdc++.so.6(+0xe1c34) [0x7f785a2e1c34]
+[VST3]   wine> /usr/lib/libc.so.6(+0x95688) [0x7f786b1ad688]
+[VST3]   wine> /usr/lib/libc.so.6(+0x11996c) [0x7f786b23196c]
+[VST3]   wine> rum2-2359HJVj] 
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] config from:   '<defaults>'
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] hosting mode:  'individually, 64-bit'
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] other options: '<none>'
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] 
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] Enabled features:
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] - bitbridge support
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] - CLAP support
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] - VST3 support
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] 
+[VST3]   wine> 19:38:02 [Serum2-2359HJVj] [Wine STDERR] fsync: up and running.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:03 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] ATTENTION: default value of option vk_khr_present_wait overridden by environment.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] ATTENTION: default value of option vk_xwayland_wait_ready overridden by environment.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] [Gamescope WSI] Application info:
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR]   pApplicationName: (null)
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR]   applicationVersion: 0
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR]   pEngineName: (null)
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR]   engineVersion: 0
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR]   apiVersion: 4198400
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] [Gamescope WSI] Executable name: explorer.exe
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] wine: overriding CPU configuration, 8 logical CPUs, host CPUs 0,1,2,3,4,5,6,7.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] Initializing yabridge host version 5.1.1
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] Preparing to load VST3 plugin at '/home/deck/.vst3/win/Serum2.vst3/Contents/x86_64-win/Serum2.vst3'
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library dxgi.dll (which is needed by L"C:\\windows\\system32\\d3d11.dll") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library d3d11.dll (which is needed by L"Z:\\home\\deck\\.vst3\\win\\Serum2.vst3\\Contents\\x86_64-win\\Serum2.vst3") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library dxgi.dll (which is needed by L"C:\\windows\\system32\\d3d10core.dll") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library d3d10core.dll (which is needed by L"C:\\windows\\system32\\d3d10_1.dll") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library dxgi.dll (which is needed by L"C:\\windows\\system32\\d3d10_1.dll") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library d3d10_1.dll (which is needed by L"C:\\windows\\system32\\d2d1.dll") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 00d0:err:module:import_dll Library d2d1.dll (which is needed by L"Z:\\home\\deck\\.vst3\\win\\Serum2.vst3\\Contents\\x86_64-win\\Serum2.vst3") not found
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] Error while initializing the Wine plugin host:
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] Could not load the VST3 module for '/home/deck/.vst3/win/Serum2.vst3/Contents/x86_64-win/Serum2.vst3': LoadLibray failed: Module not found.
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] [Wine STDERR] 
+[VST3]   wine> 19:38:04 [Serum2-2359HJVj] The Wine host process has exited unexpectedly. Check the output above for more information.
 [VST3] --- Wine probe output end (5099 bytes) ---
 [*ERROR*] VST3: ModuleEntry probe crashed with signal 6 (Aborted) — exit code 134
-[IVIEW] onInstrumentChange: inst=0 type=4 current=0x55fccd19bba0 old=0x55fccd19bba0
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x5616df5a7d40 old=0x5616df5a7d40
 [EVENT] key(S:22):0
+[EVENT] SDEM:PostQuitMessage()
