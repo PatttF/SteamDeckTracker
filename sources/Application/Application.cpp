@@ -13,40 +13,7 @@
 #include "Services/Midi/MidiService.h"
 
 #include <math.h>
-#include <execinfo.h>
-#include <signal.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <stdlib.h>
-
-// Crash handler: write backtrace to stderr and to /tmp/lgpt-crash-<pid>.log
-static void CrashHandler(int signum) {
-    void *bt[50];
-    int n = backtrace(bt, 50);
-
-    char header[256];
-    int hlen = snprintf(header, sizeof(header), "*** Crash: signal %d pid=%d\n", signum, (int)getpid());
-    // write to stderr
-    write(2, header, hlen);
-
-    // Emit to stderr for immediate visibility
-    backtrace_symbols_fd(bt, n, 2);
-
-    // Ensure we don't return
-    _exit(128 + signum);
-}
-
-static void InstallCrashHandler() {
-    struct sigaction sa;
-    sa.sa_handler = CrashHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESETHAND | SA_NODEFER;
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGABRT, &sa, NULL);
-    sigaction(SIGFPE, &sa, NULL);
-    sigaction(SIGILL, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
-}
 
 Application *Application::instance_=NULL ;
 
@@ -79,9 +46,6 @@ void Application::initMidiInput()
 }
 
 bool Application::Init(GUICreateWindowParams &params) {
-    // Install crash handler early so we get a stacktrace if the LV2 plugin crashes
-    InstallCrashHandler();
-
 	const char* root=Config::GetInstance()->GetValue("ROOTFOLDER") ;
 	if (root) {
 		Path::SetAlias("root",root) ;

@@ -31,4 +31,3 @@ private:
 } ;
 
 #define RETURN_IF_FAILED(r,m) if (r.Failed()) {Result(r,m);}
-#define LOG_IF_FAILED(r,m) if (r.Failed()) {   }

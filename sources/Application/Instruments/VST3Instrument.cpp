@@ -1192,22 +1192,82 @@ void VST3Instrument::StorePendingVariable(const char *name, const char *value) {
 // Full plugin state save/restore via IComponent/IEditController
 // ====================================================================
 
-std::string VST3Instrument::GetComponentStateBase64() const {
-    if (!component_) return "";
+std::string VST3Instrument::GetComponentStateBase64() {
+    if (!component_ || componentDead_) return "";
     IComponent* comp = (IComponent*)component_;
-    SimpleMemoryStream stream;
-    tresult res = comp->getState(&stream);
-    if (res != kResultOk || stream.size() == 0) return "";
-    return base64Encode(stream.data(), stream.size());
+
+    // getState() goes through yabridge IPC and can hang — run with timeout
+    auto promise = std::make_shared<std::promise<std::string>>();
+    auto future = promise->get_future();
+
+    componentMutex_.Lock();
+    std::thread t([comp, promise]() {
+        try {
+            SimpleMemoryStream stream;
+            tresult res = comp->getState(&stream);
+            if (res == kResultOk && stream.size() > 0) {
+                promise->set_value(base64Encode(stream.data(), stream.size()));
+            } else {
+                promise->set_value("");
+            }
+        } catch (...) {
+            try { promise->set_value(""); } catch (...) {}
+        }
+    });
+
+    std::string result;
+    auto status = future.wait_for(std::chrono::seconds(10));
+    if (status == std::future_status::timeout) {
+        t.detach();
+        componentDead_ = true;
+        g_vst3ComponentDead = 1;
+        Trace::Error("VST3: getState timed out during save — plugin is now DEAD");
+        componentMutex_.Unlock();
+        return "";
+    }
+    t.join();
+    result = future.get();
+    componentMutex_.Unlock();
+    return result;
 }
 
-std::string VST3Instrument::GetControllerStateBase64() const {
-    if (!editController_) return "";
+std::string VST3Instrument::GetControllerStateBase64() {
+    if (!editController_ || componentDead_) return "";
     IEditController* ctrl = (IEditController*)editController_;
-    SimpleMemoryStream stream;
-    tresult res = ctrl->getState(&stream);
-    if (res != kResultOk || stream.size() == 0) return "";
-    return base64Encode(stream.data(), stream.size());
+
+    // getState() goes through yabridge IPC and can hang — run with timeout
+    auto promise = std::make_shared<std::promise<std::string>>();
+    auto future = promise->get_future();
+
+    componentMutex_.Lock();
+    std::thread t([ctrl, promise]() {
+        try {
+            SimpleMemoryStream stream;
+            tresult res = ctrl->getState(&stream);
+            if (res == kResultOk && stream.size() > 0) {
+                promise->set_value(base64Encode(stream.data(), stream.size()));
+            } else {
+                promise->set_value("");
+            }
+        } catch (...) {
+            try { promise->set_value(""); } catch (...) {}
+        }
+    });
+
+    std::string result;
+    auto status = future.wait_for(std::chrono::seconds(10));
+    if (status == std::future_status::timeout) {
+        t.detach();
+        componentDead_ = true;
+        g_vst3ComponentDead = 1;
+        Trace::Error("VST3: ctrl getState timed out during save — plugin is now DEAD");
+        componentMutex_.Unlock();
+        return "";
+    }
+    t.join();
+    result = future.get();
+    componentMutex_.Unlock();
+    return result;
 }
 
 bool VST3Instrument::RestoreComponentState(const std::string &base64Data) {
@@ -1878,6 +1938,26 @@ static const VST3PluginPresetMapping knownPresetMappings[] = {
         0,   // No header skip — text format fed as-is
         nullptr, 0
     },
+    // Fors Pivot: .pivot XML preset files, fed directly to setState.
+    {
+        "Pivot",
+        {
+            nullptr  // Directories resolved at runtime from $HOME
+        },
+        ".pivot",
+        0,   // No header skip — XML state fed as-is
+        nullptr, 0
+    },
+    // TAL-NoiseMaker: .noisemakerpreset XML files, JUCE-wrapped before setState.
+    {
+        "NoiseMaker",
+        {
+            nullptr  // Directories resolved at runtime from WINEPREFIX
+        },
+        ".noisemakerpreset",
+        0,   // No header skip — raw XML wrapped via JUCE binary format
+        nullptr, 0
+    },
     // Sentinel
     { nullptr, {nullptr}, nullptr, 0, nullptr, 0 }
 };
@@ -2096,6 +2176,39 @@ void VST3Instrument::discoverPresetFiles() {
                         + "/Documents/u-he/Diva.data";
                     scanDirs.push_back(base + "/Presets/Diva");
                     scanDirs.push_back(base + "/UserPresets/Diva");
+                }
+            }
+        } else if (strstr(name_, "Pivot") != nullptr) {
+            // Fors Pivot: presets at ~/.config/Fors/Pivot/Presets
+            scanDirs.push_back(homeDir + "/.config/Fors/Pivot/Presets");
+            scanDirs.push_back(homeDir + "/.config/fors/pivot/presets");
+        } else if (strstr(name_, "NoiseMaker") != nullptr) {
+            // TAL-NoiseMaker presets live inside the Wine prefix.
+            std::string pfxBase;
+            const char *wpEnv = getenv("WINEPREFIX");
+            if (wpEnv && wpEnv[0]) {
+                pfxBase = wpEnv;
+            } else {
+                pfxBase = homeDir + "/Documents/SDTracker/wineprefix";
+            }
+            const char *userNames[] = { "steamuser", nullptr };
+            const char *prefixes[] = { "", "/pfx", nullptr };
+            const char *hostUser = getenv("USER");
+            for (int pi = 0; prefixes[pi] != nullptr; pi++) {
+                for (int ui = 0; userNames[ui] != nullptr; ui++) {
+                    std::string base = pfxBase + prefixes[pi]
+                        + "/drive_c/users/" + userNames[ui]
+                        + "/AppData/Roaming/ToguAudioLine/TAL-NoiseMaker/presets";
+                    scanDirs.push_back(base + "/Factory Presets");
+                    scanDirs.push_back(base);
+                }
+                if (hostUser && hostUser[0] &&
+                    strcmp(hostUser, "steamuser") != 0) {
+                    std::string base = pfxBase + prefixes[pi]
+                        + "/drive_c/users/" + hostUser
+                        + "/AppData/Roaming/ToguAudioLine/TAL-NoiseMaker/presets";
+                    scanDirs.push_back(base + "/Factory Presets");
+                    scanDirs.push_back(base);
                 }
             }
         }
@@ -3007,6 +3120,35 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         Trace::Error("VST3: Unknown exception during preset load");
         return false;
       }
+    }
+
+    // For JUCE-based plugins whose preset files are raw XML, we need to
+    // wrap the data in JUCE's copyXmlToBinary binary format before calling
+    // setState.  JUCE's setStateInformation calls getXmlFromBinary() which
+    // expects: [4-byte magic 0x21324356][4-byte string length LE][XML][0x00].
+    // Without this wrapper, getXmlFromBinary returns nullptr and the preset
+    // is silently ignored.
+    {
+        static const char *jucePresetExts[] = { ".pivot", ".noisemakerpreset", nullptr };
+        bool needsJuceWrap = false;
+        for (int i = 0; jucePresetExts[i]; i++) {
+            size_t el = strlen(jucePresetExts[i]);
+            if (filePath.size() > el &&
+                filePath.substr(filePath.size() - el) == jucePresetExts[i]) {
+                needsJuceWrap = true;
+                break;
+            }
+        }
+        if (needsJuceWrap && !data.empty() && data[0] == '<') {
+            uint32_t magic = 0x21324356;  // JUCE magicXmlNumber
+            uint32_t strLen = (uint32_t)data.size();
+            std::vector<uint8_t> wrapped(8 + data.size() + 1);
+            memcpy(&wrapped[0], &magic, 4);
+            memcpy(&wrapped[4], &strLen, 4);
+            memcpy(&wrapped[8], &data[0], data.size());
+            wrapped[8 + data.size()] = 0;
+            data = std::move(wrapped);
+        }
     }
 
     // Non-XferJson fallback path (for other plugins like Surge)

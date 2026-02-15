@@ -232,7 +232,7 @@ void EffectView::fillEffectParameters() {
             if (endIdx > totalParams) endIdx = totalParams;
 
             int baseY = position._y;
-            int baseX = 0;
+            int baseX = 1;
             int col = 0;
             int row = 0;
             int textIdx = 0;

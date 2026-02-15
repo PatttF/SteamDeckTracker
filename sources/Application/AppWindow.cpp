@@ -239,7 +239,6 @@ void AppWindow::Flush() {
         SysMutexLocker locker(drawMutex_);
 
         Lock();
-        long flushStart = System::GetInstance()->GetClock();
 
         GUITextProperties props;
         GUIPoint pos;
@@ -328,8 +327,6 @@ void AppWindow::Flush() {
             pos._y += AppWindow::charHeight_;
             pos._x = 0;
         }
-        long flushEnd = System::GetInstance()->GetClock();
-
         // Flush uploads the software surface to the GPU texture and renders it
         GUIWindow::Flush();
 

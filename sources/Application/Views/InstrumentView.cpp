@@ -693,7 +693,7 @@ void InstrumentView::fillLV2Parameters() {
 			
 			// Display in two columns - left-align for long labels
 			int baseY = position._y;
-			int baseX = 0;  // Start at left edge of screen
+			int baseX = 1;
 			int col = 0;
 			int row = 0;
 			int textIdx = 0;
@@ -1024,7 +1024,7 @@ void InstrumentView::fillVST3Parameters() {
 			if (endIdx > totalParams) endIdx = totalParams;
 
 			int baseY = position._y;
-			int baseX = 0;
+			int baseX = 1;
 			int col = 0;
 			int row = 0;
 			int textIdx = 0;

@@ -53,10 +53,7 @@ void Trace::VLog(const char* category,  const char *fmt, va_list args)
 
 void Trace::Log(const char* category, const char *fmt, ...) 
 {
-  va_list args;
-  va_start(args,fmt);
-  VLog(category, fmt, args);
-  va_end(args);
+  // Logging disabled
 }
 
 

@@ -325,7 +325,6 @@ void *LINUXSystem::Memcpy(void *s1, const void *s2, int n) {
  * logprint
  */
 void LINUXSystem::AddUserLog(const char *msg) {
-	fprintf(stderr,"LOG: %s\n",msg) ;
 };
 
 /*

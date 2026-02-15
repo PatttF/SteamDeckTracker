@@ -148,8 +148,8 @@ public:
     void StorePendingVariable(const char *name, const char *value);
 
     // Full plugin state save/restore (binary blob via IComponent/IEditController)
-    std::string GetComponentStateBase64() const;
-    std::string GetControllerStateBase64() const;
+    std::string GetComponentStateBase64();
+    std::string GetControllerStateBase64();
     bool RestoreComponentState(const std::string &base64Data);
     bool RestoreControllerState(const std::string &base64Data);
 
