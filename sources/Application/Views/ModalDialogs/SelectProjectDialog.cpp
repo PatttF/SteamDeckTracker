@@ -251,18 +251,18 @@ Result SelectProjectDialog::OnNewProject(std::string &name) {
 
     Path path = currentPath_.Descend(name);
     if (path.Exists()) {
-        Trace::Log("SelectProjectDialog:OnNewProj","path already exists %s", path.GetPath().c_str());
+        
 		std::string res("Name " + name + " busy");
 		View::SetNotification(res.c_str(), 0);
         return Result(res);
     }
-    Trace::Log("TMP","creating project at %s",path.GetPath().c_str());
+    
 	selection_ = path ;
 	Result result = FileSystem::GetInstance()->MakeDir(path.GetPath().c_str()) ;
 	RETURN_IF_FAILED(result, ("Failed to create project dir for '%s", path.GetPath().c_str()));
 
 	path = path.Descend("samples");
-	Trace::Log("TMP","creating samples dir at %s",path.GetPath().c_str());
+	
 	result = FileSystem::GetInstance()->MakeDir(path.GetPath().c_str()) ;
 	RETURN_IF_FAILED(result, ("Failed to create samples dir for '%s'", path.GetPath().c_str()));
 

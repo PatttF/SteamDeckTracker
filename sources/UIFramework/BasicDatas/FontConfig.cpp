@@ -32,7 +32,7 @@ void FontConfig(){
 			TiXmlDocument document(path.GetPath());
 			bool loadOkay = document.LoadFile();
 			if (!loadOkay) {
-				Trace::Log("CUSTOM_FONT","No (bad?) custom_font file") ;
+				
 			}
 			else{
 				TiXmlNode* rootnode = 0;

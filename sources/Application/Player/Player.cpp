@@ -772,11 +772,11 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 				// FXSN XXYY: XX = effect slot (0x00-0x0F), YY = wet/dry (0x00-0xFF)
 				int effectSlot = (param >> 8) & 0xFF;
 				int wetDry = param & 0xFF;
-				Trace::Log("FXSN", "slot=%d wetDry=%d channel=%d", effectSlot, wetDry, channel);
+				
 				PlayerChannel *ch = mixer_->GetChannel(channel);
 				if (effectSlot < MAX_EFFECT_COUNT && project_) {
 					I_Effect *effect = project_->GetEffect(effectSlot);
-					Trace::Log("FXSN", "effect=%p ch=%p empty=%d", effect, ch, effect ? effect->IsEmpty() : -1);
+					
 					if (ch && effect && !effect->IsEmpty()) {
 						ch->SetEffect(effect, wetDry);
 					} else if (ch) {
@@ -784,7 +784,7 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 					}
 				} else if (ch) {
 					// Slot >= MAX_EFFECT_COUNT (e.g. FXSN FF00) = clear effect
-					Trace::Log("FXSN", "clearing effect on channel %d (slot=0x%02X)", channel, effectSlot);
+					
 					ch->ClearEffect();
 				}
 				return true;

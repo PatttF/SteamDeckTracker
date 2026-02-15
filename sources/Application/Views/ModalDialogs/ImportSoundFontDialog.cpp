@@ -300,7 +300,7 @@ void ImportSoundFontDialog::selectPreset() {
         SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
         sfi->SetSF2File(tempSF2Path_);
         sfi->SelectPreset(currentPreset_);
-        Trace::Debug("ImportSoundFontDialog: Loaded preset %d from %s", currentPreset_, tempSF2Path_);
+        
     }
 
     EndModal(0);

@@ -70,9 +70,9 @@ SDLAudioDriver::~SDLAudioDriver() {
 bool SDLAudioDriver::InitDriver() {
 
   // Log the audio environment (setup happens earlier in LINUXSystem::Boot)
-  Trace::Log("AUDIO","XDG_RUNTIME_DIR = %s", getenv("XDG_RUNTIME_DIR") ? getenv("XDG_RUNTIME_DIR") : "(not set)") ;
-  Trace::Log("AUDIO","SDL_AUDIODRIVER = %s", getenv("SDL_AUDIODRIVER") ? getenv("SDL_AUDIODRIVER") : "(not set)") ;
-  Trace::Log("AUDIO","PULSE_SERVER    = %s", getenv("PULSE_SERVER") ? getenv("PULSE_SERVER") : "(not set)") ;
+  
+  
+  
 
   //set sound — request the configured sample rate, allow SDL to negotiate
   int requestedRate = settings_.sampleRate_ > 0 ? settings_.sampleRate_ : AUDIO_DEFAULT_SAMPLE_RATE ;
@@ -88,14 +88,14 @@ bool SDLAudioDriver::InitDriver() {
 
   // Log which SDL audio driver is currently active and all available drivers
   const char *currentDriver = SDL_GetCurrentAudioDriver() ;
-  Trace::Log("AUDIO","SDL audio driver in use: %s", currentDriver ? currentDriver : "(none)") ;
+  
   int numDrivers = SDL_GetNumAudioDrivers() ;
   for (int i = 0; i < numDrivers; i++) {
-    Trace::Log("AUDIO","  Available SDL audio driver [%d]: %s", i, SDL_GetAudioDriver(i)) ;
+    
   }
   int numDevices = SDL_GetNumAudioDevices(0) ;
   for (int i = 0; i < numDevices; i++) {
-    Trace::Log("AUDIO","  Output device [%d]: %s", i, SDL_GetAudioDeviceName(i, 0)) ;
+    
   }
 
   // Use the modern SDL2 API: SDL_OpenAudioDevice.
@@ -113,8 +113,7 @@ bool SDLAudioDriver::InitDriver() {
   // open in whatever format it wants — we will still get a callback and SDL
   // handles any conversion internally when allowFlags are passed.
   if (audioDeviceId_ == 0) {
-    Trace::Log("AUDIO","First SDL_OpenAudioDevice attempt failed: %s — retrying with ALLOW_ANY_CHANGE",
-        SDL_GetError()) ;
+    
     audioDeviceId_ = SDL_OpenAudioDevice(
         NULL, 0, &desired, &returned, SDL_AUDIO_ALLOW_ANY_CHANGE) ;
   }
@@ -123,21 +122,20 @@ bool SDLAudioDriver::InitDriver() {
   // PipeWire is the native server on SteamOS; its PulseAudio compat layer is
   // also very reliable.  Fall back through pipewire → pulseaudio → alsa.
   if (audioDeviceId_ == 0) {
-    Trace::Log("AUDIO","SDL_OpenAudioDevice still failed: %s — trying alternative drivers",
-        SDL_GetError()) ;
+    
     static const char *tryDrivers[] = { "pipewire", "pulseaudio", "alsa", NULL } ;
     for (int d = 0; tryDrivers[d] != NULL && audioDeviceId_ == 0; d++) {
       // Shut down the current audio subsystem and reinit with a specific driver
       SDL_AudioQuit() ;
       if (SDL_AudioInit(tryDrivers[d]) == 0) {
-        Trace::Log("AUDIO","Retrying with SDL audio driver: %s", tryDrivers[d]) ;
+        
         audioDeviceId_ = SDL_OpenAudioDevice(
             NULL, 0, &desired, &returned, allowFlags) ;
         if (audioDeviceId_ == 0) {
-          Trace::Log("AUDIO","  -> failed: %s", SDL_GetError()) ;
+          
         }
       } else {
-        Trace::Log("AUDIO","  -> SDL_AudioInit('%s') failed: %s", tryDrivers[d], SDL_GetError()) ;
+        
       }
     }
   }
@@ -156,9 +154,7 @@ bool SDLAudioDriver::InitDriver() {
   settings_.sampleRate_ = sampleRate_ ;
   settings_.channelCount_ = channelCount_ ;
 
-  Trace::Log("AUDIO","Opened audio: driver=%s, rate=%d Hz, channels=%d, format=0x%04X, samples=%d, size=%d",
-    driverName ? driverName : "?",
-    sampleRate_, channelCount_, (int)returned.format, (int)returned.samples, (int)returned.size) ;
+  
 
   fragSize_=returned.size ;
   // Allocates a rotating sound buffer
@@ -170,7 +166,7 @@ bool SDLAudioDriver::InitDriver() {
   mainBuffer_=(char *)((((int)unalignedMain_)+1)&(0xFFFFFFFC)) ;
 #endif
 
-  Trace::Log("AUDIO","%s successfully opened with %d samples",driverName,fragSize_/4 ) ;
+  
 
   // Create mini blank buffer in case of underruns
 

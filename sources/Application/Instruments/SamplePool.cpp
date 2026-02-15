@@ -67,7 +67,7 @@ void SamplePool::Load() {
 		    path.Matches("*.flac") || path.Matches("*.ogg") ||
 		    path.Matches("*.aiff") || path.Matches("*.aif") ||
 		    path.Matches("*.m4a") || path.Matches("*.opus")) {
-			Trace::Log("Load", "%s", path.GetCanonicalPath().c_str());
+			
 			loadSample(path.GetPath().c_str()) ;
 			if (count_==MAX_PIG_SAMPLES) {
 			   Trace::Error("Warning maximum sample count reached") ;
@@ -151,8 +151,7 @@ bool SamplePool::loadSample(const char *path) {
         const std::string name = wavPath.GetName();
         names_[count_] = (char*)SYS_MALLOC(name.length() + 1);
         strcpy(names_[count_], name.c_str());
-        Trace::Log("SamplePool", "Loaded via FFmpeg: %s (%d Hz, %d ch, %d frames)",
-            name.c_str(), audio->GetSampleRate(0), audio->GetChannelCount(0), audio->GetSize(0));
+        
         count_++;
         return true;
     }
@@ -167,8 +166,7 @@ bool SamplePool::loadSample(const char *path) {
             const std::string name = wavPath.GetName();
             names_[count_] = (char*)SYS_MALLOC(name.length() + 1);
             strcpy(names_[count_], name.c_str());
-            Trace::Log("SamplePool", "Loaded via WavFile fallback: %s (%d Hz, %d ch, %d frames)",
-                name.c_str(), wav->GetSampleRate(0), wav->GetChannelCount(0), wav->GetSize(0));
+            
             count_++;
             return true;
         }

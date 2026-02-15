@@ -438,7 +438,7 @@ void EffectView::DrawView() {
         int idx = pendingTypeEffectIdx_;
         EffectType type = pendingEffectType_;
         pendingTypeEffectIdx_ = -1;
-        Trace::Log("EVIEW", "DrawView: processing pending type switch effect=%d type=%d", idx, (int)type);
+        
         // Stop playback before switching type to prevent crash from
         // the audio thread calling ProcessAudio on a deleted effect
         Player *player = Player::GetInstance();
@@ -521,7 +521,7 @@ void EffectView::Update(Observable &o, I_ObservableData *d) {
                 // first to prevent the audio thread from using freed memory.
                 pendingTypeEffectIdx_ = currentEffect_;
                 pendingEffectType_ = targetType;
-                Trace::Log("EVIEW", "Update: deferring type switch effect=%d from=%d to=%d", currentEffect_, (int)current_->GetEffectType(), (int)targetType);
+                
                 isDirty_ = true;
                 return;
             }

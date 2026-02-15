@@ -23,12 +23,12 @@ Audio::Audio(AudioSettings &hints):T_SimpleList<AudioOut>(true),settings_() {
 	if (settings_.channelCount_ <= 0) settings_.channelCount_ = 2 ;
 
 
-	Trace::Log("AUDIO","Audio object initialised with") ;
-	Trace::Log("AUDIO","Api:%s",settings_.audioAPI_.c_str()) ;
-	Trace::Log("AUDIO","Device:%s",settings_.audioDevice_.c_str()) ;
-	Trace::Log("AUDIO","Buffer size:%d",settings_.bufferSize_) ;
-	Trace::Log("AUDIO","Pre Buffer Count:%d",settings_.preBufferCount_) ;
-	Trace::Log("AUDIO","Requested Sample Rate:%d",settings_.sampleRate_) ;
+	
+	
+	
+	
+	
+	
 }
 
 Audio::~Audio() {

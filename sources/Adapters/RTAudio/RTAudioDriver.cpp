@@ -103,7 +103,7 @@ bool RTAudioDriver::InitDriver() {
 	settings_.sampleRate_ = sampleRate_ ;
 
 	fragSize_=bufferFrames*4 ;
-	Trace::Log("AUDIO","RTAudio device %s successfully open - buffer=%d",deviceName.c_str(),bufferFrames) ;
+	
 
 	settings_.audioDevice_=deviceName ;
 

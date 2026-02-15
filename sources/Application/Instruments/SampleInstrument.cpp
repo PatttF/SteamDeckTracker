@@ -227,7 +227,7 @@ bool SampleInstrument::Init() {
 		// Update if stored value is 0, negative, or exceeds actual size
 		if (storedEnd <= 0 || storedEnd > actualSize) {
 			loopEnd_->SetInt(actualSize) ;
-			Trace::Log("Init", "Fixed loopEnd: stored=%d, actual=%d", storedEnd, actualSize);
+			
 		}
 	}
 
@@ -247,7 +247,7 @@ bool SampleInstrument::Init() {
 				p++ ;
 				manualSlicePoints_[i] = atoi(p) ;
 			}
-			Trace::Log("Init", "Restored %d manual slice points", manualSliceCount_) ;
+			
 		}
 	}
 	
@@ -396,8 +396,7 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 			               ? manualSlicePoints_[note]
 			               : wavSize;
 
-			Trace::Log("ManualSlice", "wavSize=%d, points=%d, regions=%d, note=%d, start=%d, end=%d",
-				wavSize, manualSliceCount_, numRegions, note, sliceStart, sliceEnd);
+			
 
 			rp->position_ = float(sliceStart);
 			rp->baseSpeed_ = fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
@@ -408,8 +407,7 @@ bool SampleInstrument::Start(int channel,unsigned char midinote,bool cleanstart)
 			if (note > sliceVal - 1) break;
 			int slice = wavSize / sliceVal;
 
-			Trace::Log("Slice", "wavSize=%d, slices=%d, slice=%d, note=%d, pos=%d, end=%d",
-				wavSize, sliceVal, slice, note, note*slice, (note+1)*slice);
+			
 
 			rp->position_ = float(note * slice);
 			rp->baseSpeed_ = fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
@@ -1429,13 +1427,13 @@ void SampleInstrument::updateInstrumentData(bool search) {
 		if (source_&&(!source_->IsMulti()))
     {
     		instrSize=source_->GetSize(-1) ;
-			Trace::Log("SampleInstrument", "Sample size: %d frames", instrSize);
+			
 		}
 	}
 
 	Variable *v=FindVariable(SIP_END) ;
 	v->SetInt(instrSize) ;
-	Trace::Log("SampleInstrument", "Set loopEnd to %d", instrSize);
+	
 	v=FindVariable(SIP_LOOPSTART) ;
 	v->SetInt(0) ;
 	v=FindVariable(SIP_START) ;
@@ -1794,7 +1792,7 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 				// Scale send: 0-FF maps to 0.0-1.0
 				rp->reverbSend_ = fl2fp(sendAmount / 255.0f);
 				
-				Trace::Log("REVERB", "Sample Channel %d: decay=%d damp=%d send=%d", channel, decayNibble, dampNibble, sendAmount);
+				
 			}
 			break;
 
@@ -1901,5 +1899,5 @@ bool SampleInstrument::IsMulti() {
 void SampleInstrument::EnableDownsamplingLegacy()
 {
   useDirtyDownsampling_ = true;
-  Trace::Log("CONFIG","Enabling downsampling legacy");
+  
 }

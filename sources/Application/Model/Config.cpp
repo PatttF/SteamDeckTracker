@@ -7,16 +7,16 @@ Config::Config()
 {
 	// Load configuration from the user Documents SDTracker folder via the `root:` alias
 	Path path("root:config.xml") ;
-	Trace::Log("CONFIG","Trying config path=%s",path.GetPath().c_str()) ;
+	
 	TiXmlDocument *document=new TiXmlDocument(path.GetPath());
 	bool loadOkay = document->LoadFile();
 
 	// If loading from root alias failed (alias maybe not set yet), fall back to bin:config.xml
 	if (!loadOkay) {
-		Trace::Log("CONFIG","root:config.xml not found, falling back to bin:config.xml") ;
+		
 		delete document;
 		Path path2("bin:config.xml");
-		Trace::Log("CONFIG","Trying config path=%s",path2.GetPath().c_str()) ;
+		
 		document = new TiXmlDocument(path2.GetPath());
 		loadOkay = document->LoadFile();
 	}
@@ -62,7 +62,7 @@ Config::Config()
 
     }
 	} else {
-		Trace::Log("CONFIG","No (bad?) config.xml — writing default to root:config.xml") ;
+		
 
 		// Attempt to write a sensible default config into root:config.xml
 		Path p("root:config.xml");
@@ -103,14 +103,14 @@ Config::Config()
 		if (out) {
 			out << defaultConfig;
 			out.close();
-			Trace::Log("CONFIG","Wrote default root:config.xml to %s",configPath.c_str());
+			
 
 			// Try loading it now
 			delete document;
 			document = new TiXmlDocument(configPath);
 			loadOkay = document->LoadFile();
 		} else {
-			Trace::Log("CONFIG","Failed to write default config to %s",configPath.c_str());
+			
 		}
 	}
  	delete(document) ;
@@ -130,7 +130,7 @@ const char *Config::GetValue(const char *key)
 {
 	Variable *v=FindVariable(key) ;
 	if (v) {
-		Trace::Log("CONFIG","Got value for %s=%s",key,v->GetString()) ;
+		
 	}
 	return v?v->GetString():0 ;
 } ;

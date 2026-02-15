@@ -132,8 +132,20 @@ void LINUXSystem::Boot(int argc,char **argv) {
 			Path::SetAlias("root",".");
 	}
 
-  // always use stdout, user can capture in launch script
-  Trace::GetInstance()->SetLogger(*(new StdOutLogger()));
+  // Set up TeeLogger: writes to both stdout and a log file
+  {
+    std::string logPath;
+    if (home) {
+      logPath = std::string(home) + "/Documents/SDTracker/sdtracker.log";
+    } else {
+      logPath = "sdtracker.log";
+    }
+    TeeLogger *tee = new TeeLogger(logPath.c_str());
+    Trace::GetInstance()->SetLogger(*tee);
+    // Also point the crash handler's fd at the log file
+    extern int g_crashLogFd;
+    g_crashLogFd = tee->GetFd();
+  }
 
   // Process arguments
   Config::GetInstance()->ProcessArguments(argc,argv) ;
@@ -145,12 +157,12 @@ void LINUXSystem::Boot(int argc,char **argv) {
   TimerService::GetInstance()->Install(new SDLTimerService()) ;
 
 #ifdef JACKAUDIO
-	Trace::Log("System","Installing JACK audio") ;
+	
 	Audio::Install(new JackAudio(AudioSettings hints));
 #endif
 
 #ifdef RTAUDIO
-	Trace::Log("System","Installing RT audio") ;
+	
 	AudioSettings hints ;
 	hints.bufferSize_= 256 ;
 	hints.preBufferCount_=2 ;
@@ -158,7 +170,7 @@ void LINUXSystem::Boot(int argc,char **argv) {
 #endif
 
 #ifdef SDLAUDIO
-	Trace::Log("System","Installing SDL audio") ;
+	
 	AudioSettings hint;
 	hint.bufferSize_ = 512;
 	hint.preBufferCount_ = 2;
@@ -166,17 +178,17 @@ void LINUXSystem::Boot(int argc,char **argv) {
 #endif
 
 #ifdef DUMMYMIDI
-	Trace::Log("System","Installing DUMMY MIDI") ;
+	
 	MidiService::Install(new DummyMidi());
 #endif
 
 #ifdef JACKMIDI
-	Trace::Log("System","Installing JACK MIDI") ;
+	
   MidiService::Install(new JackMidiService()) ;
 #endif
 
 #ifdef RTMIDI
-	Trace::Log("System","Installing RT MIDI") ;
+	
 	MidiService::Install(new RTMidiService()) ;
 #endif
 
@@ -198,7 +210,7 @@ void LINUXSystem::Boot(int argc,char **argv) {
 			struct stat st ;
 			if (stat(runtimeBuf, &st) == 0 && S_ISDIR(st.st_mode)) {
 				setenv("XDG_RUNTIME_DIR", runtimeBuf, 0) ;
-				Trace::Log("AUDIO","Boot: set XDG_RUNTIME_DIR = %s (was missing)", runtimeBuf) ;
+				
 				xdgRuntimeDir = getenv("XDG_RUNTIME_DIR") ;
 			}
 		}
@@ -214,13 +226,13 @@ void LINUXSystem::Boot(int argc,char **argv) {
 			snprintf(socketBuf, sizeof(socketBuf), "%s/pipewire-0", xdgRuntimeDir) ;
 			if (stat(socketBuf, &st) == 0) {
 				SDL_setenv("SDL_AUDIODRIVER", "pipewire", 0) ;
-				Trace::Log("AUDIO","Boot: detected PipeWire socket, set SDL_AUDIODRIVER=pipewire") ;
+				
 			} else {
 				// Check for PulseAudio socket
 				snprintf(socketBuf, sizeof(socketBuf), "%s/pulse/native", xdgRuntimeDir) ;
 				if (stat(socketBuf, &st) == 0) {
 					SDL_setenv("SDL_AUDIODRIVER", "pulseaudio", 0) ;
-					Trace::Log("AUDIO","Boot: detected PulseAudio socket, set SDL_AUDIODRIVER=pulseaudio") ;
+					
 				}
 			}
 		}
@@ -266,7 +278,7 @@ void LINUXSystem::Sleep(int millisec) {
  */
 void *LINUXSystem::Malloc(unsigned size) {
 	void *ptr=malloc(size) ;
-	//Trace::Debug("alloc:%x  (%d)",ptr,size) ;
+	//
 	return ptr ;
 }
 

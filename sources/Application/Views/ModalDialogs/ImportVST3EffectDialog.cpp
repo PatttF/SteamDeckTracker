@@ -12,7 +12,7 @@ ImportVST3EffectDialog::ImportVST3EffectDialog(View &view, I_Effect *targetEffec
 
     // Scan for VST3 effect plugins (Fx category, not Instrument)
     pluginList_ = VST3Effect::ScanEffectPlugins();
-    Trace::Log("VST3FX", "Found %d VST3 effect plugins", (int)pluginList_.size());
+    
 }
 
 ImportVST3EffectDialog::~ImportVST3EffectDialog() {

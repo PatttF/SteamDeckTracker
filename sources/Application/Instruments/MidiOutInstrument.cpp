@@ -116,8 +116,7 @@ bool MidiOutInstrument::Start(int c, unsigned char note, bool retrigger) {
     Variable *vd = FindVariable(MOIP_DEVICE);
     int dev = vd ? vd->GetInt() : 0;
 
-    Trace::Log("MidiOut", "Start ch=%d note=%d midiCh=%d dev=%d wasPlaying=%d",
-              c, note, mchannel, dev, playing_[c] ? 1 : 0);
+    
 
     // Send note-off for previous note using the STORED channel/device
     // (the user may have changed channel/device since the note started)
@@ -158,7 +157,7 @@ bool MidiOutInstrument::Start(int c, unsigned char note, bool retrigger) {
 void MidiOutInstrument::Stop(int c) {
     if (c < 0 || c >= SONG_CHANNEL_COUNT) return;
     if (!playing_[c]) {
-        Trace::Log("MidiOut", "Stop ch=%d skipped (not playing)", c);
+        
         return;
     }
 
@@ -166,8 +165,7 @@ void MidiOutInstrument::Stop(int c) {
     int channel = lastChannel_[c];
     int dev = lastDevice_[c];
 
-    Trace::Log("MidiOut", "Stop ch=%d note=%d midiCh=%d dev=%d",
-              c, lastNote_[c], channel, dev);
+    
 
     // Send note-off for the last note to the correct device/channel
     MidiMessage msg;
@@ -186,7 +184,7 @@ void MidiOutInstrument::Stop(int c) {
 
     // Only send CC123 All Notes Off and transport stop when nothing is playing
     if (!anyPlaying) {
-        Trace::Log("MidiOut", "Stop ch=%d: no channels playing, sending CC123", c);
+        
         MidiMessage allOff;
         allOff.status_ = MIDI_CC + channel;
         allOff.data1_ = 123;
@@ -213,8 +211,7 @@ bool MidiOutInstrument::Render(int channel, fixed *buffer, int size, bool update
     int dev = lastDevice_[channel];
 
     if (first_[channel]) {
-        Trace::Log("MidiOut", "Render NoteOn ch=%d note=%d vel=%d midiCh=%d dev=%d",
-                  channel, lastNote_[channel], velocity_[channel], mchannel, dev);
+        
         MidiMessage msg;
         msg.status_ = MIDI_NOTE_ON + mchannel;
         msg.data1_ = lastNote_[channel];
@@ -253,8 +250,7 @@ bool MidiOutInstrument::Render(int channel, fixed *buffer, int size, bool update
             if (!retrig_[channel]) {
                 // Auto note-off: just send the specific note-off, don't use
                 // Stop() which would send CC123 and transport stop
-                Trace::Log("MidiOut", "Render AutoOff ch=%d note=%d midiCh=%d",
-                          channel, lastNote_[channel], mchannel);
+                
                 MidiMessage offMsg;
                 offMsg.status_ = MIDI_NOTE_OFF + mchannel;
                 offMsg.data1_ = lastNote_[channel];
@@ -306,7 +302,7 @@ void MidiOutInstrument::ProcessCommand(int channel, FourCC cc, ushort value) {
                 retrig_[channel] = true;
                 retrigLoop_[channel] = loop;
                 remainingTicks_[channel] = loop;
-                Trace::Log("MidiOut", "RTRG ch=%d loop=%d", channel, loop);
+                
             } else {
                 retrig_[channel] = false;
             }

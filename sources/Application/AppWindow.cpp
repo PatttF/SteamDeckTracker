@@ -135,8 +135,7 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     SelectProjectDialog *spd = new SelectProjectDialog(*_currentView);
     Path lastProjectPath = GetLastProjectPath();
     if (shouldAutoLoad && lastProjectPath.Exists()) {
-        Trace::Log("AppWindow", "Auto-loading last project: %s",
-                   lastProjectPath.GetPath().c_str());
+        
         _newProjectToLoad = lastProjectPath.GetPath().c_str();
         _loadAfterResume = true;
         delete spd;
@@ -357,7 +356,7 @@ void AppWindow::Flush() {
 };
 
 void AppWindow::LoadProject(const Path &p) {
-    Trace::Log("LoadProject", "%s\n", p.GetPath().c_str());
+    
     _root = p;
 
     _closeProject = false;
@@ -613,9 +612,9 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
 
     case VET_SWITCH_VIEW: {
         ViewType *vt = (ViewType *)ve->GetData();
-        Trace::Log("AppWindow", "VET_SWITCH_VIEW request -> %d", (int)*vt);
+        
         if (_currentView) {
-            Trace::Log("AppWindow", "Current view loose focus");
+            
             _currentView->LooseFocus();
         }
         switch (*vt) {
@@ -657,10 +656,10 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
             break;
         }
         if (_currentView) {
-            Trace::Log("AppWindow", "Setting focus to view -> %d", (int)*vt);
+            
             _currentView->SetFocus(*vt);
         } else {
-            Trace::Log("AppWindow", "No target view available for -> %d", (int)*vt);
+            
         }
         _isDirty = true;
         GUIWindow::Clear(backgroundColor_, true);
@@ -845,6 +844,5 @@ void AppWindow::SaveLastProject(const Path &p) {
     file->Close();
     delete file;
 
-    Trace::Log("SaveLastProject", "Saved last project: %s",
-               p.GetPath().c_str());
+    
 }

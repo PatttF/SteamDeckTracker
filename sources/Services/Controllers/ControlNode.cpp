@@ -85,7 +85,7 @@ void ControlNode::Dump(int level) {
 	strcpy(levelst,"                  ") ;
 	if (level >= 0 && level < (int)sizeof(levelst))
 		levelst[level]=0 ;
-	Trace::Debug("%s %s",levelst,name_.c_str()) ;
+	
 	IteratorPtr<ControlNode>it(GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		ControlNode &current=it->CurrentItem() ;

@@ -40,7 +40,7 @@ RTAudioStub::RTAudioStub(AudioSettings &h):Audio(h),
   RtAudio audio(api_) ;
 
 
-  Trace::Log("AUDIO","Current API: %s",apiMap[ audio.getCurrentApi()].c_str());
+  
 
   unsigned int devices = audio.getDeviceCount();
 
@@ -66,52 +66,52 @@ RTAudioStub::RTAudioStub(AudioSettings &h):Audio(h),
         selectedDevice_=info.name ;
         selinfo=info ;
       }
-      Trace::Log("AUDIO","Found device %s",info.name.c_str()) ;
+      
     }
   }
   if (selectedDevice_.length()==0)
   {
     selectedDevice_=defaultDevice ;
   }
-  Trace::Log("AUDIO","Selecting: %s",selectedDevice_.c_str()) ;
+  
 
 /*  if ( selinfo.probed == false )
-	  Trace::Debug("Probe Status = UNsuccessful\n");
+	  
     else {
-      Trace::Debug("Probe Status = Successful\n");
-      Trace::Debug("Output Channels = %d\n",selinfo.outputChannels);
-      Trace::Debug("Input Channels = %d\n",selinfo.inputChannels);
-      Trace::Debug("Duplex Channels = %d\n",selinfo.duplexChannels);
-      if ( selinfo.isDefaultOutput ) Trace::Debug("This is the default output device.\n");
-      else Trace::Debug("This is NOT the default output device.\n");
-      if ( selinfo.isDefaultInput ) Trace::Debug("This is the default input device.\n");
-      else Trace::Debug("This is NOT the default input device.\n");
+      
+      
+      
+      
+      if ( selinfo.isDefaultOutput ) 
+      else 
+      if ( selinfo.isDefaultInput ) 
+      else 
       if ( selinfo.nativeFormats == 0 )
-        Trace::Debug("No natively supported data formats(?)!");
+        
       else {
-        Trace::Debug("Natively supported data formats:\n");
+        
         if ( selinfo.nativeFormats & RTAUDIO_SINT8 )
-          Trace::Debug("  8-bit int\n");
+          
         if ( selinfo.nativeFormats & RTAUDIO_SINT16 )
-          Trace::Debug("  16-bit int\n");
+          
         if ( selinfo.nativeFormats & RTAUDIO_SINT24 )
-          Trace::Debug("  24-bit int\n");
+          
         if ( selinfo.nativeFormats & RTAUDIO_SINT32 )
-          Trace::Debug("  32-bit int\n");
+          
         if ( selinfo.nativeFormats & RTAUDIO_FLOAT32 )
-          Trace::Debug("  32-bit float\n");
+          
         if ( selinfo.nativeFormats & RTAUDIO_FLOAT64 )
-          Trace::Debug("  64-bit float\n");
+          
       }
       if ( selinfo.sampleRates.size() < 1 )
-        Trace::Debug("No supported sample rates found!");
+        
       else {
-        Trace::Debug("Supported sample rates = \n");
+        
         for (unsigned int j=0; j<selinfo.sampleRates.size(); j++)
-          Trace::Debug("%d\n",selinfo.sampleRates[j]);
+          
       }
 	}
-		Trace::Debug("\n") ;	
+			
 	
 */	
 }

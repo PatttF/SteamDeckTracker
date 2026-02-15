@@ -62,7 +62,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   
   const char * driverName = SDL_GetVideoDriver(0);
   
-  Trace::Log("DISPLAY","Using driver %s. Screen (%d,%d) Bpp:%d",driverName,screenWidth,screenHeight,bitDepth_);
+  
   
   bool fullscreen=false ;
   
@@ -106,7 +106,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   screenRect_._bottomRight._x=windowed_?appWidth*mult_:screenWidth;
   screenRect_._bottomRight._y=windowed_?appHeight*mult_:screenHeight;
 
-  Trace::Log("DISPLAY","Creating SDL Window (%d,%d)",screenRect_.Width(), screenRect_.Height());
+  
     window_ = SDL_CreateWindow("SDTracker",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,
                                screenRect_.Width(),screenRect_.Height(),fullscreen?SDL_WINDOW_FULLSCREEN:SDL_WINDOW_SHOWN);
     NAssert(window_) ;
@@ -165,7 +165,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
 	
 	if (cacheFonts_)
   {
-    Trace::Log("DISPLAY","Preparing fonts") ;
+    
 		prepareFonts() ;
 	}
 	updateCount_=0 ;
@@ -181,7 +181,7 @@ static SDL_Surface *fonts[FONT_COUNT] ;
 
 void SDLGUIWindowImp::prepareFullFonts()
 {
-  Trace::Log("DISPLAY","Preparing full font cache") ;
+  
   Uint32 rmask, gmask, bmask, amask;
 
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
@@ -245,7 +245,7 @@ void SDLGUIWindowImp::prepareFullFonts()
 void SDLGUIWindowImp::prepareFonts() 
 {
 
-  Trace::Log("DISPLAY","Preparing font cache") ;
+  
   Config *config=Config::GetInstance() ;
   
   unsigned char r,g,b ;

@@ -15,11 +15,11 @@ AudioFileStreamer::~AudioFileStreamer() {
 } ;
  
 bool AudioFileStreamer::Start(const Path &path) {
-  Trace::Debug("Starting to stream %s",path.GetPath().c_str());
+  
 	path_=path ;
 	const char *shift=Config::GetInstance()->GetValue("PRELISTENATTENUATION") ;
 	shift_=(shift)?atoi(shift):1 ;
-  Trace::Debug("Streaming shift is %d",shift_);
+  
 	newPath_=true ;
 	mode_=AFSM_PLAYING ;
 	return true ;
@@ -27,7 +27,7 @@ bool AudioFileStreamer::Start(const Path &path) {
 
 void AudioFileStreamer::Stop() {
 	mode_=AFSM_STOPPED ;
-  Trace::Debug("Streaming stopped");
+  
 } ;
 
 bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
@@ -66,7 +66,7 @@ bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
 	int count=samplecount ;
 	if (position_+samplecount>=size)
   {
-    Trace::Debug("Reached the end of %d samples",size);
+    
 		count=size-position_ ;
 		mode_=AFSM_STOPPED ;
 		memset(buffer,0,2*samplecount*sizeof(fixed)) ;

@@ -39,3 +39,35 @@ void FileLogger::AddLine(const char *line)
 	fprintf(file_,"%s\n",line) ;
   fclose(file_);
 }
+
+// ----------------------------------------------
+
+TeeLogger::TeeLogger(const char *path)
+: file_(nullptr)
+{
+  file_ = fopen(path, "w");
+  if (!file_) {
+    fprintf(stderr, "WARNING: Could not open log file %s\n", path);
+  }
+}
+
+TeeLogger::~TeeLogger()
+{
+  if (file_) fclose(file_);
+}
+
+int TeeLogger::GetFd() const
+{
+  return file_ ? fileno(file_) : -1;
+}
+
+void TeeLogger::AddLine(const char *line)
+{
+  // Always write to stdout
+  std::cout << line << std::endl;
+  // Also write to log file
+  if (file_) {
+    fprintf(file_, "%s\n", line);
+    fflush(file_);
+  }
+}

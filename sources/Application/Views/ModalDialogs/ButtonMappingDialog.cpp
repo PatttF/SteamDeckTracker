@@ -194,6 +194,6 @@ bool ButtonMappingDialog::WriteMappingFile() {
     out << "\n</MAPPINGS>\n";
     out.close();
 
-    Trace::Log("MAPPING", "Wrote button mapping to %s", mapPath.c_str());
+    
     return true;
 }

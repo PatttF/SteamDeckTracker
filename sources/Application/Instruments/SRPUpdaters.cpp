@@ -228,7 +228,7 @@ void LogSpeedRamp::Trigger(bool tableTick) {
 void LogSpeedRamp::UpdateSRP(struct RUParams &rup) {
 	if (!enabled_) return ;
 	rup.speedOffset_=fp_mul(rup.speedOffset_,current_) ;
-//	Trace::Debug("Log: current=%f,offset now=%f",fp2fl(current_),fp2fl(rup.speedOffset_)) ;
+//	
 } ;
 
 //

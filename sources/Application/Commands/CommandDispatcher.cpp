@@ -84,5 +84,5 @@ void CommandDispatcher::mapTrigger(FourCC trigger,const char *nodeUrl,CommandExe
 } ;
 
 void CommandDispatcher::Execute(FourCC id,float value) {
-	Trace::Debug("Got called for %d(%f)",id,value) ;
+	
 }

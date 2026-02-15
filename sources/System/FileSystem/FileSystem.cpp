@@ -190,18 +190,11 @@ int FileSystemService::Copy(const Path &src,const Path &dst)
   I_File     * isrc=fs->Open(src.GetPath().c_str(),"r");
   I_File     * idst=fs->Open(dst.GetPath().c_str(),"w");
 
-  Trace::Log("FS","FileSystemService::Copy %s to %s",
-  src.GetPath().c_str(), dst.GetPath().c_str());
-  if (isrc)
-    Trace::Log("FS","src open ok");
-  else {
-    Trace::Log("FS","src open fail");
+  
+  if (!isrc) {
     return nbwrite;
   }
-  if (idst)
-    Trace::Log("FS","dst open ok");
-  else {
-    Trace::Log("FS","dst open fail");
+  if (!idst) {
     isrc->Close();
     delete isrc;
     return nbwrite;
@@ -228,9 +221,9 @@ int FileSystemService::Delete(const Path &path) {
     if (fs->GetFileType(pathString.c_str()) != FT_UNKNOWN) {
 		fs->Delete(pathString.c_str());
         result += 1;
-		Trace::Log("FileSystemService"," Delete %s ", pathString.c_str());
+		
     } else {
-        Trace::Log("FS Delete","path does not exist: %s", pathString.c_str());
+        
     }
 
     return result;

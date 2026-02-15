@@ -152,7 +152,7 @@ void MidiInDevice::treatChannelEvent(MidiMessage &event) {
 			int data=event.data2_&0x7F ;
       if (dumpEvents_)
       {
-        Trace::Log("EVENT","midi:note:%d",note) ;
+        
       }
 			if (noteChannel_[midiChannel][note]!=0)
       {
@@ -183,7 +183,7 @@ void MidiInDevice::treatChannelEvent(MidiMessage &event) {
       
       if (dumpEvents_)
       {
-        Trace::Log("EVENT","midi:cc:%d:%d",cc,data) ;
+        
       }
 
 			// First, look if we're not handling a hi nibble from a hi-res CC

@@ -72,7 +72,7 @@ static void RecordSampleCallback(View &v, ModalView &dialog) {
 	if (rsd.GetReturnCode() == 1) {
 		std::string path = rsd.GetSavedPath();
 		if (!path.empty()) {
-			Trace::Log("RECORD", "Recording saved: %s, importing...", path.c_str());
+			
 			// Auto-import the recorded sample into the current instrument
 			Path p(path.c_str());
 			SamplePool *pool = SamplePool::GetInstance();
@@ -84,7 +84,7 @@ static void RecordSampleCallback(View &v, ModalView &dialog) {
 				if (instr && instr->GetType() == IT_SAMPLE) {
 					SampleInstrument *sinstr = (SampleInstrument *)instr;
 					sinstr->AssignSample(sampleID);
-					Trace::Log("RECORD", "Auto-imported sample ID %d into instrument %02x", sampleID, i);
+					
 				}
 			} else {
 				Trace::Error("RecordSample: failed to import %s", path.c_str());
@@ -170,7 +170,7 @@ void InstrumentView::onInstrumentChange() {
 	vst3LoadField_ = nullptr;
 
 	InstrumentType it=getInstrumentType() ;
-	Trace::Log("IVIEW", "onInstrumentChange: inst=%d type=%d current=%p old=%p", i, (int)it, current_, old);
+	
 
     switch (it) {
 		case IT_MIDI:
@@ -742,7 +742,7 @@ void InstrumentView::fillLV2Parameters() {
 
                 // Diagnostic: log whether this variable is a WatchedVariable and its id
                 WatchedVariable *wv_check = dynamic_cast<WatchedVariable*>(param->variable);
-                Trace::Debug("InstrumentView: param field created idx=%d name=%s varIsWatched=%d varID=%u", p, param->name.c_str(), wv_check ? 1 : 0, param->variable->GetID());
+                
 
                 // Advance row / column cursor for two-column layout
                 row++;
@@ -1479,7 +1479,7 @@ void InstrumentView::DrawView() {
 	if (pendingTypeInstrumentIdx_ != -1) {
 		int idx = pendingTypeInstrumentIdx_;
 		pendingTypeInstrumentIdx_ = -1;
-		Trace::Log("IVIEW", "DrawView: processing pending type switch idx=%d type=%d", idx, (int)pendingType_);
+		
 		// Stop playback before switching type to prevent crash from
 		// the audio thread rendering a deleted instrument
 		Player *player = Player::GetInstance();
@@ -1671,7 +1671,7 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 // Defer changing instrument type until outside of the variable notification
                 pendingTypeInstrumentIdx_ = i;
                 pendingType_ = targetType;
-                Trace::Log("IVIEW", "Update: deferring type switch inst=%d from=%d to=%d", i, (int)instr->GetType(), (int)targetType);
+                
                 isDirty_ = true;
                 return;
             }
@@ -1682,7 +1682,7 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
             SoundFontInstrument *sfi = (SoundFontInstrument *)instr;
             Variable *pv = sfi->FindVariable(SFIP_PRESET);
             if (pv && sfi->GetCurrentPreset() != pv->GetInt()) {
-                Trace::Log("SF2", "Preset change detected: var=%d current=%d", pv->GetInt(), sfi->GetCurrentPreset());
+                
                 sfi->SelectPreset(pv->GetInt());
                 onInstrumentChange();
                 isDirty_ = true;

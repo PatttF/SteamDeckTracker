@@ -222,7 +222,7 @@ void T_SimpleList<Item>::Sort() {
 				if (temp->data.Compare(prev->data)>=0) {
 					break ;
 				} ;
-//			    Trace::Debug("Swapping %s and %s",temp->data.GetPath(),prev->data.GetPath()) ;
+//			    
 				exchange(temp,prev) ;
 				prev=temp->prev ;
 			} ;

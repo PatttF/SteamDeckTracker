@@ -24,3 +24,17 @@ private:
   Path path_;
   FILE *file_;
 };
+
+// Writes every log line to both stdout and a log file.
+// Also exposes the file descriptor so the crash handler can
+// write its backtrace to the same file.
+class TeeLogger: public Trace::Logger
+{
+public:
+  TeeLogger(const char *path);
+  ~TeeLogger();
+  int GetFd() const;  // raw fd for crash handler
+private:
+  virtual void AddLine(const char*);
+  FILE *file_;
+};

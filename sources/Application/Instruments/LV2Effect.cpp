@@ -229,8 +229,7 @@ void LV2Effect::loadPlugin() {
         audioOutCount = 2;
     }
 
-    Trace::Log("LV2Effect", "%s has %d audio in, %d audio out, midiIn=%d",
-        pluginURI_, audioInCount, audioOutCount, midiInputPort_);
+    
 
     // Set up features array
     const LV2_Feature *features[] = {
@@ -244,7 +243,7 @@ void LV2Effect::loadPlugin() {
 
     // Instantiate the plugin with actual audio driver sample rate
     double pluginRate = (double)Audio::GetInstance()->GetSampleRate();
-    Trace::Log("LV2Effect", "Instantiating plugin at %.0f Hz: %s", pluginRate, pluginURI_);
+    
     LilvInstance *instance = lilv_plugin_instantiate(plugin, pluginRate, features);
     if (!instance) {
         Trace::Error("LV2Effect: Failed to instantiate plugin: %s", pluginURI_);
@@ -296,11 +295,9 @@ void LV2Effect::loadPlugin() {
     isActivated_ = true;
     pluginMutex_.Unlock();
 
-    Trace::Log("LV2Effect", "Loaded and activated: %s (%s)", name_, pluginURI_);
-    Trace::Log("LV2Effect", "  audioInL=%d audioInR=%d audioOutL=%d audioOutR=%d",
-        audioInputPortL_, audioInputPortR_, audioOutputPortL_, audioOutputPortR_);
-    Trace::Log("LV2Effect", "  bufferSize=%d midiPort=%d paramCount=%d",
-        bufferSize_, midiInputPort_, (int)parameters_.size());
+    
+    
+    
 }
 
 void LV2Effect::cleanupPlugin() {
@@ -668,8 +665,7 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
 
     if (!pluginInstance_ || !audioBufferL_ || !audioBufferR_ || !audioInputL_ || !audioInputR_) {
         pluginMutex_.Unlock();
-        Trace::Log("LV2Effect", "ProcessAudio: null check failed inst=%p bL=%p bR=%p iL=%p iR=%p",
-            pluginInstance_, audioBufferL_, audioBufferR_, audioInputL_, audioInputR_);
+        
         return false;
     }
 
@@ -680,14 +676,14 @@ bool LV2Effect::ProcessAudio(fixed *buffer, int sampleCount, int wetDry) {
 
     if (!isActivated_) {
         pluginMutex_.Unlock();
-        Trace::Log("LV2Effect", "ProcessAudio: plugin not activated");
+        
         return false;
     }
 
     // Grow buffers if needed (keep existing allocation to avoid RT realloc)
     if (sampleCount > bufferSize_) {
         // Reallocation unavoidable — log warning as this is a real-time violation
-        Trace::Log("LV2Effect", "WARNING: buffer realloc in audio path %d -> %d", bufferSize_, sampleCount);
+        
         delete[] audioBufferL_;
         delete[] audioBufferR_;
         delete[] audioInputL_;

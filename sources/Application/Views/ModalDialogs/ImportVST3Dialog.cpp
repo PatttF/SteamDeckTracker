@@ -12,7 +12,7 @@ ImportVST3Dialog::ImportVST3Dialog(View &view) : ModalView(view) {
 
     // Scan for available VST3 plugins
     pluginList_ = VST3Instrument::ScanPlugins();
-    Trace::Log("VST3", "Found %d VST3 plugins", (int)pluginList_.size());
+    
 }
 
 ImportVST3Dialog::~ImportVST3Dialog() {

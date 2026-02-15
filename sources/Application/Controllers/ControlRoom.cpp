@@ -67,9 +67,9 @@ bool ControlRoom::Attach(const char *nodeUrl,const char *controllerUrl) {
 
 	if (channel) {
 		mca->AddChannel(*channel) ;
-		Trace::Log("MAPPING","Attached %s to %s",nodeUrl,controllerUrl) ;
+		
 	} else {
-		Trace::Debug("Failed to attach %s to %s",nodeUrl,controllerUrl) ;
+		
 	} ;
 	return true ;
 } ;
@@ -80,7 +80,7 @@ bool ControlRoom::LoadMapping(const char *mappingFile) {
 	TiXmlDocument document(path.GetPath());
 	bool loadOkay = document.LoadFile();
 	if (!loadOkay) {
-		Trace::Log("MAPPING","No (bad?) mapping file (%s)",mappingFile) ;
+		
 		return false ;
 	}
 
@@ -117,7 +117,7 @@ bool ControlRoom::LoadMapping(const char *mappingFile) {
 } ;
 
 void ControlRoom::InstallDefaultMapping() {
-	Trace::Log("MAPPING","Installing default controller mapping") ;
+	
 
 	// Keyboard arrows
 	Attach("/event/up","key:0:up") ;

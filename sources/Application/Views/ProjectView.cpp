@@ -51,16 +51,15 @@ static void SaveAsProjectCallback(View &v,ModalView &dialog) {
         Path path_dstlgptdatsav = path_dstprjdir.GetPath() + "/lgptsav.dat";
 
 		if (path_dstprjdir.Exists()) {
-			Trace::Log("ProjectView", "Dst Dir '%s' Exist == true",
-			path_dstprjdir.GetPath().c_str());
+			
 		} else {
 			if (FileSystem::GetInstance()->MakeDir(path_dstprjdir.GetPath().c_str()).Failed()) {
-				Trace::Log("ProjectView", "Failed to create dir '%s'", path_dstprjdir.GetPath().c_str());
+				
 				return;
 			};
 
 		if (FileSystem::GetInstance()->MakeDir(path_dstsmpdir.GetPath().c_str()).Failed()) {
-			Trace::Log("ProjectView", "Failed to create sample dir '%s'", path_dstprjdir.GetPath().c_str());
+			
 			return;
 		};
 

@@ -26,7 +26,7 @@ bool RTMidiOutDevice::Start(){
 		running_=true ;
 		return true ;
 	} catch (RtError &error) {
-		Trace::Log("RTMidiOutDevice", "Failed to open port %d: %s", index_, error.getMessageString());
+		
 		return false ;
 	}
 }  ;

@@ -180,8 +180,7 @@ bool AudioFile::Load() {
         size_ = bufferUsed;
         success = (size_ > 0);
         
-        Trace::Log("AudioFile", "Loaded %s: %d frames, %d channels, %d Hz", 
-                   path_, size_, channelCount_, sampleRate_);
+        
     }
     
 cleanup:

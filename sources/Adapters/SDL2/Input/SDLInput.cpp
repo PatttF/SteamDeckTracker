@@ -45,13 +45,13 @@ SDLInput::SDLInput() {
 	if(SDL_NumJoysticks()>0){
 		// Open joystick
 		joystick_=SDL_JoystickOpen(0);
-		Trace::Debug("Number of axis:%d",SDL_JoystickNumAxes(joystick_)) ;
-		Trace::Debug("Number of buttons:%d",SDL_JoystickNumButtons(joystick_)) ;
-		Trace::Debug("Number of hats:%d",SDL_JoystickNumHats(joystick_)) ;
+		
+		
+		
 	} else {
 		joystick_=0 ;
 	} ;
-	Trace::Debug("Joystick: %s",joystick_?"opened":"not found") ;
+	
 
 	// initialises default mapping table
 	for (int i=0;i<9;i++) {

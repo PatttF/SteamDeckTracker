@@ -67,7 +67,7 @@ bool MixerService::Init() {
 	NAssert(sync_);
 
 	if (result) {
-		Trace::Debug("MixerService: output initialized");
+		
 	} else {
 		Trace::Error("MixerService: failed to initialize output");
 	}
@@ -240,7 +240,6 @@ void MixerService::SetChannelPan(int channel, int pan) {
     Mixer *m = Mixer::GetInstance();
     m->SetChannelPanField(channel, pan);
     // TODO: pan is stored in model but not yet applied to audio path. Need to update PlayerChannel/MixBus or AudioMixer render path to apply per-channel panning.
-    Trace::Debug("MixerService: channel panning storage updated; audio panning not yet applied");
 }
 
 int MixerService::GetChannelPan(int channel) {

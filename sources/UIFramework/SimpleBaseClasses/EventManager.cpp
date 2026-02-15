@@ -40,7 +40,7 @@ void EventManager::mapConfigKey(AppButton button,const char *keyname) {
 void EventManager::InstallMappings() {
 	// Read config file for key assignment
 	
-	Trace::Debug("Mapping config") ;
+	
 	
 	mapConfigKey(APP_BUTTON_A,"KEY_A") ;
 	mapConfigKey(APP_BUTTON_B,"KEY_B") ;

@@ -428,7 +428,7 @@ bool LV2Instrument::Render(int channel, fixed *buffer, int size, bool updateTick
 
         // Grow buffers if needed
         if (size > bufferSize_) {
-            Trace::Log("LV2Instrument", "WARNING: buffer realloc in audio path %d -> %d", bufferSize_, size);
+            
             delete[] audioBufferL_;
             delete[] audioBufferR_;
             delete[] audioInputL_;
@@ -1047,7 +1047,7 @@ void LV2Instrument::SetPlugin(const char *uri) {
         
         // Name will be resolved from the plugin manifest if available; set a quick placeholder first
         strncpy(name_, "LV2", 79); name_[79] = '\0';
-        Trace::Debug("LV2Instrument: Setting plugin URI=%s (name will be resolved)", pluginURI_);
+        
         
         // Load the plugin and discover parameters
         loadPlugin();
@@ -1062,7 +1062,7 @@ void LV2Instrument::SetPlugin(const char *uri) {
                 if (n && n[0]) {
                     strncpy(name_, n, 79);
                     name_[79] = '\0';
-                    Trace::Debug("LV2Instrument: Resolved plugin name: %s", name_);
+                    
                 }
                 lilv_node_free(name_node);
             }
@@ -1073,7 +1073,7 @@ void LV2Instrument::SetPlugin(const char *uri) {
         // up sensible defaults, and flooding the atom buffer with hundreds of
         // patch:Set messages before the first render can prevent the plugin
         // from processing MIDI events.
-        Trace::Debug("LV2Instrument: Plugin loaded with %zu parameters (defaults from plugin's own init)", parameters_.size());
+        
 
         // Discover presets (file-based for Surge XT/Vital, patchmanager for gearmulator)
         discoverPresets();
@@ -1122,7 +1122,7 @@ void LV2Instrument::loadPlugin() {
     }
     
     plugin_ = (void*)plugin;
-    Trace::Debug("LV2Instrument: Found plugin: %s", pluginURI_);
+    
 
     // Load the plugin's bundle and resource data so all triples (including
     // patch:writable parameters) are available for queries.
@@ -1140,7 +1140,7 @@ void LV2Instrument::loadPlugin() {
             LILV_FOREACH(nodes, it, req) {
                 const LilvNode* n = lilv_nodes_get(req, it);
                 if (n && lilv_node_is_uri(n)) {
-                    Trace::Debug("LV2Instrument: plugin %s requires feature %s", pluginURI_, lilv_node_as_uri(n));
+                    
                 }
             }
             lilv_nodes_free((LilvNodes*)req);
@@ -1149,7 +1149,7 @@ void LV2Instrument::loadPlugin() {
             LILV_FOREACH(nodes, it2, opt) {
                 const LilvNode* n = lilv_nodes_get(opt, it2);
                 if (n && lilv_node_is_uri(n)) {
-                    Trace::Debug("LV2Instrument: plugin %s optional feature %s", pluginURI_, lilv_node_as_uri(n));
+                    
                 }
             }
             lilv_nodes_free((LilvNodes*)opt);
@@ -1193,7 +1193,7 @@ void LV2Instrument::loadPlugin() {
 
     // Instantiate the plugin with the actual audio driver sample rate
     double pluginRate = (double)Audio::GetInstance()->GetSampleRate();
-    Trace::Debug("LV2Instrument: Instantiating plugin at %.0f Hz: %s", pluginRate, pluginURI_);
+    
 
     LilvInstance* instance = lilv_plugin_instantiate(plugin, pluginRate, g_features);
     if (!instance) {
@@ -1203,7 +1203,7 @@ void LV2Instrument::loadPlugin() {
         const LilvNode* lib_node = lilv_plugin_get_library_uri(plugin);
         const char* lib_uri = lib_node ? lilv_node_as_uri(lib_node) : nullptr;
         if (lib_uri) {
-            Trace::Debug("LV2Instrument: plugin %s library uri=%s", pluginURI_, lib_uri);
+            
             // Simple file:// -> path conversion
             const char *path = lib_uri;
             const char *prefix = "file://";
@@ -1217,11 +1217,11 @@ void LV2Instrument::loadPlugin() {
                 const char *err = dlerror();
                 Trace::Error("LV2Instrument: dlopen failed for %s: %s", path, err ? err : "<no error>");
             } else {
-                Trace::Debug("LV2Instrument: dlopen succeeded for %s (closing)", path);
+                
                 dlclose(h);
             }
         } else {
-            Trace::Debug("LV2Instrument: plugin %s has no library URI", pluginURI_);
+            
         }
 
         // Try again with only URID map/unmap to see if extra features are causing the failure
@@ -1245,7 +1245,7 @@ void LV2Instrument::loadPlugin() {
     }
 
     pluginInstance_ = instance;
-    Trace::Debug("LV2Instrument: Successfully instantiated plugin with FULL features: %s", pluginURI_);
+    
 
     // Pre-allocate audio buffers now (not in Render) to avoid heap allocation
     // in the audio callback. Use a fixed size that covers typical block sizes.
@@ -1306,14 +1306,14 @@ void LV2Instrument::discoverParameters() {
             // Use the first atom input port as the default MIDI/patch input port
             if (midiInputPort_ == -1) {
                 midiInputPort_ = i;
-                Trace::Debug("LV2Instrument: Selected atom input port %u as midi/patch input", i);
+                
             }
 
             // Additionally check if it explicitly lists a buffer type (older plugins); log for diagnostics
             LilvNode* buffer_type_uri = lilv_new_uri(static_cast<LilvWorld*>(world_), "http://lv2plug.in/ns/ext/atom#bufferType");
             const LilvNodes* buf_types = lilv_port_get_value(plugin, port, buffer_type_uri);
             if (buf_types) {
-                Trace::Debug("LV2Instrument: Atom input port %u advertises bufferType", i);
+                
                 lilv_nodes_free((LilvNodes*)buf_types);
             }
             lilv_node_free(buffer_type_uri);
@@ -1486,7 +1486,7 @@ void LV2Instrument::discoverParameters() {
                 std::string sanitized = param.name;
                 for (auto &ch : sanitized) if (isspace((unsigned char)ch)) ch = '_';
                 param.resourceURI = std::string(pluginURI_) + "#" + sanitized;
-                Trace::Debug("LV2Instrument: Falling back to synthesized resource URI=%s for atom control input port name=%s", param.resourceURI.c_str(), param.name.c_str());
+                
             }
 
             // Create a Variable with better naming
@@ -1532,7 +1532,7 @@ void LV2Instrument::discoverParameters() {
             controlValues_.push_back(param.defaultValue);
 
             // Diagnostic: log parameter info
-            Trace::Debug("LV2Instrument: param discovered name=%s portIndex=%d isAtom=%d resourceURI=%s", param.name.c_str(), param.portIndex, param.isAtomPort ? 1 : 0, param.resourceURI.c_str());
+            
 
             controlParamsFound++;
 
@@ -1565,7 +1565,7 @@ void LV2Instrument::discoverParameters() {
     const LilvNodes* writable_nodes = lilv_world_find_nodes(static_cast<LilvWorld*>(world_),
         lilv_plugin_get_uri(plugin), pw_pred, NULL);
     if (writable_nodes && lilv_nodes_size(writable_nodes) > 0) {
-        Trace::Debug("LV2Instrument: Found %u patch:writable parameters", lilv_nodes_size(writable_nodes));
+        
         LILV_FOREACH(nodes, wit, writable_nodes) {
             const LilvNode* pnode = lilv_nodes_get(writable_nodes, wit);
             if (!lilv_node_is_uri(pnode)) continue;
@@ -1666,7 +1666,7 @@ void LV2Instrument::discoverParameters() {
             wv2->AddObserver(*this);
             parameters_.push_back(param);
             controlValues_.push_back(param.defaultValue);
-            Trace::Debug("LV2Instrument: patch:writable param name=%s resourceURI=%s", param.name.c_str(), param.resourceURI.c_str());
+            
             resourceParamsFound++;
         }
         lilv_nodes_free((LilvNodes*)writable_nodes);
@@ -1674,7 +1674,7 @@ void LV2Instrument::discoverParameters() {
     lilv_node_free(pw_pred);
 
     // Discovery summary logging
-    Trace::Debug("LV2Instrument: Discovered control params=%d resource params=%d total params=%d", controlParamsFound, resourceParamsFound, (int)parameters_.size());
+    
 
     // Synthesize fallback resource URIs for parameters that have no direct control port and no explicit resource URI
     for (size_t pi = 0; pi < parameters_.size(); ++pi) {
@@ -1682,7 +1682,7 @@ void LV2Instrument::discoverParameters() {
             std::string sanitized = parameters_[pi].name;
             for (auto &ch : sanitized) if (isspace((unsigned char)ch)) ch = '_';
             parameters_[pi].resourceURI = std::string(pluginURI_) + "#" + sanitized;
-            Trace::Debug("LV2Instrument: Synthesized fallback resource URI=%s for param name=%s portIndex=%d", parameters_[pi].resourceURI.c_str(), parameters_[pi].name.c_str(), parameters_[pi].portIndex);
+            
         }
     }
 
@@ -1750,28 +1750,28 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 // Connect plugin audio input ports to our audio input buffers
                 if ((int)i == audioInputPortL_ && audioInputL_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioInputL_);
-                    Trace::Debug("LV2Instrument: Connected audio input L port %u", i);
+                    
                 } else if ((int)i == audioInputPortR_ && audioInputR_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioInputR_);
-                    Trace::Debug("LV2Instrument: Connected audio input R port %u", i);
+                    
                 } else {
                     // Connect to a zeroed input buffer to be safe
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioInputL_ ? audioInputL_ : (void*)nullptr);
-                    Trace::Debug("LV2Instrument: Connected audio input (fallback) port %u", i);
+                    
                 }
             } else if (lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, output_class)) {
                 // Connect plugin audio output ports to our audio output buffers
                 if ((int)i == audioOutputPortL_ && audioBufferL_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferL_);
-                    Trace::Debug("LV2Instrument: Connected audio output L port %u -> audioBufferL_=%p", i, (void*)audioBufferL_);
+                    
                 } else if ((int)i == audioOutputPortR_ && audioBufferR_) {
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioBufferR_);
-                    Trace::Debug("LV2Instrument: Connected audio output R port %u -> audioBufferR_=%p", i, (void*)audioBufferR_);
+                    
                 } else {
                     // Connect extra audio outputs to a separate dummy buffer so they
                     // don't overwrite the real L/R output data.
                     lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, audioDummyBuffer_ ? audioDummyBuffer_ : (void*)nullptr);
-                    Trace::Debug("LV2Instrument: Connected audio output (DUMMY) port %u -> audioDummyBuffer_=%p", i, (void*)audioDummyBuffer_);
+                    
                 }
             }
             continue;
@@ -1782,7 +1782,7 @@ void LV2Instrument::connectPorts(int bufferSize) {
             // Ensure storage exists for this port
             if (portControlStorage_.size() <= i) portControlStorage_.resize(i + 1, 0.0f);
             lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, &portControlStorage_[i]);
-            Trace::Debug("LV2Instrument: Connected control port %u to storage %p", i, (void*)&portControlStorage_[i]);
+            
             continue;
         }
 
@@ -1790,12 +1790,12 @@ void LV2Instrument::connectPorts(int bufferSize) {
         if (lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, atom_class)) {
             bool isAtomInput = lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, input_class);
             bool isAtomOutput = lilv_port_is_a(static_cast<const LilvPlugin*>(plugin_), port, output_class);
-            Trace::Debug("LV2Instrument: Connecting atom port %u (input=%d output=%d)", i, isAtomInput, isAtomOutput);
+            
 
             // MIDI input port uses preallocated midiBuffer_
             if ((int)i == midiInputPort_ && midiBuffer_) {
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, midiBuffer_);
-                Trace::Debug("LV2Instrument: Connected MIDI input port %u", i);
+                
                 continue;
             }
 
@@ -1819,7 +1819,7 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 seq->body.unit = 0;
                 seq->body.pad = 0;
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomOutputBuffers_[i]);
-                Trace::Debug("LV2Instrument: Connected atom OUTPUT port %u size=%zu", i, bufSize);
+                
             } else {
                 // Atom INPUT port (non-MIDI): allocate and connect
                 if (atomInputBuffers_[i]) {
@@ -1831,7 +1831,7 @@ void LV2Instrument::connectPorts(int bufferSize) {
                 memset(atomInputBuffers_[i], 0, bufSize);
                 atomInputBufferSizes_[i] = bufSize;
                 lilv_instance_connect_port(static_cast<LilvInstance*>(pluginInstance_), i, atomInputBuffers_[i]);
-                Trace::Debug("LV2Instrument: Connected atom INPUT port %u size=%zu", i, bufSize);
+                
             }
             continue; 
         }
@@ -1845,12 +1845,11 @@ void LV2Instrument::connectPorts(int bufferSize) {
         int pidx = parameters_[pi].portIndex;
         if (pidx >= 0 && pidx < (int)portControlStorage_.size() && !parameters_[pi].isAtomPort) {
             portControlStorage_[pidx] = parameters_[pi].currentValue;
-            Trace::Debug("LV2Instrument: connectPorts default param[%zu] port=%d name=%s value=%.4f", pi, pidx, parameters_[pi].name.c_str(), parameters_[pi].currentValue);
+            
         }
     }
 
-    Trace::Debug("LV2Instrument: connectPorts summary: audioOutL=%d audioOutR=%d audioInL=%d audioInR=%d midiIn=%d",
-        audioOutputPortL_, audioOutputPortR_, audioInputPortL_, audioInputPortR_, midiInputPort_);
+    
 
     // Free temporary nodes
     lilv_node_free(audio_class);
@@ -1951,9 +1950,7 @@ void LV2Instrument::SetParameterValue(int paramIndex, float value) {
                         SysMutexLocker lock(pendingEventsMutex_);
                         pendingAtomEvents_.push_back(std::move(ae));
                     }
-                    Trace::Debug("LV2Instrument: Queued patch:Set for param=%s uri=%s value=%f",
-                                 parameters_[paramIndex].name.c_str(),
-                                 parameters_[paramIndex].resourceURI.c_str(), value);
+                    
                 }
             }
         }
@@ -2088,8 +2085,7 @@ void LV2Instrument::SetPreset(int presetIdx) {
             }
 
             if (loadPresetFromFile(fp.filePath, headerSkip, useStateBinary)) {
-                Trace::Log("LV2", "Loaded file preset %d ('%s') from bank '%s'",
-                    presetIdx, fp.name.c_str(), pl.name.c_str());
+                
             }
         }
         return;
@@ -2125,9 +2121,7 @@ void LV2Instrument::SetPreset(int presetIdx) {
             pendingMidiEvents_.push_back(progChg);
         }
 
-        Trace::Log("LV2", "MIDI preset: bank %d ('%s') preset %d ('%s')",
-            currentBank_, pl.name.c_str(), presetIdx,
-            GetPresetName(presetIdx));
+        
         return;
     }
 }
@@ -2310,8 +2304,7 @@ bool LV2Instrument::loadPresetFromFile(const std::string &filePath, int headerSk
     lilv_state_restore(state, instance, NULL, NULL, 0, NULL);
     lilv_state_free(state);
 
-    Trace::Log("LV2", "Loaded preset from file: %s (%ld bytes, skipped %d)",
-        filePath.c_str(), dataSize, headerSkipBytes);
+    
     return true;
 }
 
@@ -2367,8 +2360,7 @@ bool LV2Instrument::savePresetToFile(const std::string &filePath) {
     std::string ttl(ttlStr);
     free(ttlStr);
 
-    Trace::Log("LV2", "State TTL for save (%d bytes):\n%.200s...",
-        (int)ttl.size(), ttl.c_str());
+    
 
     // Extract the base64-encoded data from the TTL
     std::vector<uint8_t> rawData;
@@ -2525,7 +2517,7 @@ bool LV2Instrument::savePresetToFile(const std::string &filePath) {
         return false;
     }
 
-    Trace::Log("LV2", "Decoded %d bytes of raw state data", (int)rawData.size());
+    
 
     // Write the file
     int fd = open(filePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -2591,8 +2583,7 @@ bool LV2Instrument::savePresetToFile(const std::string &filePath) {
     (void)w;
     close(fd);
 
-    Trace::Log("LV2", "Saved preset to: %s (%d bytes + %d header)",
-        filePath.c_str(), (int)rawData.size(), mapping->headerSkipBytes);
+    
     return true;
 }
 
@@ -2722,12 +2713,11 @@ void LV2Instrument::discoverPresetFiles() {
     }
 
     if (!mapping) {
-        Trace::Log("LV2", "No known preset file mapping for '%s'", name_);
+        
         return;
     }
 
-    Trace::Log("LV2", "Scanning preset files for '%s' (ext: %s, skip: %d)",
-        name_, mapping->extension, mapping->headerSkipBytes);
+    
 
     std::string homeDir;
     const char *home = getenv("HOME");
@@ -2755,7 +2745,7 @@ void LV2Instrument::discoverPresetFiles() {
     }
 
     if (bankMap.empty()) {
-        Trace::Log("LV2", "No preset files found for '%s'", name_);
+        
         return;
     }
 
@@ -2782,10 +2772,9 @@ void LV2Instrument::discoverPresetFiles() {
     currentBank_ = 0;
     currentPreset_ = 0;
 
-    Trace::Log("LV2", "File presets: %d bank(s)", (int)programLists_.size());
+    
     for (size_t i = 0; i < programLists_.size(); i++) {
-        Trace::Log("LV2", "  Bank '%s': %d presets",
-            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
+        
     }
 }
 
@@ -2795,7 +2784,7 @@ void LV2Instrument::discoverPresetFiles() {
 void LV2Instrument::discoverHardcodedPresets() {
     if (strstr(name_, "OsTIrus") == nullptr) return;
 
-    Trace::Log("LV2", "Using hardcoded ROM presets for OsTIrus");
+    
 
     programLists_.clear();
     for (int b = 0; b < OSTIRUS_BANK_COUNT; b++) {
@@ -2812,8 +2801,7 @@ void LV2Instrument::discoverHardcodedPresets() {
     currentBank_ = 0;
     currentPreset_ = 0;
 
-    Trace::Log("LV2", "Hardcoded presets: %d banks x %d patches",
-        OSTIRUS_BANK_COUNT, OSTIRUS_PATCHES_PER_BANK);
+    
 }
 
 // ====================================================================
@@ -2852,11 +2840,11 @@ void LV2Instrument::discoverPatchManagerPresets() {
         mapping->cacheDirSuffix +
         "/patchmanager/patchmanagerdb.cache";
 
-    Trace::Log("LV2", "Looking for patchmanager cache: %s", cachePath.c_str());
+    
 
     int fd = open(cachePath.c_str(), O_RDONLY);
     if (fd < 0) {
-        Trace::Log("LV2", "No patchmanager cache found for '%s'", name_);
+        
         return;
     }
 
@@ -2920,7 +2908,7 @@ void LV2Instrument::discoverPatchManagerPresets() {
     uint32_t pmdsVer, pmdsSize, bankCount;
     if (!readU32(pmdsVer) || !readU32(pmdsSize) || !readU32(bankCount)) return;
 
-    Trace::Log("LV2", "Patchmanager cache: %d banks", (int)bankCount);
+    
 
     if (bankCount > 256) {
         Trace::Error("LV2: Unreasonable bank count %d", (int)bankCount);
@@ -3009,7 +2997,7 @@ void LV2Instrument::discoverPatchManagerPresets() {
     }
 
     if (programLists_.empty()) {
-        Trace::Log("LV2", "No patches found in patchmanager cache");
+        
         return;
     }
 
@@ -3018,13 +3006,11 @@ void LV2Instrument::discoverPatchManagerPresets() {
     currentBank_ = 0;
     currentPreset_ = 0;
 
-    Trace::Log("LV2", "Patchmanager presets: %d bank(s), will use MIDI for selection",
-        (int)programLists_.size());
+    
     for (size_t i = 0; i < programLists_.size() && i < 5; i++) {
-        Trace::Log("LV2", "  Bank '%s': %d presets",
-            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
+        
     }
     if (programLists_.size() > 5) {
-        Trace::Log("LV2", "  ... and %d more banks", (int)(programLists_.size() - 5));
+        
     }
 }

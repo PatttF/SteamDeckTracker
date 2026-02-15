@@ -14,6 +14,10 @@
 // to survive it, not crash the tracker.
 volatile sig_atomic_t g_vst3ComponentDead = 0;
 
+// File descriptor for the log file — crash handler writes backtrace here too.
+// Set by LINUXSystem::Boot after TeeLogger is created.
+int g_crashLogFd = -1;
+
 static volatile sig_atomic_t s_abortCount = 0;
 
 static void crash_handler(int sig) {
@@ -29,18 +33,22 @@ static void crash_handler(int sig) {
 
 	const char msg_pre[] = "\n*** CRASH: signal ";
 	write(STDERR_FILENO, msg_pre, sizeof(msg_pre) - 1);
+	if (g_crashLogFd >= 0) write(g_crashLogFd, msg_pre, sizeof(msg_pre) - 1);
 	const char *signame = "???";
 	if (sig == SIGSEGV) signame = "SIGSEGV";
 	else if (sig == SIGABRT) signame = "SIGABRT (yabridge/Wine crash?)";
 	else if (sig == SIGBUS) signame = "SIGBUS";
 	else if (sig == SIGFPE) signame = "SIGFPE";
 	write(STDERR_FILENO, signame, strlen(signame));
+	if (g_crashLogFd >= 0) write(g_crashLogFd, signame, strlen(signame));
 	const char msg_post[] = " ***\n";
 	write(STDERR_FILENO, msg_post, sizeof(msg_post) - 1);
+	if (g_crashLogFd >= 0) write(g_crashLogFd, msg_post, sizeof(msg_post) - 1);
 
 	void *frames[64];
 	int n = backtrace(frames, 64);
 	backtrace_symbols_fd(frames, n, STDERR_FILENO);
+	if (g_crashLogFd >= 0) backtrace_symbols_fd(frames, n, g_crashLogFd);
 
 	_exit(128 + sig);
 }

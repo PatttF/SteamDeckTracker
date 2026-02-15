@@ -96,11 +96,10 @@ void RecordSampleDialog::probeDeviceCapabilities() {
     if (probe != 0) {
         nativeRate_ = obtained.freq;
         nativeChannels_ = obtained.channels;
-        Trace::Log("RECORD", "Probed %s: %d Hz, %d ch, fmt=0x%04X",
-                   deviceName, obtained.freq, obtained.channels, obtained.format);
+        
         SDL_CloseAudioDevice(probe);
     } else {
-        Trace::Log("RECORD", "Probe failed for %s: %s", deviceName, SDL_GetError());
+        
     }
 }
 
@@ -132,10 +131,7 @@ void RecordSampleDialog::openCaptureDevice() {
         Trace::Error("RecordSample: failed to open capture device: %s",
                      SDL_GetError());
     } else {
-        Trace::Log("RECORD", "Opened capture: %s at %d Hz, %d ch, fmt=0x%04X",
-                   deviceName ? deviceName : "default",
-                   captureSpec_.freq, captureSpec_.channels,
-                   captureSpec_.format);
+        
     }
 }
 
@@ -449,8 +445,7 @@ void RecordSampleDialog::saveRecording() {
     delete file;
 
     savedPath_ = fullPath;
-    Trace::Log("RECORD", "Saved recording to %s (%d frames, %d ch, %d Hz)",
-               fullPath.c_str(), recordedSamples_, channels, rate);
+    
 }
 
 void RecordSampleDialog::moveCursor(int direction) {

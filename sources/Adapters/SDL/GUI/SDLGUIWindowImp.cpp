@@ -91,7 +91,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   char driverName[64] ;
   SDL_VideoDriverName(driverName,64);
   
-  Trace::Log("DISPLAY","Using driver %s. Screen (%d,%d) Bpp:%d",driverName,screenWidth,screenHeight,bitDepth_);
+  
   
   bool fullscreen=false ;
   
@@ -137,7 +137,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   screenRect_._bottomRight._x=windowed_?appWidth*mult_:screenWidth;
   screenRect_._bottomRight._y=windowed_?appHeight*mult_:screenHeight;
 
-  Trace::Log("DISPLAY","Creating SDL Window (%d,%d)",screenRect_.Width(), screenRect_.Height());
+  
 	screen_ = SDL_SetVideoMode(screenRect_.Width(),screenRect_.Height(),bitDepth_ ,fullscreen?SDL_FULLSCREEN:SDL_HWSURFACE);
 	NAssert(screen_) ;
 
@@ -171,11 +171,11 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
 	
 	if (cacheFonts_)
   {
-    Trace::Log("DISPLAY","Preparing fonts") ;
+    
 		prepareFonts() ;
 	}
 #ifdef _SHOW_GP2X_
-	Trace::Log("DISPLAY","Preparing overlay bitmaps") ;
+	
 	prepareBitmaps() ;
 #endif
 	updateCount_=0 ;
@@ -189,7 +189,7 @@ SDLGUIWindowImp::~SDLGUIWindowImp() {
 
 SDL_Surface *SDLGUIWindowImp::load_image(int which,char *filename,int x,int y) {
 
-	Trace::Debug("loading %s",filename) ;
+	
     //Temporary storage for the image that's loaded
     SDL_Surface* loadedImage = NULL;
 
@@ -226,7 +226,7 @@ SDL_Surface *SDLGUIWindowImp::load_image(int which,char *filename,int x,int y) {
 			if (scaled==NULL) {
 				Trace::Error("Failed to scaled surface for %s",filename) ;
 			} else {
-        Trace::Debug("Scaling %d,%d",scaled->w,scaled->h) ;
+        
 				SDL_LockSurface(scaled) ;
 				SDL_LockSurface(converted) ;
 				unsigned int *src=(unsigned int *)converted->pixels;
@@ -254,16 +254,16 @@ SDL_Surface *SDLGUIWindowImp::load_image(int which,char *filename,int x,int y) {
 		}
 //		SDL_SetAlpha(optimizedImage,SDL_SRCALPHA,SDL_ALPHA_TRANSPARENT) ;
         //Free the old image
-Trace::Debug("Freeing image") ;
+
         SDL_FreeSurface(loadedImage);
     } else {
-	 	Trace::Debug("**ERR** IMG_Load: %s\n", IMG_GetError());
+	 	
 
 	}
-Trace::Debug("storing point %d",which) ;
+
 	originX_[which]=x ;
 	originY_[which]=y ;
-Trace::Debug("returning") ;
+
 
     return optimizedImage;
 }
@@ -290,7 +290,7 @@ static SDL_Surface *fonts[FONT_COUNT] ;
 
 void SDLGUIWindowImp::prepareFullFonts()
 {
-  Trace::Log("DISPLAY","Preparing full font cache") ;
+  
   Uint32 rmask, gmask, bmask, amask;
 
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
@@ -354,7 +354,7 @@ void SDLGUIWindowImp::prepareFullFonts()
 void SDLGUIWindowImp::prepareFonts() 
 {
 
-  Trace::Log("DISPLAY","Preparing font cache") ;
+  
   Config *config=Config::GetInstance() ;
   
   unsigned char r,g,b ;
@@ -723,7 +723,7 @@ void SDLGUIWindowImp::drawGP2X()
 void SDLGUIWindowImp::drawGP2XOverlay()
 {
 	int mask=EventDispatcher::GetInstance()->GetEventMask() ;
-	Trace::Debug("got mask=%d",mask) ;
+	
 	drawSub(BM_OVERLAY) ;
 	if (mask&(1<<EPBT_L)) drawSub(BM_LS) ;
 	if (mask&(1<<EPBT_R)) drawSub(BM_RS) ;

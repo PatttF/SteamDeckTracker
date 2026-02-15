@@ -76,11 +76,8 @@ std::vector<ProtonVersion> discoverAllProton(const char *homeDir) {
     std::string steamPath =
         std::string(homeDir) + "/.steam/steam/steamapps/common";
     DIR *dir = opendir(steamPath.c_str());
-    if (!dir) {
-        Trace::Log("BRIDGE", "Steam directory not found: %s",
-                   steamPath.c_str());
+    if (!dir)
         return versions;
-    }
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != nullptr) {
@@ -123,14 +120,6 @@ std::vector<ProtonVersion> discoverAllProton(const char *homeDir) {
                   return a.patch > b.patch;
               });
 
-    // Log discovered versions
-    Trace::Log("BRIDGE", "Found %d Proton installation(s)",
-               (int)versions.size());
-    for (size_t i = 0; i < versions.size(); i++) {
-        Trace::Log("BRIDGE", "  [%d] %s -> %s", (int)i,
-                   versions[i].name.c_str(), versions[i].winePath.c_str());
-    }
-
     return versions;
 }
 
@@ -148,20 +137,11 @@ std::string findProtonWine(const char *homeDir) {
     // If user specified a preference, try to find it
     if (preferredVersion && preferredVersion[0] != '\0') {
         for (const auto &v : versions) {
-            if (v.name.find(preferredVersion) != std::string::npos) {
-                Trace::Log("BRIDGE", "Using preferred Proton: %s",
-                           v.name.c_str());
+            if (v.name.find(preferredVersion) != std::string::npos)
                 return v.winePath;
-            }
         }
-        Trace::Log(
-            "BRIDGE",
-            "Preferred Proton '%s' not found, using auto-selected version",
-            preferredVersion);
     }
 
-    // Return the best (first) version
-    Trace::Log("BRIDGE", "Auto-selected Proton: %s", versions[0].name.c_str());
     return versions[0].winePath;
 }
 
@@ -175,15 +155,8 @@ static bool extractEmbeddedYabridge(const char *home) {
 
     // Already extracted?
     struct stat st;
-    if (stat(yabridgectlBin.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
-        Trace::Log("BRIDGE", "yabridge already present at %s",
-                   yabridgeDir.c_str());
+    if (stat(yabridgectlBin.c_str(), &st) == 0 && S_ISREG(st.st_mode))
         return true;
-    }
-
-    Trace::Log("BRIDGE",
-               "yabridge not found, extracting embedded archive (%u bytes)...",
-               yabridge_blob_len);
 
     // Ensure the SDTracker directory exists
     if (stat(sdtDir.c_str(), &st) != 0) {
@@ -193,10 +166,8 @@ static bool extractEmbeddedYabridge(const char *home) {
     // Write the embedded tar.gz to a temporary file
     char tmpPath[] = "/tmp/yabridge_embed_XXXXXX";
     int fd = mkstemp(tmpPath);
-    if (fd < 0) {
-        Trace::Log("BRIDGE", "Failed to create temp file for extraction");
+    if (fd < 0)
         return false;
-    }
 
     ssize_t written = 0;
     const unsigned char *ptr = yabridge_blob;
@@ -204,7 +175,6 @@ static bool extractEmbeddedYabridge(const char *home) {
     while (remaining > 0) {
         ssize_t w = write(fd, ptr, remaining);
         if (w <= 0) {
-            Trace::Log("BRIDGE", "Failed to write embedded blob to temp file");
             close(fd);
             unlink(tmpPath);
             return false;
@@ -215,32 +185,17 @@ static bool extractEmbeddedYabridge(const char *home) {
     }
     close(fd);
 
-    Trace::Log("BRIDGE", "Wrote %d bytes to %s", (int)written, tmpPath);
-
-    // Extract tar.gz into ~/Documents/SDTracker/
-    // The archive contains a top-level yabridge/ directory
     std::string extractCmd = "tar xzf \"" + std::string(tmpPath) + "\" -C \"" +
                              sdtDir + "\" 2>&1";
-    Trace::Log("BRIDGE", "Extracting: %s", extractCmd.c_str());
-
     FILE *pipe = popen(extractCmd.c_str(), "r");
     if (pipe) {
         char line[256];
-        while (fgets(line, sizeof(line), pipe)) {
-            size_t len = strlen(line);
-            if (len > 0 && line[len - 1] == '\n')
-                line[len - 1] = '\0';
-            Trace::Log("BRIDGE", "  %s", line);
-        }
+        while (fgets(line, sizeof(line), pipe)) {}
         int result = pclose(pipe);
         unlink(tmpPath);
-
-        if (result != 0) {
-            Trace::Log("BRIDGE", "tar extraction failed with code %d", result);
+        if (result != 0)
             return false;
-        }
     } else {
-        Trace::Log("BRIDGE", "Failed to run tar for extraction");
         unlink(tmpPath);
         return false;
     }
@@ -257,15 +212,9 @@ static bool extractEmbeddedYabridge(const char *home) {
     }
 
     // Verify extraction succeeded
-    if (stat(yabridgectlBin.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
-        Trace::Log("BRIDGE", "yabridge extracted successfully to %s",
-                   yabridgeDir.c_str());
+    if (stat(yabridgectlBin.c_str(), &st) == 0 && S_ISREG(st.st_mode))
         return true;
-    }
 
-    Trace::Log("BRIDGE", "Extraction appeared to succeed but yabridgectl not "
-                         "found at %s",
-               yabridgectlBin.c_str());
     return false;
 }
 
@@ -320,9 +269,6 @@ static void propagateModuleInfo(const char *home,
                         fwrite(content.c_str(), 1, content.size(), dst);
                         fclose(dst);
                         copied = true;
-                        Trace::Log("BRIDGE",
-                                   "Copied moduleinfo.json for %s",
-                                   entry->d_name);
                     }
                 }
             }
@@ -358,10 +304,6 @@ static void propagateModuleInfo(const char *home,
             if (dst) {
                 fwrite(json.c_str(), 1, json.size(), dst);
                 fclose(dst);
-                Trace::Log("BRIDGE",
-                           "Generated moduleinfo.json stub for %s "
-                           "(name=%s)",
-                           entry->d_name, pluginName.c_str());
             }
         }
     }
@@ -372,11 +314,39 @@ static void propagateModuleInfo(const char *home,
 void bridgeWindowsVST3s() {
     // Get HOME environment variable
     const char *home = getenv("HOME");
-    if (!home) {
-        Trace::Log(
-            "BRIDGE",
-            "HOME environment variable not set, skipping Windows VST3 bridge");
+    if (!home)
         return;
+
+    // ---- Strip Steam's gameoverlayrenderer from LD_PRELOAD ----
+    // In game mode Steam injects its 32-bit overlay via LD_PRELOAD.
+    // That causes "wrong ELF class: ELFCLASS32" on every 64-bit
+    // dlopen (yabridge-host, Wine, etc.) and may prevent the Wine
+    // host from starting at all for large plugins like Serum 2.
+    {
+        const char *preload = getenv("LD_PRELOAD");
+        if (preload && preload[0]) {
+            std::string cleaned;
+            std::string orig(preload);
+            size_t start = 0;
+            while (start < orig.size()) {
+                size_t colon = orig.find(':', start);
+                if (colon == std::string::npos) colon = orig.size();
+                std::string entry = orig.substr(start, colon - start);
+                // Keep entries that are NOT the gameoverlayrenderer
+                if (!entry.empty() &&
+                    entry.find("gameoverlayrenderer") == std::string::npos) {
+                    if (!cleaned.empty()) cleaned += ':';
+                    cleaned += entry;
+                }
+                start = colon + 1;
+            }
+            if (cleaned != orig) {
+                if (cleaned.empty())
+                    unsetenv("LD_PRELOAD");
+                else
+                    setenv("LD_PRELOAD", cleaned.c_str(), 1);
+            }
+        }
     }
 
     // Raise the memory-locking limit.  Wine/yabridge need to mlock pages
@@ -385,34 +355,46 @@ void bridgeWindowsVST3s() {
     {
         struct rlimit rl;
         if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
-            Trace::Log("BRIDGE", "Current RLIMIT_MEMLOCK: soft=%lu hard=%lu",
-                       (unsigned long)rl.rlim_cur,
-                       (unsigned long)rl.rlim_max);
             if (rl.rlim_cur < rl.rlim_max) {
                 rl.rlim_cur = rl.rlim_max;
-                if (setrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
-                    Trace::Log("BRIDGE",
-                               "Raised RLIMIT_MEMLOCK soft to %lu",
-                               (unsigned long)rl.rlim_cur);
-                }
+                setrlimit(RLIMIT_MEMLOCK, &rl);
             }
-            // If hard limit is also too low (< 256 MB), try unlimited.
-            // This will only succeed if we have CAP_SYS_RESOURCE or
-            // the user configured /etc/security/limits.d.
             if (rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur < 256u * 1024 * 1024) {
                 struct rlimit unlim;
                 unlim.rlim_cur = RLIM_INFINITY;
                 unlim.rlim_max = RLIM_INFINITY;
-                if (setrlimit(RLIMIT_MEMLOCK, &unlim) == 0) {
-                    Trace::Log("BRIDGE",
-                               "Set RLIMIT_MEMLOCK to unlimited");
-                } else {
-                    Trace::Log("BRIDGE",
-                               "WARNING: Could not raise memlock limit "
-                               "above %lu — Wine may print warnings. "
-                               "Add a /etc/security/limits.d/ entry for "
-                               "unlimited memlock if audio doesn't work.",
-                               (unsigned long)rl.rlim_cur);
+                if (setrlimit(RLIMIT_MEMLOCK, &unlim) != 0) {
+                    // Try sudo prlimit (Steam Deck has passwordless sudo)
+                    char cmd[256];
+                    snprintf(cmd, sizeof(cmd),
+                             "sudo prlimit --pid %d "
+                             "--memlock=unlimited:unlimited 2>/dev/null",
+                             (int)getpid());
+                    FILE *pp = popen(cmd, "r");
+                    if (pp) {
+                        char buf[256];
+                        while (fgets(buf, sizeof(buf), pp)) {}
+                        int ret = pclose(pp);
+                        if (ret == 0) {
+                            if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
+                                if (rl.rlim_cur < rl.rlim_max ||
+                                    rl.rlim_max == RLIM_INFINITY) {
+                                    rl.rlim_cur = rl.rlim_max;
+                                    setrlimit(RLIMIT_MEMLOCK, &rl);
+                                }
+                            }
+                        }
+                    }
+                    // Create limits.d file for future boots
+                    const char *limitsFile =
+                        "/etc/security/limits.d/99-memlock.conf";
+                    struct stat limSt;
+                    if (stat(limitsFile, &limSt) != 0) {
+                        system(
+                            "sudo sh -c 'echo \"* - memlock unlimited\" "
+                            "> /etc/security/limits.d/99-memlock.conf' "
+                            "2>/dev/null");
+                    }
                 }
             }
         }
@@ -425,32 +407,21 @@ void bridgeWindowsVST3s() {
         // Create parent directory first if needed
         std::string vst3Dir = std::string(home) + "/.vst3";
         if (stat(vst3Dir.c_str(), &st) != 0) {
-            if (mkdir(vst3Dir.c_str(), 0755) != 0) {
-                Trace::Log("BRIDGE", "Failed to create ~/.vst3 directory");
+            if (mkdir(vst3Dir.c_str(), 0755) != 0)
                 return;
-            }
         }
-        if (mkdir(vst3WinDir.c_str(), 0755) != 0) {
-            Trace::Log("BRIDGE", "Failed to create ~/.vst3/win directory");
+        if (mkdir(vst3WinDir.c_str(), 0755) != 0)
             return;
-        }
-        Trace::Log("BRIDGE", "Created %s for Windows VST3 files",
-                   vst3WinDir.c_str());
     }
 
     // Find Proton wine binary
     std::string winePath = findProtonWine(home);
-    if (winePath.empty()) {
-        Trace::Log(
-            "BRIDGE",
-            "No Proton installation found, skipping Windows VST3 bridge");
+    if (winePath.empty())
         return;
-    }
 
     // Export WINELOADER so that the yabridge chainloader (triggered by dlopen
     // when the user actually loads a bridged plugin) can find Wine/Proton.
     setenv("WINELOADER", winePath.c_str(), 1);
-    Trace::Log("BRIDGE", "Set WINELOADER=%s", winePath.c_str());
 
     // Proton's wine binary links against libs in its own files/lib{,64}.
     // Without these on LD_LIBRARY_PATH the binary (and yabridge-host.exe)
@@ -474,9 +445,10 @@ void bridgeWindowsVST3s() {
     }
 
     // Build LD_LIBRARY_PATH additions from Proton's lib directories
+    // Also determine the sub-tree root (files/ or dist/) for later use.
+    std::string subTree;
     {
         // Determine which sub-tree the wine binary is in (files/ or dist/)
-        std::string subTree;
         if (winePath.find("/files/bin/") != std::string::npos)
             subTree = protonBase + "/files";
         else
@@ -491,7 +463,38 @@ void bridgeWindowsVST3s() {
             newLdPath += existing;
         }
         setenv("LD_LIBRARY_PATH", newLdPath.c_str(), 1);
-        Trace::Log("BRIDGE", "Set LD_LIBRARY_PATH=%s", newLdPath.c_str());
+    }
+
+    // Set WINEDLLPATH so Proton's Wine can locate its PE builtin DLLs.
+    // Without this, Wine cannot find d2d1.dll, dwrite.dll, d3d11.dll etc.
+    // The Proton `proton` script normally sets this; since we bypass the
+    // script we must do it ourselves.
+    {
+        // Proton stores PE DLLs in lib64/wine/x86_64-windows (64-bit)
+        // and lib/wine/i386-windows (32-bit).  Also add the dxvk and
+        // vkd3d-proton directories.
+        std::string dllPath64 = subTree + "/lib64/wine/x86_64-windows";
+        std::string dllPath32 = subTree + "/lib/wine/i386-windows";
+        std::string dxvk64    = subTree + "/lib64/wine/dxvk";
+        std::string vkd3d64   = subTree + "/lib64/wine/vkd3d-proton";
+
+        std::string wineDllPath = dllPath64 + ":" + dxvk64 + ":" +
+                                  vkd3d64 + ":" + dllPath32;
+
+        const char *existing = getenv("WINEDLLPATH");
+        if (existing && existing[0] != '\0') {
+            wineDllPath += ":";
+            wineDllPath += existing;
+        }
+        setenv("WINEDLLPATH", wineDllPath.c_str(), 1);
+    }
+
+    // Set WINESERVER to match the Proton installation.
+    {
+        std::string wineserver = subTree + "/bin/wineserver";
+        struct stat wsSt;
+        if (stat(wineserver.c_str(), &wsSt) == 0)
+            setenv("WINESERVER", wineserver.c_str(), 1);
     }
 
     // Also put the yabridge directory on PATH so the chainloader can
@@ -507,7 +510,6 @@ void bridgeWindowsVST3s() {
             newPath += existingPath;
         }
         setenv("PATH", newPath.c_str(), 1);
-        Trace::Log("BRIDGE", "Prepended yabridge to PATH");
     }
 
     // Set up a dedicated WINEPREFIX for yabridge.  Without this the Wine
@@ -523,12 +525,25 @@ void bridgeWindowsVST3s() {
     // on the unwinder thread, and 468+ of them overflow Wine's 1 MB thread
     // stack, crashing the host process and killing SDTracker (SIGABRT/134).
     setenv("WINEDEBUG", "-all", 0);  // don't override if user set it
-    Trace::Log("BRIDGE", "Set WINEPREFIX=%s", winePrefix.c_str());
+    // Tell Wine to prefer native (DXVK) versions of Direct3D DLLs over
+    // its own builtins.  This is what Proton normally does via the proton
+    // script.  Without this, Wine may load its stub DLLs which don't
+    // implement enough of D3D11 for Serum 2 to initialise.
+    // Use flag=1 to FORCE override — Steam may have already set
+    // WINEDLLOVERRIDES to a partial value like "dxgi=n" which
+    // doesn't cover d3d11, d2d1, dwrite, etc.
+    setenv("WINEDLLOVERRIDES",
+           "dxgi,d3d11,d3d10core,d3d10_1,d3d10,d3d9=n,b;"
+           "d2d1,dwrite=b,n", 1);
 
     // Initialise the prefix if it doesn't exist yet.
     // Prefer using the Proton `proton` script which handles all the
     // internal Wine environment setup (library paths, registry, etc.).
     // Fall back to calling wineboot directly for non-Proton Wine.
+    //
+    // Also force re-creation if DXVK wasn't properly set up — detected
+    // by checking whether dxgi.dll is a real DXVK DLL (>100KB) vs a
+    // Wine fake/stub DLL (typically <10KB).
     {
         struct stat pfxSt;
         bool needsBoot = false;
@@ -542,6 +557,33 @@ void bridgeWindowsVST3s() {
                 needsBoot = true;
         }
 
+        // Even if the prefix exists, check that DXVK is properly
+        // installed.  Serum 2 needs d3d11.dll/dxgi.dll which come
+        // from DXVK (Proton installs them).  If they're missing or
+        // are tiny Wine stubs (<100KB), we need to re-create the prefix.
+        if (!needsBoot) {
+            // Check the pfx/ subdirectory too (Proton layout)
+            std::string checkPrefix = winePrefix;
+            std::string pfxSub = winePrefix + "/pfx";
+            struct stat subSt;
+            if (stat((pfxSub + "/system.reg").c_str(), &subSt) == 0)
+                checkPrefix = pfxSub;
+
+            std::string dxgiPath = checkPrefix +
+                "/drive_c/windows/system32/dxgi.dll";
+            struct stat dxgiSt;
+            if (stat(dxgiPath.c_str(), &dxgiSt) != 0) {
+                needsBoot = true;
+            } else if (dxgiSt.st_size < 100 * 1024) {
+                needsBoot = true;
+            }
+
+            if (needsBoot) {
+                std::string rmCmd = "rm -rf \"" + winePrefix + "\"";
+                system(rmCmd.c_str());
+            }
+        }
+
         if (needsBoot) {
             std::string bootCmd;
             std::string protonScript = protonBase + "/proton";
@@ -549,10 +591,6 @@ void bridgeWindowsVST3s() {
 
             if (stat(protonScript.c_str(), &psSt) == 0 &&
                 S_ISREG(psSt.st_mode)) {
-                // Use the Proton script — it sets up its own environment.
-                // STEAM_COMPAT_DATA_PATH tells Proton where to put the pfx/.
-                // We point it at our prefix parent so Proton creates pfx/
-                // inside it; then we symlink to make WINEPREFIX work too.
                 std::string compatData = winePrefix;
                 bootCmd =
                     "STEAM_COMPAT_DATA_PATH=\"" + compatData +
@@ -561,7 +599,6 @@ void bridgeWindowsVST3s() {
                     "\" DISPLAY= WAYLAND_DISPLAY="
                     " python3 \"" + protonScript + "\" run wineboot -u 2>&1";
             } else {
-                // Non-Proton Wine: call wineboot directly
                 std::string wineDir = winePath;
                 size_t slashPos = wineDir.rfind('/');
                 if (slashPos != std::string::npos)
@@ -579,44 +616,29 @@ void bridgeWindowsVST3s() {
                           " \"" + wineboot + "\" -u 2>&1";
             }
 
-            Trace::Log("BRIDGE", "Initialising Wine prefix: %s",
-                       bootCmd.c_str());
-
             FILE *bootPipe = popen(bootCmd.c_str(), "r");
             if (bootPipe) {
                 char line[256];
-                while (fgets(line, sizeof(line), bootPipe)) {
-                    size_t len = strlen(line);
-                    if (len > 0 && line[len - 1] == '\n')
-                        line[len - 1] = '\0';
-                    Trace::Log("BRIDGE", "  %s", line);
-                }
-                int bootResult = pclose(bootPipe);
-                if (bootResult == 0) {
-                    Trace::Log("BRIDGE",
-                               "Wine prefix initialised successfully");
-                } else {
-                    Trace::Log("BRIDGE",
-                               "wineboot returned code %d (may still work)",
-                               bootResult);
-                }
-            } else {
-                Trace::Log("BRIDGE", "WARNING: Failed to run wineboot");
+                while (fgets(line, sizeof(line), bootPipe)) {}
+                pclose(bootPipe);
             }
+        }
+    }
 
-            // Proton creates the prefix inside pfx/ under the compat data
-            // path.  Make sure WINEPREFIX points to where the files actually
-            // are.  If proton created <winePrefix>/pfx/ with the real prefix,
-            // redirect WINEPREFIX to it.
-            std::string pfxSub = winePrefix + "/pfx";
+    // Check for Proton's pfx/ sub-directory layout and redirect
+    // WINEPREFIX if needed.
+    {
+        const char *subPaths[] = { "/pfx", "/pfx/pfx", NULL };
+        for (int i = 0; subPaths[i]; i++) {
+            std::string pfxSub = winePrefix + subPaths[i];
             std::string pfxSysReg = pfxSub + "/system.reg";
-            if (stat(pfxSysReg.c_str(), &pfxSt) == 0) {
+            std::string pfxDxgi = pfxSub + "/drive_c/windows/system32/dxgi.dll";
+            struct stat pfxRedirSt;
+            if (stat(pfxSysReg.c_str(), &pfxRedirSt) == 0 ||
+                stat(pfxDxgi.c_str(), &pfxRedirSt) == 0) {
                 winePrefix = pfxSub;
                 setenv("WINEPREFIX", winePrefix.c_str(), 1);
-                Trace::Log("BRIDGE",
-                           "Proton created prefix in pfx/ — updated "
-                           "WINEPREFIX=%s",
-                           winePrefix.c_str());
+                break;
             }
         }
     }
@@ -634,29 +656,31 @@ void bridgeWindowsVST3s() {
             struct stat steamSt, hostSt;
             if (stat(steamDir.c_str(), &steamSt) == 0 &&
                 S_ISDIR(steamSt.st_mode)) {
-                if (lstat(hostDir.c_str(), &hostSt) != 0) {
-                    // Doesn't exist — create a symlink
-                    if (symlink("steamuser", hostDir.c_str()) == 0) {
-                        Trace::Log("BRIDGE",
-                            "Created symlink %s -> steamuser for plugin data",
-                            hostDir.c_str());
-                    } else {
-                        Trace::Log("BRIDGE",
-                            "WARNING: Failed to symlink %s -> steamuser: %s",
-                            hostDir.c_str(), strerror(errno));
-                    }
-                }
+                if (lstat(hostDir.c_str(), &hostSt) != 0)
+                    symlink("steamuser", hostDir.c_str());
             }
         }
     }
 
     // Copy essential DLLs that Proton's default prefix ships but that our
-    // wineboot-created prefix may be missing.  In particular libvkd3d-1.dll
-    // and libvkd3d-shader-1.dll are required by wined3d.dll → dxgi.dll
-    // which many Windows VST3 plugins link against for their GUI.
+    // wineboot-created prefix may be missing.  Serum 2 (and other GPU-using
+    // plugins) link against d3d11.dll → dxgi.dll and d2d1.dll for their
+    // GUI rendering.  Even when running headless, the DLLs must be present
+    // or Wine will refuse to load the plugin module at all.
     {
         std::string defaultPfx = protonBase + "/files/share/default_pfx";
         const char *dllNames[] = {
+            // Direct3D / DXGI (provided by DXVK/vkd3d-proton in Proton)
+            "dxgi.dll",
+            "d3d11.dll",
+            "d3d10core.dll",
+            "d3d10_1.dll",
+            "d3d10.dll",
+            "d3d9.dll",
+            // Direct2D / DirectWrite (used by Serum 2 for GUI text)
+            "d2d1.dll",
+            "dwrite.dll",
+            // vkd3d (Vulkan-based D3D12, sometimes a dependency)
             "libvkd3d-1.dll",
             "libvkd3d-shader-1.dll",
         };
@@ -666,12 +690,45 @@ void bridgeWindowsVST3s() {
             std::string srcDir  = defaultPfx + "/drive_c/windows/" + subdirs[s];
             struct stat dirSt;
             if (stat(ourDir.c_str(), &dirSt) != 0) continue; // subdir doesn't exist
+
+            // Proton stores DXVK/vkd3d DLLs in multiple possible locations
+            bool is64 = (strcmp(subdirs[s], "system32") == 0);
+            std::string dxvkDir = protonBase + "/files/lib" +
+                                  (is64 ? "64" : "") + "/wine/dxvk";
+            std::string vkd3dDir = protonBase + "/files/lib" +
+                                   (is64 ? "64" : "") + "/wine/vkd3d-proton";
+
             for (size_t d = 0; d < sizeof(dllNames) / sizeof(dllNames[0]); d++) {
                 std::string dst = ourDir  + "/" + dllNames[d];
-                std::string src = srcDir  + "/" + dllNames[d];
-                struct stat dstSt, srcSt;
-                if (stat(dst.c_str(), &dstSt) == 0) continue; // already present
-                if (stat(src.c_str(), &srcSt) != 0) continue; // source missing
+
+                // Try source locations — prioritise DXVK/vkd3d-proton dirs
+                // over default_pfx, because default_pfx may contain Wine's
+                // builtin PE "fakes" rather than real DXVK DLLs.
+                std::string sources[] = {
+                    dxvkDir  + "/" + dllNames[d],  // DXVK dir (real DXVK)
+                    vkd3dDir + "/" + dllNames[d],  // vkd3d-proton dir
+                    srcDir   + "/" + dllNames[d],  // default_pfx (fallback)
+                };
+                std::string src;
+                off_t srcSize = 0;
+                for (size_t i = 0; i < 3; i++) {
+                    struct stat srcSt;
+                    if (stat(sources[i].c_str(), &srcSt) == 0) {
+                        src = sources[i];
+                        srcSize = srcSt.st_size;
+                        break;
+                    }
+                }
+                if (src.empty())
+                    continue;
+
+                // Always overwrite from DXVK/vkd3d-proton dirs even if the
+                // destination already exists.
+                struct stat dstSt;
+                bool dstExists = (stat(dst.c_str(), &dstSt) == 0);
+                if (dstExists && dstSt.st_size == srcSize)
+                    continue;
+
                 FILE *sf = fopen(src.c_str(), "rb");
                 if (!sf) continue;
                 FILE *df = fopen(dst.c_str(), "wb");
@@ -682,8 +739,126 @@ void bridgeWindowsVST3s() {
                     fwrite(cpBuf, 1, n, df);
                 fclose(sf); fclose(df);
                 chmod(dst.c_str(), 0755);
-                Trace::Log("BRIDGE", "Copied %s/%s from Proton default prefix",
-                           subdirs[s], dllNames[d]);
+            }
+        }
+    }
+
+    // Write DLL override entries into the Wine registry.
+    // WINEDLLOVERRIDES env var should work, but some Wine/Proton builds
+    // ignore it or yabridge may not propagate it to the Wine host process.
+    // Writing directly into system.reg ensures Wine always knows to load
+    // DXVK DLLs as "native" rather than trying (and failing) to use its
+    // own builtins.
+    {
+        std::string sysReg = winePrefix + "/system.reg";
+        struct stat srSt;
+        if (stat(sysReg.c_str(), &srSt) == 0) {
+            // Read the existing system.reg
+            FILE *rf = fopen(sysReg.c_str(), "r");
+            if (rf) {
+                std::string content;
+                char buf[4096];
+                size_t n;
+                while ((n = fread(buf, 1, sizeof(buf), rf)) > 0)
+                    content.append(buf, n);
+                fclose(rf);
+
+                // Check if DllOverrides section already has dxgi
+                bool hasDxgiOverride =
+                    content.find("\"dxgi\"=\"native\"") != std::string::npos ||
+                    content.find("\"*dxgi\"=\"native\"") != std::string::npos;
+
+                if (!hasDxgiOverride) {
+                    // Find or create the [Software\\Wine\\DllOverrides] section
+                    const char *overrideKey =
+                        "[Software\\\\Wine\\\\DllOverrides]";
+                    size_t pos = content.find(overrideKey);
+
+                    std::string entries =
+                        "\"d2d1\"=\"native\"\n"
+                        "\"d3d10\"=\"native\"\n"
+                        "\"d3d10_1\"=\"native\"\n"
+                        "\"d3d10core\"=\"native\"\n"
+                        "\"d3d11\"=\"native\"\n"
+                        "\"d3d9\"=\"native\"\n"
+                        "\"dwrite\"=\"native\"\n"
+                        "\"dxgi\"=\"native\"\n";
+
+                    if (pos != std::string::npos) {
+                        // Section exists — insert entries after the section
+                        // header line (find the next newline)
+                        size_t eol = content.find('\n', pos);
+                        if (eol != std::string::npos) {
+                            content.insert(eol + 1, entries);
+                        }
+                    } else {
+                        // Section doesn't exist — append it
+                        content += "\n";
+                        content += overrideKey;
+                        content += " 0\n";
+                        content += entries;
+                        content += "\n";
+                    }
+
+                    FILE *wf = fopen(sysReg.c_str(), "w");
+                    if (wf) {
+                        fwrite(content.data(), 1, content.size(), wf);
+                        fclose(wf);
+                    }
+                }
+            }
+        }
+
+        // Also write to user.reg as some Wine versions check there
+        std::string userReg = winePrefix + "/user.reg";
+        if (stat(userReg.c_str(), &srSt) == 0) {
+            FILE *rf = fopen(userReg.c_str(), "r");
+            if (rf) {
+                std::string content;
+                char buf[4096];
+                size_t n;
+                while ((n = fread(buf, 1, sizeof(buf), rf)) > 0)
+                    content.append(buf, n);
+                fclose(rf);
+
+                bool hasDxgiOverride =
+                    content.find("\"dxgi\"=\"native\"") != std::string::npos ||
+                    content.find("\"*dxgi\"=\"native\"") != std::string::npos;
+
+                if (!hasDxgiOverride) {
+                    const char *overrideKey =
+                        "[Software\\\\Wine\\\\DllOverrides]";
+                    size_t pos = content.find(overrideKey);
+
+                    std::string entries =
+                        "\"d2d1\"=\"native\"\n"
+                        "\"d3d10\"=\"native\"\n"
+                        "\"d3d10_1\"=\"native\"\n"
+                        "\"d3d10core\"=\"native\"\n"
+                        "\"d3d11\"=\"native\"\n"
+                        "\"d3d9\"=\"native\"\n"
+                        "\"dwrite\"=\"native\"\n"
+                        "\"dxgi\"=\"native\"\n";
+
+                    if (pos != std::string::npos) {
+                        size_t eol = content.find('\n', pos);
+                        if (eol != std::string::npos) {
+                            content.insert(eol + 1, entries);
+                        }
+                    } else {
+                        content += "\n";
+                        content += overrideKey;
+                        content += " 0\n";
+                        content += entries;
+                        content += "\n";
+                    }
+
+                    FILE *wf = fopen(userReg.c_str(), "w");
+                    if (wf) {
+                        fwrite(content.data(), 1, content.size(), wf);
+                        fclose(wf);
+                    }
+                }
             }
         }
     }
@@ -696,9 +871,7 @@ void bridgeWindowsVST3s() {
         struct stat vst3St;
         if (stat(cfVst3.c_str(), &vst3St) != 0) {
             std::string mkCmd = "mkdir -p \"" + cfVst3 + "\"";
-            if (system(mkCmd.c_str()) == 0) {
-                Trace::Log("BRIDGE", "Created %s", cfVst3.c_str());
-            }
+            system(mkCmd.c_str());
         }
     }
 
@@ -723,14 +896,10 @@ void bridgeWindowsVST3s() {
         }
     }
 
-    if (!found) {
-        Trace::Log("BRIDGE",
-                   "yabridge not bundled, skipping Windows VST3 bridge");
+    if (!found)
         return;
-    }
 
     std::string yabridgectlBin = yabridgectlPath.GetCanonicalPath();
-    Trace::Log("BRIDGE", "Found yabridgectl: %s", yabridgectlBin.c_str());
 
     // Derive the yabridge lib directory (same dir as yabridgectl)
     std::string yabridgeLibDir = yabridgectlBin;
@@ -766,10 +935,8 @@ void bridgeWindowsVST3s() {
         for (size_t i = 0; i < sizeof(winVst3Subdirs)/sizeof(winVst3Subdirs[0]); i++) {
             std::string d = winePrefix + winVst3Subdirs[i];
             struct stat dst;
-            if (stat(d.c_str(), &dst) == 0 && S_ISDIR(dst.st_mode)) {
+            if (stat(d.c_str(), &dst) == 0 && S_ISDIR(dst.st_mode))
                 pluginDirs.push_back(d);
-                Trace::Log("BRIDGE", "Added Wine prefix VST3 dir: %s", d.c_str());
-            }
         }
     }
 
@@ -792,12 +959,6 @@ void bridgeWindowsVST3s() {
         if (cfgFile) {
             fwrite(toml.c_str(), 1, toml.size(), cfgFile);
             fclose(cfgFile);
-            Trace::Log("BRIDGE", "Wrote yabridgectl config: path = '%s'",
-                       yabridgeLibDir.c_str());
-        } else {
-            Trace::Log("BRIDGE",
-                       "WARNING: Could not write yabridgectl config to %s",
-                       configPath.c_str());
         }
     }
 
@@ -831,86 +992,39 @@ void bridgeWindowsVST3s() {
                 unlink(symlinkPath.c_str());
             }
         } else {
-            // If it's a regular directory (not a symlink), leave it alone
             struct stat linkSt;
             if (lstat(symlinkPath.c_str(), &linkSt) == 0 &&
-                S_ISDIR(linkSt.st_mode)) {
-                Trace::Log("BRIDGE",
-                           "%s is a real directory, not overwriting",
-                           symlinkPath.c_str());
+                S_ISDIR(linkSt.st_mode))
                 needSymlink = false;
-            }
         }
 
-        if (needSymlink) {
-            if (symlink(yabridgeLibDir.c_str(), symlinkPath.c_str()) == 0) {
-                Trace::Log("BRIDGE", "Created symlink %s -> %s",
-                           symlinkPath.c_str(), yabridgeLibDir.c_str());
-            } else {
-                Trace::Log("BRIDGE", "WARNING: Failed to create symlink %s",
-                           symlinkPath.c_str());
-            }
-        }
+        if (needSymlink)
+            symlink(yabridgeLibDir.c_str(), symlinkPath.c_str());
     }
 
     // Run yabridgectl add for each plugin directory
     for (size_t pd = 0; pd < pluginDirs.size(); pd++) {
         std::string addCmd =
             "\"" + yabridgectlBin + "\" add \"" + pluginDirs[pd] + "\" 2>&1";
-        Trace::Log("BRIDGE", "Running: %s", addCmd.c_str());
-
         FILE *addPipe = popen(addCmd.c_str(), "r");
         if (addPipe) {
             char line[256];
-            while (fgets(line, sizeof(line), addPipe)) {
-                size_t len = strlen(line);
-                if (len > 0 && line[len - 1] == '\n') {
-                    line[len - 1] = '\0';
-                }
-                Trace::Log("BRIDGE", "  %s", line);
-            }
-            int addResult = pclose(addPipe);
-            if (addResult != 0) {
-                Trace::Log("BRIDGE", "yabridgectl add failed for %s (code %d)",
-                           pluginDirs[pd].c_str(), addResult);
-            }
-        } else {
-            Trace::Log("BRIDGE", "Failed to run yabridgectl add for %s",
-                       pluginDirs[pd].c_str());
+            while (fgets(line, sizeof(line), addPipe)) {}
+            pclose(addPipe);
         }
     }
 
     // Run WINELOADER="..." yabridgectl sync
     std::string syncCmd =
         "WINELOADER=\"" + winePath + "\" \"" + yabridgectlBin + "\" sync 2>&1";
-    Trace::Log("BRIDGE", "Running: %s", syncCmd.c_str());
-
     FILE *syncPipe = popen(syncCmd.c_str(), "r");
     if (syncPipe) {
         char line[256];
-        while (fgets(line, sizeof(line), syncPipe)) {
-            // Strip trailing newline
-            size_t len = strlen(line);
-            if (len > 0 && line[len - 1] == '\n') {
-                line[len - 1] = '\0';
-            }
-            Trace::Log("BRIDGE", "  %s", line);
-        }
+        while (fgets(line, sizeof(line), syncPipe)) {}
         int syncResult = pclose(syncPipe);
         if (syncResult == 0) {
-            Trace::Log("BRIDGE",
-                       "Windows VST3 bridge setup completed successfully");
-
-            // Propagate / generate moduleinfo.json so the scanner can
-            // enumerate bridged plugins without dlopen'ing them.
-            for (size_t pd = 0; pd < pluginDirs.size(); pd++) {
+            for (size_t pd = 0; pd < pluginDirs.size(); pd++)
                 propagateModuleInfo(home, pluginDirs[pd]);
-            }
-        } else {
-            Trace::Log("BRIDGE", "yabridgectl sync failed with code %d",
-                       syncResult);
         }
-    } else {
-        Trace::Log("BRIDGE", "Failed to run yabridgectl sync");
     }
 }

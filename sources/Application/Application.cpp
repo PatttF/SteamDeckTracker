@@ -67,7 +67,7 @@ void Application::initMidiInput()
       {
         if (in.Start())
         {
-          Trace::Log("MIDI","Controlling activated for MIDI interface %s",in.GetName()) ;
+          
         }
         else
         {
@@ -181,9 +181,9 @@ bool Application::Init(GUICreateWindowParams &params) {
             if (out) {
         out << defaultMap;
         out.close();
-        Trace::Log("MAPPING","Wrote default root:mapping.xml to %s",mapPath.c_str());
+        
             } else {
-        Trace::Log("MAPPING","Failed to write default mapping to %s",mapPath.c_str());
+        
             }
 
       // Load the mapping we just wrote (or try again)
@@ -215,9 +215,9 @@ bool Application::Init(GUICreateWindowParams &params) {
       if (fout) {
         fout << defaultFont;
         fout.close();
-        Trace::Log("FONT","Wrote default root:custom_font.xml to %s",fontPath.c_str());
+        
       } else {
-        Trace::Log("FONT","Failed to write default custom font to %s",fontPath.c_str());
+        
       }
     }
   }
@@ -252,16 +252,16 @@ bool Application::Init(GUICreateWindowParams &params) {
             out.close();
             in.close();
             chmod(dstPath.c_str(),0755);
-            Trace::Log("APP","Copied %s to %s", srcCanon.c_str(), dstPath.c_str());
+            
             copied = true;
             break;
           } else {
-            Trace::Log("APP","Failed to copy installer from %s to %s", src.GetPath().c_str(), dstPath.c_str());
+            
           }
         }
       }
       if (!copied) {
-        Trace::Log("APP","No bundled LV2 installer script found to copy to %s", dstPath.c_str());
+        
       }
     }
   }

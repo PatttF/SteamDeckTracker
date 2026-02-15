@@ -7,7 +7,7 @@
 #include "Adapters/Jack/Client/JackClient.h"
 
 int jack_srate (jack_nframes_t nframes, void *arg) {
-	Trace::Debug("Jack sample rate is now %lu/sec\n", nframes);
+	
 	return 0;
 }
 
@@ -38,7 +38,7 @@ void JackAudio::Init() {
 // Return, the rest will be done later
 
 	if (jack_activate (client)) {
-		Trace::Debug("Failed to activate client ?") ;
+		
 	}
 
 

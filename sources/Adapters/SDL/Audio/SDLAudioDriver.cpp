@@ -89,7 +89,7 @@ bool SDLAudioDriver::InitDriver() {
   mainBuffer_=(char *)((((int)unalignedMain_)+1)&(0xFFFFFFFC)) ;
 #endif
 
-  Trace::Log("AUDIO","%s successfully opened with %d samples",bufferName,fragSize_/4 ) ;
+  
 
   // Create mini blank buffer in case of underruns
 

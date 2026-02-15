@@ -4,7 +4,7 @@
 #include "System/Console/Trace.h"
 
 static void jack_error (const char *desc) {
-	Trace::Debug("JACK error: %s\n", desc);
+	
 }
 
 int jack_callback(jack_nframes_t nframes, void *arg) {
@@ -20,7 +20,7 @@ JackClient::JackClient() {
 } ;
 
 JackClient::~JackClient() {
-	Trace::Debug("[J]: close driver") ;
+	
 	jack_client_close (client_);
 } ;
 

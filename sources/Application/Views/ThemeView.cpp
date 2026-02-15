@@ -419,9 +419,9 @@ void ThemeView::SaveConfigToFile() {
     }
 
     if (doc.SaveFile(configPath.c_str())) {
-        Trace::Log("THEME", "Saved config to %s", configPath.c_str());
+        
     } else {
-        Trace::Log("THEME", "Failed to save config to %s", configPath.c_str());
+        
     }
 }
 
@@ -460,12 +460,12 @@ void ThemeView::SaveThemeToFile(const std::string &name) {
     }
 
     if (doc.SaveFile(filePath.c_str())) {
-        Trace::Log("THEME", "Saved theme to %s", filePath.c_str());
+        
         char msg[64];
         snprintf(msg, sizeof(msg), "Saved: %s", name.c_str());
         SetNotification(msg);
     } else {
-        Trace::Log("THEME", "Failed to save theme to %s", filePath.c_str());
+        
         SetNotification("Save failed!");
     }
 }
@@ -473,7 +473,7 @@ void ThemeView::SaveThemeToFile(const std::string &name) {
 void ThemeView::LoadThemeFromFile(const std::string &path) {
     TiXmlDocument doc(path.c_str());
     if (!doc.LoadFile()) {
-        Trace::Log("THEME", "Failed to load theme from %s", path.c_str());
+        
         SetNotification("Load failed!");
         return;
     }
@@ -513,7 +513,7 @@ void ThemeView::LoadThemeFromFile(const std::string &path) {
 
     refreshVarsFromLive();
     dirty_ = true;
-    Trace::Log("THEME", "Loaded theme from %s", path.c_str());
+    
 }
 
 void ThemeView::LoadDefaultColors() {

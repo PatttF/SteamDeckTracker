@@ -495,14 +495,12 @@ void VST3Effect::loadPluginInner() {
                 if (factory->getClassInfo(i, &ci) == kResultOk &&
                     strcmp(ci.category, kVstAudioEffectClass) == 0) {
                     memcpy(pluginClassId_, ci.cid, 16);
-                    Trace::Log("VST3FX", "Resolved zero CID -> %s",
-                               tuidHex(pluginClassId_).c_str());
+                    
                     if (factory2) {
                         PClassInfo2 ci2;
                         if (factory2->getClassInfo2(i, &ci2) == kResultOk) {
                             resolvedSub = ci2.subCategories;
-                            Trace::Log("VST3FX", "Resolved subcategories: '%s'",
-                                       resolvedSub.c_str());
+                            
                         }
                     }
                     break;
@@ -541,10 +539,7 @@ void VST3Effect::loadPluginInner() {
                     if (jf.is_open()) {
                         jf << json;
                         jf.close();
-                        Trace::Log("VST3FX",
-                            "Updated moduleinfo.json: CID=%s sub='%s'",
-                            tuidHex(pluginClassId_).c_str(),
-                            resolvedSub.c_str());
+                        
                     }
                 }
             }
@@ -656,11 +651,10 @@ void VST3Effect::loadPluginInner() {
         bufferSize_ = initBlock;
 
         setupProcessing(initBlock);
-        Trace::Log("VST3FX", "Pre-initialized processing (block=%d rate=%d)",
-                   initBlock, sampleRate);
+        
     }
 
-    Trace::Log("VST3FX", "Loaded effect: %s (%d params, %d banks)", name_, (int)parameters_.size(), (int)programLists_.size());
+    
 }
 
 void VST3Effect::discoverParameters() {
@@ -809,8 +803,7 @@ void VST3Effect::discoverPresets() {
                     break;
                 }
             }
-            Trace::Log("VST3FX", "Found kIsProgramChange parameter: id=%d stepCount=%d",
-                (int)info.id, (int)info.stepCount);
+            
             break;
         }
     }
@@ -819,12 +812,12 @@ void VST3Effect::discoverPresets() {
     IUnitInfo* unitInfo = nullptr;
     tresult res = ctrl->queryInterface(IUnitInfo::iid, (void**)&unitInfo);
     if (res != kResultOk || !unitInfo) {
-        Trace::Log("VST3FX", "No IUnitInfo — plugin does not expose program lists");
+        
         return;
     }
 
     int32 listCount = unitInfo->getProgramListCount();
-    Trace::Log("VST3FX", "Found %d program list(s)", (int)listCount);
+    
 
     for (int32 li = 0; li < listCount; li++) {
         ProgramListInfo plInfo;
@@ -850,8 +843,7 @@ void VST3Effect::discoverPresets() {
             }
         }
 
-        Trace::Log("VST3FX", "  List[%d] '%s': %d programs", (int)plInfo.id,
-            pl.name.c_str(), (int)pl.programs.size());
+        
 
         programLists_.push_back(pl);
     }
@@ -859,10 +851,7 @@ void VST3Effect::discoverPresets() {
     unitInfo->release();
 
     if (!programLists_.empty()) {
-        Trace::Log("VST3FX", "Total: %d bank(s), first bank '%s' has %d presets",
-            (int)programLists_.size(),
-            programLists_[0].name.c_str(),
-            (int)programLists_[0].programs.size());
+        
     }
 }
 
@@ -941,8 +930,7 @@ void VST3Effect::SetPreset(int presetIdx) {
             }
         }
 
-        Trace::Log("VST3FX", "Set preset %d ('%s') via param %d normalized=%.4f",
-            presetIdx, GetPresetName(presetIdx), (int)info.id, normalized);
+        
         break;
     }
 }
@@ -1058,7 +1046,7 @@ void VST3Effect::setupProcessing(int bufferSize) {
 
     res = proc->setProcessing(true);
     if (res != kResultOk) {
-        Trace::Log("VST3FX", "setProcessing returned non-OK (often fine)");
+        
     }
     isProcessing_ = true;
 }

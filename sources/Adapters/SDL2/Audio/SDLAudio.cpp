@@ -37,7 +37,7 @@ void SDLAudio::Init() {
    int actualChannels = drv->GetChannelCount() ;
    SetActualSampleRate(actualRate) ;
    SetActualChannelCount(actualChannels) ;
-   Trace::Log("AUDIO","Audio system running at %d Hz, %d channels", actualRate, actualChannels) ;
+   
 } ;
 
 void SDLAudio::Close() {

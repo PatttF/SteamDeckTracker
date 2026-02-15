@@ -31,7 +31,7 @@ JackAudioDriver::JackAudioDriver(jack_client_t *client,AudioSettings &settings):
 	client_=client ;
 	sampleRate_ = (int)jack_get_sample_rate(client_) ;
 	settings_.sampleRate_ = sampleRate_ ;
-	Trace::Log("AUDIO","JACK sample rate: %d Hz", sampleRate_) ;
+	
 	portL_ = jack_port_register (client, "mixL",JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
 	portR_ = jack_port_register (client, "mixR",JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
 	thread_=0 ;
@@ -42,7 +42,7 @@ JackAudioDriver::~JackAudioDriver() {
 
 bool JackAudioDriver::InitDriver() {
 
-	Trace::Debug("[J]: Init driver") ;
+	
 
 // Get output port and connect straight to the default system output
 
@@ -51,23 +51,23 @@ bool JackAudioDriver::InitDriver() {
 
 	const char **ports;
 
-	Trace::Debug("[J]: Get ports") ;
+	
 	if ((ports = jack_get_ports (client_, NULL, NULL, 
                                JackPortIsPhysical|JackPortIsInput)) == NULL) {
-		Trace::Debug("Cannot find any physical playback ports\n");
+		
 		return false ;
 	}
 	
-	Trace::Debug("[J]: connect L") ;
+	
 	if (jack_connect (client_, jack_port_name (portL_), ports[0])) {
 	    fprintf (stderr, "cannot connect left out\n");
 	}
-	Trace::Debug("[J]: connect R") ;
+	
 	if (jack_connect (client_, jack_port_name (portR_), ports[1])) {
 	    fprintf (stderr, "cannot connect right out\n");
 	}
 	running_=false ;
-	Trace::Debug("[J]: free ports") ;
+	
 	free (ports);
 
 	return true ;
@@ -85,7 +85,7 @@ void JackAudioDriver::CloseDriver() {
 } ;
 
 bool JackAudioDriver::StartDriver() {
-	Trace::Debug("[J]: start driver") ;
+	
 	tempBuffer_=0 ;
 	available_=0 ;
 	startTime_ = jack_get_time() ;
@@ -155,7 +155,7 @@ void JackAudioDriver::ProcessCallback(jack_nframes_t frames) {
 					SYS_MEMSET(tempBuffer_,0,nframes*sizeof(short)*2) ;
 					available_=nframes ;
 					current_=tempBuffer_ ;
-					Trace::Debug("[J]: Underrun detected") ;
+					
 				}
 			}
 			read=(available_>nframes)?nframes:available_ ;

@@ -72,7 +72,7 @@ const char *MidiService::GetOutDeviceName(int index) {
 
 void MidiService::SendToDevice(MidiMessage &msg, int deviceIndex) {
 	if (deviceIndex < 0 || deviceIndex >= Size()) {
-		Trace::Log("MidiService", "SendToDevice: deviceIndex=%d out of range (size=%d)", deviceIndex, Size());
+		
 		return;
 	}
 	IteratorPtr<MidiOutDevice> it(GetIterator());
@@ -91,7 +91,7 @@ void MidiService::SendToDevice(MidiMessage &msg, int deviceIndex) {
 			return;
 		}
 	}
-	Trace::Log("MidiService", "SendToDevice: deviceIndex=%d not found in iteration", deviceIndex);
+	
 }
 
 void MidiService::StopStartedDevices() {
@@ -128,7 +128,7 @@ void MidiService::RefreshDevices() {
 		MidiInDevice &current = it->CurrentItem();
 		merger_->Insert(current);
 	}
-	Trace::Log("MidiService", "Refreshed devices: %d output(s)", Size());
+	
 }
 
 void MidiService::rebuildDriverList() {
@@ -158,7 +158,7 @@ void MidiService::Stop() {
 void MidiService::QueueMessage(MidiMessage &m) {
     if (!device_)
         return;
-    // Trace::Log("MidiService", "QueueMessage: status=0x%X", m.status_);
+    // 
 
     midiQueue_.enqueue(m);
 }
@@ -228,11 +228,11 @@ void MidiService::flushOutQueue() {
     // Drain all messages currently in the queue
     while (midiQueue_.try_dequeue(msg)) {
         batch.Insert(msg);
-        // Trace::Log("MidiService", "flushOutQueue: status=0x%X", msg.status_);
+        // 
     }
     if (batch.Size() > 0) {
         device_->SendQueue(batch);
-		// Trace::Log("MidiService", "flushOutQueue: batch=0x%X", batch);
+		// 
     }
 }
 #else
@@ -260,13 +260,13 @@ void MidiService::startDevice() {
 			// Don't re-start if already running (e.g. started by SendToDevice)
 			if (current.IsRunning()) {
 				device_ = &current;
-				Trace::Log("MidiService", "midi device %s already running", deviceName_.c_str());
+				
 			} else if (current.Init()) {
 				if (current.Start()) {
-					Trace::Log("MidiService", "midi device %s started", deviceName_.c_str());
+					
 					device_ = &current;
 				} else {
-					Trace::Log("MidiService", "midi device %s failed to start", deviceName_.c_str());
+					
 					current.Close();
 				}
 			}

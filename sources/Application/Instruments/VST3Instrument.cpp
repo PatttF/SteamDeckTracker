@@ -37,6 +37,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
@@ -630,8 +631,6 @@ bool VST3Instrument::Start(int channel, unsigned char note, bool retrigger) {
     if (channel < 0 || channel >= SONG_CHANNEL_COUNT) return false;
     if (!audioProcessor_) return false;
 
-    Trace::Log("VST3DBG", "Start ch=%d note=%d retrigger=%d", channel, (int)note, (int)retrigger);
-
     // Queue note on
     PendingNoteEvent evt;
     evt.channel = 0; // VST3 always channel 0
@@ -925,13 +924,12 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         float* preProcL = outputBus.channelBuffers32[0];
         float* preProcR = outputBus.channelBuffers32[1];
         tresult processResult = proc->process(processData);
+        (void)processResult;
         float* postProcL = outputBus.channelBuffers32[0];
         float* postProcR = outputBus.channelBuffers32[1];
 
         // If yabridge replaced the output buffer pointers, read from the new ones
         if (postProcL != preProcL || postProcR != preProcR) {
-            Trace::Log("VST3DBG", "OUTPUT POINTERS CHANGED! pre=%p/%p post=%p/%p",
-                (void*)preProcL, (void*)preProcR, (void*)postProcL, (void*)postProcR);
             // Copy from yabridge's buffers to ours
             if (postProcL) memcpy(audioBufferL_, postProcL, size * sizeof(float));
             if (postProcR) memcpy(audioBufferR_, postProcR, size * sizeof(float));
@@ -947,7 +945,6 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
                 if (a > p) p = a;
                 if (fabsf(checkBuf[i] - 0.12345f) < 0.0001f) sentinelCount++;
             }
-            Trace::Log("VST3DBG", "EVENTS=%d  ret=%d  peak32=%.6f  sentinel=%d/32  outPtr=%p postPtr=%p", evtCount, (int)processResult, p, sentinelCount, (void*)audioBufferL_, (void*)postProcL);
         }
 
         // Debug: log process result and peak levels every ~1 second (86 calls at 44100/512)
@@ -962,11 +959,6 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
                 if (ar > peakR) peakR = ar;
             }
             // Also check output bus pointers and silence flags
-            Trace::Log("VST3DBG", "process() ret=%d  size=%d  events=%d  peakL=%.6f  peakR=%.6f  active=%d processing=%d  outBufL=%p outBufR=%p silFlg=%llu",
-                (int)processResult, size, eventList.getEventCount(),
-                peakL, peakR, (int)isActive_, (int)isProcessing_,
-                (void*)outputBus.channelBuffers32[0], (void*)outputBus.channelBuffers32[1],
-                (unsigned long long)outputBus.silenceFlags);
         }
 
         // Sanitise NaN/Inf
@@ -1257,7 +1249,6 @@ bool VST3Instrument::RestoreComponentState(const std::string &base64Data) {
         }
     }
 
-    Trace::Log("VST3", "Restored component state (%d bytes)", (int)blob.size());
     return true;
 }
 
@@ -1272,11 +1263,9 @@ bool VST3Instrument::RestoreControllerState(const std::string &base64Data) {
 
     tresult res = ctrl->setState(&stream);
     if (res != kResultOk) {
-        Trace::Log("VST3", "IEditController::setState returned %d (may be unsupported)", (int)res);
         return false;
     }
 
-    Trace::Log("VST3", "Restored controller state (%d bytes)", (int)blob.size());
     return true;
 }
 
@@ -1366,6 +1355,21 @@ void VST3Instrument::loadPluginInner() {
         return;
     }
 
+    // Detect yabridge-bridged plugins (the .so is a symlink to the
+    // yabridge chainloader).
+    bool isYabridge = false;
+    {
+        char linkTarget[512];
+        ssize_t len = readlink(soPath.c_str(), linkTarget, sizeof(linkTarget) - 1);
+        if (len > 0) {
+            linkTarget[len] = '\0';
+            if (strstr(linkTarget, "yabridge"))
+                isYabridge = true;
+        }
+        if (soPath.find("yabridge") != std::string::npos)
+            isYabridge = true;
+    }
+
     // dlopen the module
     moduleHandle_ = dlopen(soPath.c_str(), RTLD_LAZY);
     if (!moduleHandle_) {
@@ -1381,6 +1385,89 @@ void VST3Instrument::loadPluginInner() {
         moduleHandle_ = nullptr;
         return;
     }
+
+    // For yabridge plugins, ModuleEntry spawns a Wine host process.
+    // If that process crashes or hangs, it can take our whole app down.
+    // Use fork() to probe ModuleEntry in a child process first —
+    // if the child survives, we know it's safe to call in the parent.
+    if (isYabridge) {
+        dlclose(moduleHandle_);
+        moduleHandle_ = nullptr;
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            Trace::Error("VST3: fork() failed: %s", strerror(errno));
+            return;
+        }
+        if (pid == 0) {
+            // ---- Child process ----
+            void *childHandle = dlopen(soPath.c_str(), RTLD_LAZY);
+            if (!childHandle) _exit(10);
+            VST3ModuleEntryFunc childEntry =
+                (VST3ModuleEntryFunc)dlsym(childHandle, "ModuleEntry");
+            if (!childEntry) { dlclose(childHandle); _exit(11); }
+            bool ok = childEntry(childHandle);
+            if (!ok) { dlclose(childHandle); _exit(12); }
+            VST3ModuleExitFunc childExit =
+                (VST3ModuleExitFunc)dlsym(childHandle, "ModuleExit");
+            if (childExit) childExit();
+            dlclose(childHandle);
+            _exit(0);
+        }
+
+        // ---- Parent process: wait for child with timeout ----
+        int status = 0;
+        bool childDone = false;
+        for (int i = 0; i < 60; i++) {
+            pid_t w = waitpid(pid, &status, WNOHANG);
+            if (w > 0) { childDone = true; break; }
+            if (w < 0) { childDone = true; break; }
+            usleep(500000); // 0.5s
+        }
+        if (!childDone) {
+            Trace::Error("VST3: ModuleEntry probe timed out — killing child");
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+            return;
+        }
+
+        if (WIFEXITED(status)) {
+            int code = WEXITSTATUS(status);
+            if (code != 0) {
+                if (code >= 128) {
+                    Trace::Error("VST3: ModuleEntry probe crashed (signal %d)",
+                                 code - 128);
+                } else {
+                    Trace::Error("VST3: ModuleEntry probe failed (code %d)",
+                                 code);
+                }
+                return;
+            }
+        } else if (WIFSIGNALED(status)) {
+            Trace::Error("VST3: ModuleEntry probe killed by signal %d",
+                         WTERMSIG(status));
+            return;
+        } else {
+            Trace::Error("VST3: ModuleEntry probe failed (status=0x%x)",
+                         status);
+            return;
+        }
+
+        // Probe passed — re-dlopen + ModuleEntry in the parent
+        moduleHandle_ = dlopen(soPath.c_str(), RTLD_LAZY);
+        if (!moduleHandle_) {
+            Trace::Error("VST3: re-dlopen failed: %s", dlerror());
+            return;
+        }
+        moduleEntry = (VST3ModuleEntryFunc)dlsym(moduleHandle_, "ModuleEntry");
+        if (!moduleEntry) {
+            Trace::Error("VST3: ModuleEntry missing on re-dlopen");
+            dlclose(moduleHandle_);
+            moduleHandle_ = nullptr;
+            return;
+        }
+    }
+
     if (!moduleEntry(moduleHandle_)) {
         Trace::Error("VST3: ModuleEntry failed");
         dlclose(moduleHandle_);
@@ -1427,15 +1514,11 @@ void VST3Instrument::loadPluginInner() {
                 if (factory->getClassInfo(i, &ci) == kResultOk &&
                     strcmp(ci.category, kVstAudioEffectClass) == 0) {
                     memcpy(pluginClassId_, ci.cid, 16);
-                    Trace::Log("VST3", "Resolved zero CID -> %s",
-                               tuidToHex(pluginClassId_).c_str());
                     // Also grab subcategories so we can fix moduleinfo.json
                     if (factory2) {
                         PClassInfo2 ci2;
                         if (factory2->getClassInfo2(i, &ci2) == kResultOk) {
                             resolvedSub = ci2.subCategories;
-                            Trace::Log("VST3", "Resolved subcategories: '%s'",
-                                       resolvedSub.c_str());
                         }
                     }
                     // Update stored variable
@@ -1485,10 +1568,6 @@ void VST3Instrument::loadPluginInner() {
                     if (jf.is_open()) {
                         jf << json;
                         jf.close();
-                        Trace::Log("VST3",
-                            "Updated moduleinfo.json: CID=%s sub='%s'",
-                            tuidToHex(pluginClassId_).c_str(),
-                            resolvedSub.c_str());
                     }
                 }
             }
@@ -1533,14 +1612,11 @@ void VST3Instrument::loadPluginInner() {
     if (res == kResultOk && controller) {
         editController_ = controller;
         componentIsController_ = true;
-        Trace::Log("VST3", "Component implements IEditController directly");
     } else {
         // Create separate controller
         TUID controllerCID;
         res = component->getControllerClassId(controllerCID);
         if (res == kResultOk) {
-            Trace::Log("VST3", "Separate controller CID: %s",
-                tuidToHex((const uint8_t*)controllerCID).c_str());
             res = factory->createInstance(
                 controllerCID,
                 IEditController::iid,
@@ -1550,7 +1626,6 @@ void VST3Instrument::loadPluginInner() {
                 controller->initialize(static_cast<FUnknown*>(&gHostApp));
                 editController_ = controller;
                 componentIsController_ = false;
-                Trace::Log("VST3", "Separate controller created OK");
             } else {
                 Trace::Error("VST3: createInstance for controller failed (res=%d)", (int)res);
             }
@@ -1576,10 +1651,6 @@ void VST3Instrument::loadPluginInner() {
             if (compCP && ctrlCP) {
                 compCP->connect(ctrlCP);
                 ctrlCP->connect(compCP);
-                Trace::Log("VST3", "Connected component <-> controller via IConnectionPoint");
-            } else {
-                Trace::Log("VST3", "IConnectionPoint not available (comp=%p ctrl=%p)",
-                    (void*)compCP, (void*)ctrlCP);
             }
             if (compCP) compCP->release();
             if (ctrlCP) ctrlCP->release();
@@ -1593,11 +1664,6 @@ void VST3Instrument::loadPluginInner() {
             if (stRes == kResultOk && stream.size() > 0) {
                 stream.resetRead();
                 ctrl->setComponentState(&stream);
-                Trace::Log("VST3", "Synced component state to controller (%d bytes)",
-                    (int)stream.size());
-            } else {
-                Trace::Log("VST3", "Component getState returned %d (size=%d)",
-                    (int)stRes, (int)stream.size());
             }
         }
     }
@@ -1641,8 +1707,6 @@ void VST3Instrument::loadPluginInner() {
         cachedOutputSize_ = initBlock;
 
         setupProcessing(initBlock);
-        Trace::Log("VST3", "Pre-initialized processing (block=%d rate=%d)",
-                   initBlock, sampleRate);
 
         // Force-load preset 0 via setParamNormalized on the controller —
         // some plugins (especially JUCE-based) don't load their init preset
@@ -1664,7 +1728,6 @@ void VST3Instrument::loadPluginInner() {
                 pendingEventsMutex_.Lock();
                 pendingParamChanges_.push_back(pc);
                 pendingEventsMutex_.Unlock();
-                Trace::Log("VST3", "Force-loaded preset 0 via param %d", (int)pcId);
             }
         }
     }
@@ -1730,8 +1793,6 @@ void VST3Instrument::discoverParameters() {
 
         parameters_.push_back(param);
     }
-
-    Trace::Log("VST3", "Discovered %d parameters for %s", (int)parameters_.size(), name_);
 }
 
 // Helper: recursively find files with a given extension in a directory
@@ -1854,10 +1915,7 @@ void VST3Instrument::discoverPresets() {
             // If not found in parameters_ (e.g. it was hidden/readonly), use raw paramId
             if (programChangeParamIdx_ < 0) {
                 // Create a synthetic entry so we can still use it
-                Trace::Log("VST3", "Program change param %d not in parameters_ list, using raw", (int)info.id);
             }
-            Trace::Log("VST3", "Found kIsProgramChange parameter: id=%d stepCount=%d",
-                (int)info.id, (int)info.stepCount);
             break;
         }
     }
@@ -1866,7 +1924,6 @@ void VST3Instrument::discoverPresets() {
     IUnitInfo* unitInfo = nullptr;
     tresult res = ctrl->queryInterface(IUnitInfo::iid, (void**)&unitInfo);
     if (res != kResultOk || !unitInfo) {
-        Trace::Log("VST3", "No IUnitInfo — trying file-based preset scanning");
         discoverPresetFiles();
         if (!usingFilePresets_) {
             discoverHardcodedPresets();
@@ -1878,7 +1935,6 @@ void VST3Instrument::discoverPresets() {
     }
 
     int32 listCount = unitInfo->getProgramListCount();
-    Trace::Log("VST3", "Found %d program list(s)", (int)listCount);
 
     for (int32 li = 0; li < listCount; li++) {
         ProgramListInfo plInfo;
@@ -1904,19 +1960,12 @@ void VST3Instrument::discoverPresets() {
             }
         }
 
-        Trace::Log("VST3", "  List[%d] '%s': %d programs", (int)plInfo.id,
-            pl.name.c_str(), (int)pl.programs.size());
-
         programLists_.push_back(pl);
     }
 
     unitInfo->release();
 
     if (!programLists_.empty()) {
-        Trace::Log("VST3", "Total: %d bank(s), first bank '%s' has %d presets",
-            (int)programLists_.size(),
-            programLists_[0].name.c_str(),
-            (int)programLists_[0].programs.size());
     }
 
     // If this plugin has a known file-preset mapping, always prefer file-based
@@ -1931,8 +1980,6 @@ void VST3Instrument::discoverPresets() {
     }
 
     if (hasKnownMapping) {
-        Trace::Log("VST3", "Known preset mapping found for '%s' — "
-            "trying file-based presets (overriding IUnitInfo)", name_);
         discoverPresetFiles();
     }
 
@@ -1977,12 +2024,8 @@ void VST3Instrument::discoverPresetFiles() {
     }
 
     if (!mapping) {
-        Trace::Log("VST3", "No known preset file mapping for '%s'", name_);
         return;
     }
-
-    Trace::Log("VST3", "Scanning preset files for '%s' (ext: %s, skip: %d)",
-        name_, mapping->extension, mapping->headerSkipBytes);
 
     // Also check user home directories
     std::string homeDir;
@@ -2070,7 +2113,6 @@ void VST3Instrument::discoverPresetFiles() {
     }
 
     if (bankMap.empty()) {
-        Trace::Log("VST3", "No preset files found for '%s'", name_);
         return;
     }
 
@@ -2098,13 +2140,6 @@ void VST3Instrument::discoverPresetFiles() {
 
     currentBank_ = 0;
     currentPreset_ = 0;
-
-    Trace::Log("VST3", "File presets: %d bank(s), total presets across banks",
-        (int)programLists_.size());
-    for (size_t i = 0; i < programLists_.size(); i++) {
-        Trace::Log("VST3", "  Bank '%s': %d presets",
-            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
-    }
 }
 
 // ====================================================================
@@ -2112,8 +2147,6 @@ void VST3Instrument::discoverPresetFiles() {
 // ====================================================================
 void VST3Instrument::discoverHardcodedPresets() {
     if (strstr(name_, "OsTIrus") == nullptr) return;
-
-    Trace::Log("VST3", "Using hardcoded ROM presets for OsTIrus");
 
     programLists_.clear();
     for (int b = 0; b < OSTIRUS_BANK_COUNT; b++) {
@@ -2129,9 +2162,6 @@ void VST3Instrument::discoverHardcodedPresets() {
     usingMidiPresets_ = true;
     currentBank_ = 0;
     currentPreset_ = 0;
-
-    Trace::Log("VST3", "Hardcoded presets: %d banks x %d patches",
-        OSTIRUS_BANK_COUNT, OSTIRUS_PATCHES_PER_BANK);
 }
 
 // ====================================================================
@@ -2186,12 +2216,9 @@ void VST3Instrument::discoverPatchManagerPresets() {
         mapping->cacheDirSuffix +
         "/patchmanager/patchmanagerdb.cache";
 
-    Trace::Log("VST3", "Looking for patchmanager cache: %s", cachePath.c_str());
-
     // Open with POSIX I/O (avoid project fopen macro)
     int fd = open(cachePath.c_str(), O_RDONLY);
     if (fd < 0) {
-        Trace::Log("VST3", "No patchmanager cache found for '%s'", name_);
         return;
     }
 
@@ -2256,8 +2283,6 @@ void VST3Instrument::discoverPatchManagerPresets() {
     }
     uint32_t pmdsVer, pmdsSize, bankCount;
     if (!readU32(pmdsVer) || !readU32(pmdsSize) || !readU32(bankCount)) return;
-
-    Trace::Log("VST3", "Patchmanager cache: %d banks", (int)bankCount);
 
     // Sanity limit
     if (bankCount > 256) {
@@ -2358,7 +2383,6 @@ void VST3Instrument::discoverPatchManagerPresets() {
     }
 
     if (programLists_.empty()) {
-        Trace::Log("VST3", "No patches found in patchmanager cache");
         return;
     }
 
@@ -2369,16 +2393,6 @@ void VST3Instrument::discoverPatchManagerPresets() {
 
     currentBank_ = 0;
     currentPreset_ = 0;
-
-    Trace::Log("VST3", "Patchmanager presets: %d bank(s), will use MIDI for selection",
-        (int)programLists_.size());
-    for (size_t i = 0; i < programLists_.size() && i < 5; i++) {
-        Trace::Log("VST3", "  Bank '%s': %d presets",
-            programLists_[i].name.c_str(), (int)programLists_[i].programs.size());
-    }
-    if (programLists_.size() > 5) {
-        Trace::Log("VST3", "  ... and %d more banks", (int)(programLists_.size() - 5));
-    }
 }
 
 // ---- Binary-safe CBOR merge utilities (no value decode/re-encode) ----
@@ -2649,7 +2663,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
     {
         size_t sl = filePath.rfind('/');
         std::string shortName = (sl != std::string::npos) ? filePath.substr(sl+1) : filePath;
-        Trace::Log("VST3", "loadPresetFromFile: %s", shortName.c_str());
     }
 
     // Use POSIX I/O to avoid the project's fopen macro redirect
@@ -2704,10 +2717,7 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         }
         if (zret == Z_OK) {
             decompressed.resize(destLen);
-            Trace::Log("VST3", "Decompressed preset: %ld -> %ld bytes",
-                (long)data.size(), (long)destLen);
         } else {
-            Trace::Log("VST3", "Zlib decompression failed (ret=%d), using raw data", zret);
             isZlib = false;
             decompressed.clear();
         }
@@ -2812,8 +2822,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         size_t gsZstdLen = gsBinSectionLen - 8;
 
         std::string gsJson((const char*)gsRaw + 17, (size_t)gsJsonLen);
-        Trace::Log("VST3", "XferJson merge: getState CBOR %u bytes (zstd %ld), preset CBOR %u bytes (zstd %ld)",
-            gsDecompSz, (long)gsZstdLen, prDecompSz, (long)prZstdLen);
 
         // ---- Decompress both CBOR blobs ----
         std::vector<uint8_t> gsCbor(gsDecompSz);
@@ -2846,9 +2854,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         // Build lookup from preset keys → raw value spans
         std::map<std::string, CborValueSpan> prLookup;
         for (auto &e : prEntries) prLookup[e.first] = e.second;
-
-        Trace::Log("VST3", "CBOR merge: getState has %ld keys, preset has %ld keys",
-            (long)gsEntries.size(), (long)prEntries.size());
 
         // ---- Build merged CBOR map ----
         // Use getState's key set (162 keys). For each key:
@@ -2886,8 +2891,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
                 }
             }
         }
-        Trace::Log("VST3", "CBOR merge: %ld keys replaced from preset, %ld kept from getState, merged %ld bytes",
-            (long)replaced, (long)kept, (long)merged.size());
 
         // ---- Recompress with zstd ----
         size_t zstdBound = ZSTD_compressBound(merged.size());
@@ -2936,10 +2939,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         // Zstd-compressed merged CBOR
         output.insert(output.end(), compressed.begin(), compressed.end());
 
-        Trace::Log("VST3", "XferJson merge assembled: %ld bytes (JSON=%ld, CBOR=%ld->zstd=%ld, hash=%s)",
-            (long)output.size(), (long)gsJson.size(), (long)merged.size(),
-            (long)compressed.size(), newHash.c_str());
-
         // ---- setState with timeout ----
         {
             auto promisePtr = std::make_shared<std::promise<tresult>>();
@@ -2973,7 +2972,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
                 return false;
             }
         }
-        Trace::Log("VST3", "setState succeeded with XferJson CBOR merge");
 
         // ---- Sync controller ----
         if (editController_ && !componentIsController_) {
@@ -2998,7 +2996,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
                 }
             }
         }
-        Trace::Log("VST3", "Loaded preset from file: %s", filePath.c_str());
         return true;
       } catch (const std::bad_alloc &) {
         Trace::Error("VST3: Out of memory loading XferJson preset: %s", filePath.c_str());
@@ -3023,10 +3020,8 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         stream.setData(&decompressed[0], decompressed.size());
         tresult res = comp->setState(&stream);
         if (res == kResultOk) {
-            Trace::Log("VST3", "setState succeeded with decompressed data");
             loaded = true;
         } else {
-            Trace::Log("VST3", "setState rejected decompressed data (res=%d)", (int)res);
         }
     }
 
@@ -3039,7 +3034,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
                 filePath.c_str(), (int)res);
             return false;
         }
-        Trace::Log("VST3", "setState succeeded with raw data");
     }
 
     // Also notify the controller about the component state change
@@ -3066,8 +3060,6 @@ bool VST3Instrument::loadPresetFromFile(const std::string &filePath, int headerS
         }
     }
 
-    Trace::Log("VST3", "Loaded preset from file: %s (%ld bytes, skipped %d)",
-        filePath.c_str(), dataSize, headerSkipBytes);
     return true;
 }
 
@@ -3104,8 +3096,6 @@ bool VST3Instrument::savePresetToFile(const std::string &filePath) {
 
     const uint8_t *rawData = stream.data();
     size_t rawSize = stream.size();
-
-    Trace::Log("VST3", "Got %d bytes of raw state data for save", (int)rawSize);
 
     // Write the file
     int fd = open(filePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -3168,8 +3158,6 @@ bool VST3Instrument::savePresetToFile(const std::string &filePath) {
     (void)w;
     close(fd);
 
-    Trace::Log("VST3", "Saved preset to: %s (%d bytes + %d header)",
-        filePath.c_str(), (int)rawSize, mapping->headerSkipBytes);
     return true;
 }
 
@@ -3298,8 +3286,6 @@ void VST3Instrument::SetPreset(int presetIdx) {
             }
 
             if (loadPresetFromFile(fp.filePath, headerSkip)) {
-                Trace::Log("VST3", "Loaded file preset %d ('%s') from bank '%s'",
-                    presetIdx, fp.name.c_str(), pl.name.c_str());
             }
         }
         return;
@@ -3335,9 +3321,6 @@ void VST3Instrument::SetPreset(int presetIdx) {
         pendingMidiCCs_.push_back(progCC);
         pendingEventsMutex_.Unlock();
 
-        Trace::Log("VST3", "MIDI preset: bank %d ('%s') preset %d ('%s')",
-            currentBank_, pl.name.c_str(), presetIdx,
-            GetPresetName(presetIdx));
         return;
     }
 
@@ -3388,8 +3371,6 @@ void VST3Instrument::SetPreset(int presetIdx) {
             }
         }
 
-        Trace::Log("VST3", "Set preset %d ('%s') via param %d normalized=%.4f",
-            presetIdx, GetPresetName(presetIdx), (int)info.id, normalized);
         break;
     }
 }
@@ -3418,16 +3399,12 @@ void VST3Instrument::setupProcessing(int bufferSize) {
     int32 numOutputBuses = comp->getBusCount(kAudio, kOutput);
     int32 numEventInputBuses = comp->getBusCount(kEvent, kInput);
 
-    Trace::Log("VST3", "setupProcessing: audioIn=%d audioOut=%d eventIn=%d block=%d rate=%d",
-        (int)numInputBuses, (int)numOutputBuses, (int)numEventInputBuses, bufferSize, sampleRate);
-
     // Activate bus 0 for input/output, explicitly deactivate all others.
     // Some plugins (e.g. Serum 2 via yabridge) crash if unused buses are
     // not explicitly deactivated.
     for (int32 i = 0; i < numOutputBuses; i++) {
         comp->activateBus(kAudio, kOutput, i, i == 0);
     }
-    Trace::Log("VST3", "  activateBus(audioOut,0) = active, deactivated %d extra", (int)(numOutputBuses - 1));
 
     for (int32 i = 0; i < numInputBuses; i++) {
         comp->activateBus(kAudio, kInput, i, i == 0);
@@ -3444,18 +3421,15 @@ void VST3Instrument::setupProcessing(int bufferSize) {
         if (numInputBuses > 0) {
             std::vector<SpeakerArrangement> inputs(numInputBuses, 0);
             inputs[0] = stereo;
-            tresult busRes = proc->setBusArrangements(inputs.data(), numInputBuses, outputs.data(), numOutputBuses);
-            Trace::Log("VST3", "  setBusArrangements(in=%d,out=%d) = %d", (int)numInputBuses, (int)numOutputBuses, (int)busRes);
+            proc->setBusArrangements(inputs.data(), numInputBuses, outputs.data(), numOutputBuses);
         } else {
-            tresult busRes = proc->setBusArrangements(nullptr, 0, outputs.data(), numOutputBuses);
-            Trace::Log("VST3", "  setBusArrangements(in=0,out=%d) = %d", (int)numOutputBuses, (int)busRes);
+            proc->setBusArrangements(nullptr, 0, outputs.data(), numOutputBuses);
         }
     }
 
     // Activate event (MIDI) buses
     for (int32 i = 0; i < numEventInputBuses; i++) {
-        tresult evtRes = comp->activateBus(kEvent, kInput, i, true);
-        Trace::Log("VST3", "  activateBus(eventIn,%d) = %d", (int)i, (int)evtRes);
+        comp->activateBus(kEvent, kInput, i, true);
     }
 
     // Setup processing — zero-init to avoid garbage in padding bytes
@@ -3483,9 +3457,6 @@ void VST3Instrument::setupProcessing(int bufferSize) {
 
     // Start processing
     res = proc->setProcessing(true);
-    if (res != kResultOk) {
-        Trace::Log("VST3", "setProcessing(true) returned non-OK (this is often fine)");
-    }
     isProcessing_ = true;
 }
 

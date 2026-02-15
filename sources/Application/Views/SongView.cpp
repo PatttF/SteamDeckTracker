@@ -743,7 +743,7 @@ void SongView::processNormalButtonMask(unsigned int mask) {
 
                 if (mask & EPBM_DOWN) {
                     ViewType vt = VT_MIXER;
-                    Trace::Log("SongView", "Requesting switch to MIXER (songY=%d, offset=%d)", viewData_->songY_, viewData_->songOffset_);
+                    
                     ViewEvent ve(VET_SWITCH_VIEW, &vt);
                     SetChanged();
                     NotifyObservers(&ve);

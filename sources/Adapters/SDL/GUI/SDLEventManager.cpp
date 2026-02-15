@@ -53,10 +53,10 @@ bool SDLEventManager::Init()
   {
 		char sourceName[128] ;
 		joystick_[i]=SDL_JoystickOpen(i) ;
-    Trace::Log("EVENT","joystick[%d]=%x",i,joystick_[i]) ;
-		Trace::Log("EVENT","Number of axis:%d",SDL_JoystickNumAxes(joystick_[i])) ;
-		Trace::Log("EVENT","Number of buttons:%d",SDL_JoystickNumButtons(joystick_[i])) ;
-		Trace::Log("EVENT","Number of hats:%d",SDL_JoystickNumHats(joystick_[i])) ;
+    
+		
+		
+		
 		sprintf(sourceName,"buttonJoy%d",i) ;
 		buttonCS_[i]=new ButtonControllerSource(sourceName) ;
 		sprintf(sourceName,"axisJoy%d",i) ;
@@ -86,7 +86,7 @@ int SDLEventManager::MainLoop()
 				case SDL_KEYDOWN:
 					if (dumpEvent_) 
           {
-						Trace::Log("EVENT","key(%s):%d",keyname_[event.key.keysym.sym],1) ;
+						
 					}
 					keyboardCS_->SetKey((int)event.key.keysym.sym,true) ;
 					break ;
@@ -94,7 +94,7 @@ int SDLEventManager::MainLoop()
 				case SDL_KEYUP:
 					if (dumpEvent_) 
           {
-						Trace::Log("EVENT","key(%s):%d",keyname_[event.key.keysym.sym],0) ;
+						
 					}
 					keyboardCS_->SetKey((int)event.key.keysym.sym,false) ;
 					break ;
@@ -105,13 +105,13 @@ int SDLEventManager::MainLoop()
 					break ;
 				case SDL_JOYBUTTONUP:
 					if (dumpEvent_) {
-						Trace::Log("EVENT","but(%d):%d",event.button.which,event.jbutton.button) ;
+						
 					}
 					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,false) ;
 					break ;
 				case SDL_JOYAXISMOTION:
 					if (dumpEvent_) {
-						Trace::Log("EVENT","joy(%d)::%d=%d",event.jaxis.which,event.jaxis.axis,event.jaxis.value) ;
+						
 					}
 					joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
 					break ;
@@ -123,7 +123,7 @@ int SDLEventManager::MainLoop()
 							int mask = 1<<i ;
 							if (event.jhat.value&mask)
               {
-								Trace::Log("EVENT","hat(%d)::%d::%d",event.jhat.which,event.jhat.hat,i) ;
+								
 							}
 						}
 					}
@@ -132,7 +132,7 @@ int SDLEventManager::MainLoop()
 				case SDL_JOYBALLMOTION:
 					if (dumpEvent_)
           {
-						Trace::Log("EVENT","ball(%d)::%d=(%d,%d)",event.jball.which,event.jball.ball,event.jball.xrel,event.jball.yrel) ;
+						
 					}
 					break ;
 		}
@@ -160,7 +160,7 @@ int SDLEventManager::MainLoop()
 
 void SDLEventManager::PostQuitMessage()
 {
-  Trace::Log("EVENT","SDEM:PostQuitMessage()") ;
+  
 	finished_=true  ;
 } ; 
 

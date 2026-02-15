@@ -83,8 +83,7 @@ bool SDLEventManager::Init()
 			gameController_[i] = SDL_GameControllerOpen(i);
 			if (gameController_[i]) {
 				joystick_[i] = SDL_GameControllerGetJoystick(gameController_[i]);
-				Trace::Log("EVENT","GameController[%d] opened: %s",i,
-					SDL_GameControllerName(gameController_[i]));
+				
 			}
 		}
 
@@ -96,10 +95,10 @@ bool SDLEventManager::Init()
 			instanceId_[i] = SDL_JoystickInstanceID(joystick_[i]);
 		}
 
-    Trace::Log("EVENT","joystick[%d]=%x instanceId=%d",i,joystick_[i],instanceId_[i]) ;
-		Trace::Log("EVENT","Number of axis:%d",SDL_JoystickNumAxes(joystick_[i])) ;
-		Trace::Log("EVENT","Number of buttons:%d",SDL_JoystickNumButtons(joystick_[i])) ;
-		Trace::Log("EVENT","Number of hats:%d",SDL_JoystickNumHats(joystick_[i])) ;
+    
+		
+		
+		
 		snprintf(sourceName,sizeof(sourceName),"buttonJoy%d",i) ;
 		buttonCS_[i]=new ButtonControllerSource(sourceName) ;
 		snprintf(sourceName,sizeof(sourceName),"axisJoy%d",i) ;
@@ -125,7 +124,7 @@ void SDLEventManager::OpenDevice(int deviceIndex) {
 		if (!joystick_[s]) { slot = s; break; }
 	}
 	if (slot < 0) {
-		Trace::Log("EVENT", "OpenDevice(%d): no free slot", deviceIndex);
+		
 		return;
 	}
 
@@ -135,8 +134,7 @@ void SDLEventManager::OpenDevice(int deviceIndex) {
 		gameController_[slot] = SDL_GameControllerOpen(deviceIndex);
 		if (gameController_[slot]) {
 			joystick_[slot] = SDL_GameControllerGetJoystick(gameController_[slot]);
-			Trace::Log("EVENT", "Hotplug GameController[%d] -> slot %d: %s",
-				deviceIndex, slot, SDL_GameControllerName(gameController_[slot]));
+			
 		}
 	}
 
@@ -146,8 +144,7 @@ void SDLEventManager::OpenDevice(int deviceIndex) {
 
 	if (joystick_[slot]) {
 		instanceId_[slot] = SDL_JoystickInstanceID(joystick_[slot]);
-		Trace::Log("EVENT", "Hotplug joystick[%d] -> slot %d instanceId=%d",
-			deviceIndex, slot, instanceId_[slot]);
+		
 	}
 
 	if (!buttonCS_[slot]) {
@@ -189,7 +186,7 @@ int SDLEventManager::MainLoop()
 				case SDL_KEYDOWN:
 					if (dumpEvent_) 
           {
-                        Trace::Log("EVENT","key(%s:%d):%d",SDL_GetScancodeName(event.key.keysym.scancode),event.key.keysym.scancode,1) ;
+                        
 					}
 					if (capturing_) {
 						char buf[64];
@@ -207,7 +204,7 @@ int SDLEventManager::MainLoop()
 				case SDL_KEYUP:
 					if (dumpEvent_) 
           {
-                        Trace::Log("EVENT","key(%s:%d):%d",SDL_GetScancodeName(event.key.keysym.scancode),event.key.keysym.scancode,0) ;
+                        
 					}
                     keyboardCS_->SetKey((int)event.key.keysym.scancode,false) ;
 					break ;
@@ -222,8 +219,7 @@ int SDLEventManager::MainLoop()
 						snprintf(buf, sizeof(buf), "but:%d:%d",
 							capIdx, (int)event.jbutton.button);
 						capturedSource_ = buf;
-						Trace::Log("EVENT","CAPTURE joy button: %s (idx=%d instId=%d)",
-							buf, idx, (int)event.jbutton.which);
+						
 					}
 					if (idx >= 0 && buttonCS_[idx])
 						buttonCS_[idx]->SetButton(event.jbutton.button,true) ;
@@ -233,7 +229,7 @@ int SDLEventManager::MainLoop()
 				{
 					int idx = InstanceToIndex(event.jbutton.which);
 					if (dumpEvent_) {
-						Trace::Log("EVENT","but(%d):%d",idx,event.jbutton.button) ;
+						
 					}
 					if (idx >= 0 && buttonCS_[idx])
 						buttonCS_[idx]->SetButton(event.jbutton.button,false) ;
@@ -243,7 +239,7 @@ int SDLEventManager::MainLoop()
 				{
 					int idx = InstanceToIndex(event.jaxis.which);
 					if (dumpEvent_) {
-						Trace::Log("EVENT","joy(%d)::%d=%d",idx,event.jaxis.axis,event.jaxis.value) ;
+						
 					}
 					{
 						float v = float(event.jaxis.value)/32767.0f;
@@ -254,8 +250,7 @@ int SDLEventManager::MainLoop()
 								capIdx, (int)event.jaxis.axis,
 								v > 0 ? '+' : '-');
 							capturedSource_ = buf;
-							Trace::Log("EVENT","CAPTURE joy axis: %s (idx=%d instId=%d)",
-								buf, idx, (int)event.jaxis.which);
+							
 						}
 						if (idx >= 0 && joystickCS_[idx])
 							joystickCS_[idx]->SetAxis(event.jaxis.axis, v) ;
@@ -272,7 +267,7 @@ int SDLEventManager::MainLoop()
 							int mask = 1<<i ;
 							if (event.jhat.value&mask)
               {
-								Trace::Log("EVENT","hat(%d)::%d::%d",idx,event.jhat.hat,i) ;
+								
 							}
 						}
 					}
@@ -283,8 +278,7 @@ int SDLEventManager::MainLoop()
 								snprintf(buf, sizeof(buf), "hat:%d:%d",
 									(int)event.jhat.hat, i);
 								capturedSource_ = buf;
-								Trace::Log("EVENT","CAPTURE hat: %s (idx=%d instId=%d)",
-									buf, idx, (int)event.jhat.which);
+								
 								break;
 							}
 						}
@@ -296,7 +290,7 @@ int SDLEventManager::MainLoop()
 				case SDL_JOYBALLMOTION:
 					if (dumpEvent_)
           {
-						Trace::Log("EVENT","ball(%d)::%d=(%d,%d)",event.jball.which,event.jball.ball,event.jball.xrel,event.jball.yrel) ;
+						
 					}
 					break ;
 
@@ -305,7 +299,7 @@ int SDLEventManager::MainLoop()
 				{
 					int idx = InstanceToIndex(event.cbutton.which);
 					if (dumpEvent_) {
-						Trace::Log("EVENT","cbut(%d):%d down (instId=%d)",idx,(int)event.cbutton.button,(int)event.cbutton.which) ;
+						
 					}
 					if (capturing_) {
 						int capIdx = (idx >= 0) ? idx : 0;
@@ -313,8 +307,7 @@ int SDLEventManager::MainLoop()
 						snprintf(buf, sizeof(buf), "but:%d:%d",
 							capIdx, (int)event.cbutton.button);
 						capturedSource_ = buf;
-						Trace::Log("EVENT","CAPTURE controller button: %s (idx=%d instId=%d)",
-							buf, idx, (int)event.cbutton.which);
+						
 					}
 					if (idx >= 0 && buttonCS_[idx])
 						buttonCS_[idx]->SetButton(event.cbutton.button, true);
@@ -324,7 +317,7 @@ int SDLEventManager::MainLoop()
 				{
 					int idx = InstanceToIndex(event.cbutton.which);
 					if (dumpEvent_) {
-						Trace::Log("EVENT","cbut(%d):%d up (instId=%d)",idx,(int)event.cbutton.button,(int)event.cbutton.which) ;
+						
 					}
 					if (idx >= 0 && buttonCS_[idx])
 						buttonCS_[idx]->SetButton(event.cbutton.button, false);
@@ -335,7 +328,7 @@ int SDLEventManager::MainLoop()
 					int idx = InstanceToIndex(event.caxis.which);
 					float v = float(event.caxis.value) / 32767.0f;
 					if (dumpEvent_) {
-						Trace::Log("EVENT","caxis(%d)::%d=%d (instId=%d)",idx,(int)event.caxis.axis,event.caxis.value,(int)event.caxis.which) ;
+						
 					}
 					if (capturing_ && (v > 0.7f || v < -0.7f)) {
 						int capIdx = (idx >= 0) ? idx : 0;
@@ -344,8 +337,7 @@ int SDLEventManager::MainLoop()
 							capIdx, (int)event.caxis.axis,
 							v > 0 ? '+' : '-');
 						capturedSource_ = buf;
-						Trace::Log("EVENT","CAPTURE controller axis: %s (idx=%d instId=%d)",
-							buf, idx, (int)event.caxis.which);
+						
 					}
 					if (idx >= 0 && joystickCS_[idx])
 						joystickCS_[idx]->SetAxis(event.caxis.axis, v);
@@ -356,7 +348,7 @@ int SDLEventManager::MainLoop()
 				case SDL_CONTROLLERDEVICEADDED:
 				{
 					int deviceIndex = event.cdevice.which;
-					Trace::Log("EVENT","SDL_CONTROLLERDEVICEADDED: deviceIndex=%d", deviceIndex);
+					
 					if (InstanceToIndex(SDL_JoystickGetDeviceInstanceID(deviceIndex)) < 0) {
 						OpenDevice(deviceIndex);
 					}
@@ -365,7 +357,7 @@ int SDLEventManager::MainLoop()
 				case SDL_JOYDEVICEADDED:
 				{
 					int deviceIndex = event.jdevice.which;
-					Trace::Log("EVENT","SDL_JOYDEVICEADDED: deviceIndex=%d", deviceIndex);
+					
 					// Only open if not already tracked (might already be opened via CONTROLLERDEVICEADDED)
 					SDL_JoystickID jid = SDL_JoystickGetDeviceInstanceID(deviceIndex);
 					if (jid >= 0 && InstanceToIndex(jid) < 0) {
@@ -377,7 +369,7 @@ int SDLEventManager::MainLoop()
 				{
 					SDL_JoystickID instId = event.cdevice.which;
 					int idx = InstanceToIndex(instId);
-					Trace::Log("EVENT","SDL_CONTROLLERDEVICEREMOVED: instId=%d idx=%d", instId, idx);
+					
 					if (idx >= 0) {
 						if (gameController_[idx]) {
 							SDL_GameControllerClose(gameController_[idx]);
@@ -392,7 +384,7 @@ int SDLEventManager::MainLoop()
 				{
 					SDL_JoystickID instId = event.jdevice.which;
 					int idx = InstanceToIndex(instId);
-					Trace::Log("EVENT","SDL_JOYDEVICEREMOVED: instId=%d idx=%d", instId, idx);
+					
 					if (idx >= 0 && !gameController_[idx]) {
 						if (joystick_[idx]) {
 							SDL_JoystickClose(joystick_[idx]);
@@ -441,7 +433,7 @@ int SDLEventManager::MainLoop()
 
 void SDLEventManager::PostQuitMessage()
 {
-  Trace::Log("EVENT","SDEM:PostQuitMessage()") ;
+  
 	finished_=true  ;
 } ; 
 

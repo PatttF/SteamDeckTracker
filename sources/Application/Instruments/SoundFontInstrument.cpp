@@ -703,7 +703,7 @@ void SoundFontInstrument::SetSF2File(const char *path) {
         SelectPreset(0);
     }
 
-    Trace::Debug("SoundFontInstrument: Loaded %s with %d presets", sf2Name_, presetCount_);
+    
 }
 
 void SoundFontInstrument::loadPresets() {
@@ -730,8 +730,7 @@ const char *SoundFontInstrument::GetPresetName(int index) const {
 void SoundFontInstrument::SelectPreset(int presetIndex) {
     if (bankID_ < 0 || presetIndex < 0 || presetIndex >= presetCount_) return;
 
-    Trace::Log("SF2", "SelectPreset(%d) [was %d, bank %d, count %d]",
-                 presetIndex, currentPreset_, bankID_, presetCount_);
+    
 
     // Stop all active voices
     for (int c = 0; c < SONG_CHANNEL_COUNT; c++) {
@@ -750,7 +749,7 @@ void SoundFontInstrument::SelectPreset(int presetIndex) {
         presetVar_->SetInt(presetIndex);
     }
 
-    Trace::Debug("SoundFontInstrument: Selected preset %d: %s", presetIndex, GetPresetName(presetIndex));
+    
 }
 
 void SoundFontInstrument::StorePendingVariable(const char *name, const char *value) {

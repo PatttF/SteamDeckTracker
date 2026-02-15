@@ -131,7 +131,7 @@ WavFile *WavFile::Open(const char *path) {
         position+=wav->readBlock(position,4) ;
         memcpy(&size, wav->readBuffer_,4) ;
         size = Swap32(size) ;
-        Trace::Debug("WavFile::Open(): skipping JUNK with size=%d", size);
+        
         position+=size;
         position += wav->readBlock(position, 4);
         memcpy(&chunk,wav->readBuffer_,4) ;
