@@ -50,7 +50,7 @@ EffectView::EffectView(GUIWindow &w, ViewData *data) : FieldView(w, data) {
 EffectView::~EffectView() {
 }
 
-void EffectView::onEffectChange() {
+void EffectView::onEffectChange(FourCC focusField) {
     ClearFocus();
 
     I_Effect *old = current_;
@@ -67,16 +67,31 @@ void EffectView::onEffectChange() {
     T_SimpleList<UIField>::Empty();
     fillEffectParameters();
 
-    // Focus the first non-static field
-    UIField *firstFocusable = nullptr;
-    IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
-    for (fit->Begin(); !fit->IsDone(); fit->Next()) {
-        if (!fit->CurrentItem().IsStatic()) {
-            firstFocusable = &fit->CurrentItem();
-            break;
+    // If a specific field was requested, try to focus it
+    UIField *targetField = nullptr;
+    if (focusField != 0) {
+        IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
+        for (fit->Begin(); !fit->IsDone(); fit->Next()) {
+            UIIntVarField *ivf = dynamic_cast<UIIntVarField *>(&fit->CurrentItem());
+            if (ivf && ivf->GetVariableID() == focusField) {
+                targetField = ivf;
+                break;
+            }
         }
     }
-    SetFocus(firstFocusable ? firstFocusable : T_SimpleList<UIField>::GetFirst());
+
+    // Fall back to first non-static field
+    if (!targetField) {
+        IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
+        for (fit->Begin(); !fit->IsDone(); fit->Next()) {
+            if (!fit->CurrentItem().IsStatic()) {
+                targetField = &fit->CurrentItem();
+                break;
+            }
+        }
+    }
+
+    SetFocus(targetField ? targetField : T_SimpleList<UIField>::GetFirst());
 }
 
 void EffectView::fillEffectParameters() {
@@ -538,14 +553,14 @@ void EffectView::Update(Observable &o, I_ObservableData *d) {
             Variable *pv = vst3fx->FindVariable(VST3FX_PRESET);
             if (pv) pv->SetInt(0);
             vst3fx->SetPreset(0);
-            onEffectChange();
+            onEffectChange(VST3FX_BANK);
             isDirty_ = true;
             return;
         }
         Variable *pv = vst3fx->FindVariable(VST3FX_PRESET);
         if (pv && vst3fx->GetCurrentPreset() != pv->GetInt()) {
             vst3fx->SetPreset(pv->GetInt());
-            onEffectChange();
+            onEffectChange(VST3FX_PRESET);
             isDirty_ = true;
             return;
         }

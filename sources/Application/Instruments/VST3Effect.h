@@ -117,11 +117,16 @@ private:
     void setupProcessing(int bufferSize);
     void buildEffectParams();
 
-    // Program lists / presets (discovered via IUnitInfo)
+    // Program lists / presets (discovered via IUnitInfo or file scanning)
     std::vector<VST3ProgramList> programLists_;
+    bool usingFilePresets_;
+    std::vector<std::vector<VST3FilePreset>> filePresetsByBank_;
     int currentBank_;
     int currentPreset_;
     int32_t programChangeParamIdx_;
+
+    void discoverPresetFiles();
+    bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes);
 };
 
 #endif

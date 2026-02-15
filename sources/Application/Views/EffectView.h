@@ -21,7 +21,7 @@ public:
 
 protected:
     void warpToNext(int offset);
-    void onEffectChange();
+    void onEffectChange(FourCC focusField = 0);
     void fillEffectParameters();
     void Update(Observable &o, I_ObservableData *d);
 

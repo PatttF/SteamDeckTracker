@@ -24,6 +24,9 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <zlib.h>
 
 // VST3 SDK headers
 #include "pluginterfaces/base/funknown.h"
@@ -262,6 +265,7 @@ public:
     }
     void resetRead() { pos_ = 0; }
     size_t size() const { return data_.size(); }
+    void setData(const uint8_t *d, size_t len) { data_.assign(d, d + len); pos_ = 0; }
 private:
     std::vector<uint8_t> data_;
     size_t pos_;
@@ -372,6 +376,7 @@ VST3Effect::VST3Effect() {
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
+    usingFilePresets_ = false;
 }
 
 VST3Effect::~VST3Effect() {
@@ -405,6 +410,8 @@ void VST3Effect::Purge() {
     memset(pluginClassId_, 0, sizeof(pluginClassId_));
     strcpy(name_, "VST3 Effect");
     programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = false;
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
@@ -778,11 +785,419 @@ const VST3PluginParameter* VST3Effect::GetVST3Parameter(int index) const {
 }
 
 // ====================================================================
+// File-based preset support for VST3 effects
+// ====================================================================
+
+// Reuse the same struct layout as VST3Instrument for effect preset mappings
+struct VST3FxPresetMapping {
+    const char *pluginNameSubstring;
+    const char *directories[6];
+    const char *extension;
+    int headerSkipBytes;
+};
+
+static const VST3FxPresetMapping knownFxPresetMappings[] = {
+    // Valhalla DSP effects: .vpreset XML files, JUCE-wrapped before setState.
+    // All 9 Valhalla plugins share the same format and directory pattern.
+    {
+        "Valhalla",
+        {
+            nullptr  // Directories resolved at runtime from WINEPREFIX
+        },
+        ".vpreset",
+        0
+    },
+    // Arturia Efx FRAGMENTS: NKS .nksf files containing VST3 state in RIFF/NIKS
+    // PCHK chunk. Presets live under ProgramData/Arturia/Efx FRAGMENTS/.
+    {
+        "Efx FRAGMENTS",
+        {
+            nullptr  // Directories resolved at runtime from WINEPREFIX
+        },
+        ".nksf",
+        0
+    },
+    // Sentinel
+    { nullptr, {nullptr}, nullptr, 0 }
+};
+
+static void findFxPresetFiles(const std::string &dir, const char *extension,
+                              const std::string &category,
+                              std::map<std::string, std::vector<VST3FilePreset>> &bankMap) {
+    DIR *d = opendir(dir.c_str());
+    if (!d) return;
+    struct dirent *ent;
+    size_t extLen = strlen(extension);
+
+    while ((ent = readdir(d)) != nullptr) {
+        if (ent->d_name[0] == '.') continue;
+        std::string name(ent->d_name);
+        std::string full = dir + "/" + name;
+        struct stat st;
+        if (stat(full.c_str(), &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            std::string subCat = category.empty() ? name : category + "/" + name;
+            findFxPresetFiles(full, extension, subCat, bankMap);
+        } else if (S_ISREG(st.st_mode)) {
+            if (name.size() > extLen &&
+                name.substr(name.size() - extLen) == extension) {
+                VST3FilePreset fp;
+                fp.name = name.substr(0, name.size() - extLen);
+                fp.filePath = full;
+                std::string bankName = category.empty() ? "Presets" : category;
+                bankMap[bankName].push_back(fp);
+            }
+        }
+    }
+    closedir(d);
+}
+
+// ====================================================================
+// discoverPresetFiles: scan filesystem for native effect preset files
+// ====================================================================
+
+void VST3Effect::discoverPresetFiles() {
+    const VST3FxPresetMapping *mapping = nullptr;
+    for (int i = 0; knownFxPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, knownFxPresetMappings[i].pluginNameSubstring) != nullptr) {
+            mapping = &knownFxPresetMappings[i];
+            break;
+        }
+    }
+    if (!mapping) return;
+
+    std::string homeDir;
+    const char *home = getenv("HOME");
+    if (home) homeDir = home;
+
+    std::vector<std::string> scanDirs;
+    for (int i = 0; i < 6 && mapping->directories[i] != nullptr; i++) {
+        scanDirs.push_back(mapping->directories[i]);
+    }
+
+    // Add user-specific directories based on plugin type
+    if (!homeDir.empty()) {
+        std::string pfxBase;
+        const char *wpEnv = getenv("WINEPREFIX");
+        if (wpEnv && wpEnv[0]) {
+            pfxBase = wpEnv;
+        } else {
+            pfxBase = homeDir + "/Documents/SDTracker/wineprefix";
+        }
+
+        if (strstr(name_, "Valhalla") != nullptr) {
+            // Valhalla plugins store presets in Wine prefix under
+            // Application Data/Valhalla DSP, LLC/<PluginName>/User Presets
+            const char *userNames[] = { "steamuser", nullptr };
+            const char *prefixes[] = { "", "/pfx", nullptr };
+            const char *hostUser = getenv("USER");
+            for (int pi = 0; prefixes[pi] != nullptr; pi++) {
+                for (int ui = 0; userNames[ui] != nullptr; ui++) {
+                    std::string base = pfxBase + prefixes[pi]
+                        + "/drive_c/users/" + userNames[ui]
+                        + "/Application Data/Valhalla DSP, LLC/"
+                        + std::string(name_) + "/User Presets";
+                    scanDirs.push_back(base);
+                }
+                if (hostUser && hostUser[0] &&
+                    strcmp(hostUser, "steamuser") != 0) {
+                    std::string base = pfxBase + prefixes[pi]
+                        + "/drive_c/users/" + hostUser
+                        + "/Application Data/Valhalla DSP, LLC/"
+                        + std::string(name_) + "/User Presets";
+                    scanDirs.push_back(base);
+                }
+            }
+        }
+
+        if (strstr(name_, "Efx FRAGMENTS") != nullptr ||
+            strstr(name_, "FRAGMENTS") != nullptr) {
+            // Arturia Efx FRAGMENTS: NKS presets under ProgramData
+            const char *prefixes[] = { "", "/pfx", nullptr };
+            for (int pi = 0; prefixes[pi] != nullptr; pi++) {
+                std::string base = pfxBase + prefixes[pi]
+                    + "/drive_c/ProgramData/Arturia/Efx FRAGMENTS"
+                      "/Third Party/Native Instruments/presets";
+                scanDirs.push_back(base);
+            }
+        }
+    }
+
+    std::map<std::string, std::vector<VST3FilePreset>> bankMap;
+    for (size_t i = 0; i < scanDirs.size(); i++) {
+        findFxPresetFiles(scanDirs[i], mapping->extension, "", bankMap);
+    }
+
+    if (bankMap.empty()) return;
+
+    programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = true;
+
+    for (std::map<std::string, std::vector<VST3FilePreset>>::iterator it = bankMap.begin();
+         it != bankMap.end(); ++it) {
+        VST3ProgramList pl;
+        pl.listId = (int32_t)programLists_.size();
+        pl.name = it->first;
+
+        std::vector<VST3FilePreset> bankFilePresets;
+        for (size_t j = 0; j < it->second.size(); j++) {
+            pl.programs.push_back(it->second[j].name);
+            bankFilePresets.push_back(it->second[j]);
+        }
+
+        programLists_.push_back(pl);
+        filePresetsByBank_.push_back(bankFilePresets);
+    }
+
+    currentBank_ = 0;
+    currentPreset_ = 0;
+}
+
+// ====================================================================
+// loadPresetFromFile: load a preset file and feed it to setState
+// ====================================================================
+
+bool VST3Effect::loadPresetFromFile(const std::string &filePath, int headerSkipBytes) {
+    if (!component_) return false;
+
+    // Use POSIX I/O to avoid the project's fopen macro redirect
+    int fd = ::open(filePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        Trace::Error("VST3FX: Cannot open preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    off_t fileSize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+
+    if (fileSize <= headerSkipBytes) {
+        Trace::Error("VST3FX: Preset file too small (%ld bytes): %s", (long)fileSize, filePath.c_str());
+        ::close(fd);
+        return false;
+    }
+
+    // Read entire file for NKSF parsing or headerSkipBytes handling
+    std::vector<uint8_t> fileData(fileSize);
+    ssize_t bytesRead = ::read(fd, &fileData[0], fileSize);
+    ::close(fd);
+
+    if (bytesRead != fileSize) {
+        Trace::Error("VST3FX: Short read on preset file: %s", filePath.c_str());
+        return false;
+    }
+
+    // ---------------------------------------------------------------
+    // NKS .nksf support: RIFF/NIKS container with PCHK chunk holding
+    // the VST3 component + controller state.
+    // Format: RIFF(NIKS) { NISI, NICA, PLID, PCHK }
+    // PCHK data: [4-byte NKS version][16-byte header][comp state][ctrl state]
+    //   header = [4-byte compSize LE][4-byte pad][4-byte ctrlSize LE][4-byte pad]
+    // ---------------------------------------------------------------
+    bool isNksf = false;
+    {
+        size_t el = 5; // strlen(".nksf")
+        if (filePath.size() > el &&
+            filePath.substr(filePath.size() - el) == ".nksf") {
+            isNksf = true;
+        }
+    }
+
+    if (isNksf && fileData.size() >= 12 &&
+        memcmp(&fileData[0], "RIFF", 4) == 0 &&
+        memcmp(&fileData[8], "NIKS", 4) == 0) {
+
+        // Find PCHK chunk in RIFF
+        const uint8_t *base = &fileData[0];
+        size_t total = fileData.size();
+        size_t pos = 12; // skip RIFF header + form type
+        const uint8_t *pchkData = nullptr;
+        uint32_t pchkSize = 0;
+
+        while (pos + 8 <= total) {
+            uint32_t chunkSize;
+            memcpy(&chunkSize, base + pos + 4, 4); // LE size
+            if (memcmp(base + pos, "PCHK", 4) == 0) {
+                pchkData = base + pos + 8;
+                pchkSize = chunkSize;
+                break;
+            }
+            pos += 8 + chunkSize;
+            if (pos & 1) pos++; // RIFF chunks are word-aligned
+        }
+
+        if (!pchkData || pchkSize < 24) {
+            Trace::Error("VST3FX: NKSF missing PCHK chunk: %s", filePath.c_str());
+            return false;
+        }
+
+        // NKS PCHK layout (after 8-byte RIFF chunk header):
+        //   [4] NKS version (typically 1)
+        //   [4] component state size (LE)
+        //   [4] padding (0)
+        //   [4] controller state size (LE)
+        //   [4] padding (0)
+        //   [compSize bytes] component state (Boost archive for Arturia)
+        //   [ctrlSize bytes] controller state (identical copy for Arturia)
+        // We feed the component state to both setState and setComponentState.
+        uint32_t compSize;
+        memcpy(&compSize, pchkData + 4, 4);  // after NKS version
+
+        const uint8_t *compData = pchkData + 4 + 16;  // skip version + 16-byte header
+        uint32_t available = pchkSize - 4 - 16;
+        if (compSize > available) compSize = available;
+
+        IComponent *comp = (IComponent *)component_;
+        FXMemoryStream compStream;
+        compStream.setData(compData, compSize);
+        tresult res = comp->setState(&compStream);
+        if (res != kResultOk) {
+            Trace::Error("VST3FX: NKSF setState failed: %s (result=%d)",
+                filePath.c_str(), (int)res);
+            return false;
+        }
+
+        // Sync controller with the same component state
+        if (editController_) {
+            IEditController *ctrl = (IEditController *)editController_;
+            if (!componentIsController_) {
+                compStream.resetRead();
+                ctrl->setComponentState(&compStream);
+            }
+
+            // Sync parameter values back into our Variables
+            for (size_t i = 0; i < parameters_.size(); ++i) {
+                VST3PluginParameter &p = parameters_[i];
+                double norm = ctrl->getParamNormalized(p.paramId);
+                p.currentValue = norm;
+                if (p.variable) {
+                    int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                    int scaled = (int)(norm * maxVal + 0.5);
+                    if (scaled < 0) scaled = 0;
+                    if (scaled > maxVal) scaled = maxVal;
+                    p.variable->SetInt(scaled, false);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // ---------------------------------------------------------------
+    // Non-NKSF: use headerSkipBytes and existing logic
+    // ---------------------------------------------------------------
+    std::vector<uint8_t> data;
+    if (headerSkipBytes > 0 && (size_t)headerSkipBytes < fileData.size()) {
+        data.assign(fileData.begin() + headerSkipBytes, fileData.end());
+    } else {
+        data = std::move(fileData);
+    }
+
+    // Zlib decompression attempt
+    std::vector<uint8_t> decompressed;
+    bool isZlib = (data.size() >= 2 && data[0] == 0x78);
+    if (isZlib) {
+        uLongf destLen = (uLongf)data.size() * 10;
+        decompressed.resize(destLen);
+        int zret = uncompress(&decompressed[0], &destLen, &data[0], (uLong)data.size());
+        if (zret == Z_BUF_ERROR) {
+            destLen = (uLongf)data.size() * 50;
+            decompressed.resize(destLen);
+            zret = uncompress(&decompressed[0], &destLen, &data[0], (uLong)data.size());
+        }
+        if (zret == Z_OK) {
+            decompressed.resize(destLen);
+        } else {
+            isZlib = false;
+            decompressed.clear();
+        }
+    }
+
+    // For JUCE-based plugins (Valhalla DSP, etc.) whose presets are raw XML,
+    // wrap in JUCE's copyXmlToBinary format:
+    //   [4-byte magic 0x21324356][4-byte string length LE][XML][0x00]
+    {
+        static const char *jucePresetExts[] = { ".vpreset", nullptr };
+        bool needsJuceWrap = false;
+        for (int i = 0; jucePresetExts[i]; i++) {
+            size_t el = strlen(jucePresetExts[i]);
+            if (filePath.size() > el &&
+                filePath.substr(filePath.size() - el) == jucePresetExts[i]) {
+                needsJuceWrap = true;
+                break;
+            }
+        }
+        if (needsJuceWrap && !data.empty() && data[0] == '<') {
+            uint32_t magic = 0x21324356;  // JUCE magicXmlNumber
+            uint32_t strLen = (uint32_t)data.size();
+            std::vector<uint8_t> wrapped(8 + data.size() + 1);
+            memcpy(&wrapped[0], &magic, 4);
+            memcpy(&wrapped[4], &strLen, 4);
+            memcpy(&wrapped[8], &data[0], data.size());
+            wrapped[8 + data.size()] = 0;
+            data = std::move(wrapped);
+        }
+    }
+
+    // Feed data to IComponent::setState
+    IComponent *comp = (IComponent *)component_;
+    FXMemoryStream stream;
+    bool loaded = false;
+
+    // Try zlib-decompressed data first
+    if (!loaded && isZlib && !decompressed.empty()) {
+        stream.setData(&decompressed[0], decompressed.size());
+        tresult res = comp->setState(&stream);
+        if (res == kResultOk) loaded = true;
+    }
+
+    // Fall back to raw/wrapped data
+    if (!loaded) {
+        stream.setData(&data[0], data.size());
+        tresult res = comp->setState(&stream);
+        if (res != kResultOk) {
+            Trace::Error("VST3FX: setState failed for preset file: %s (result=%d)",
+                filePath.c_str(), (int)res);
+            return false;
+        }
+    }
+
+    // Sync controller
+    if (editController_ && !componentIsController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        stream.resetRead();
+        ctrl->setComponentState(&stream);
+    }
+
+    // Sync parameter values back into our Variables
+    if (editController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            VST3PluginParameter &p = parameters_[i];
+            double norm = ctrl->getParamNormalized(p.paramId);
+            p.currentValue = norm;
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaled = (int)(norm * maxVal + 0.5);
+                if (scaled < 0) scaled = 0;
+                if (scaled > maxVal) scaled = maxVal;
+                p.variable->SetInt(scaled, false);
+            }
+        }
+    }
+
+    return true;
+}
+
+// ====================================================================
 // Preset/program discovery and accessors
 // ====================================================================
 
 void VST3Effect::discoverPresets() {
     programLists_.clear();
+    filePresetsByBank_.clear();
+    usingFilePresets_ = false;
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
@@ -812,12 +1227,12 @@ void VST3Effect::discoverPresets() {
     IUnitInfo* unitInfo = nullptr;
     tresult res = ctrl->queryInterface(IUnitInfo::iid, (void**)&unitInfo);
     if (res != kResultOk || !unitInfo) {
-        
+        // No IUnitInfo — try file-based presets
+        discoverPresetFiles();
         return;
     }
 
     int32 listCount = unitInfo->getProgramListCount();
-    
 
     for (int32 li = 0; li < listCount; li++) {
         ProgramListInfo plInfo;
@@ -832,6 +1247,7 @@ void VST3Effect::discoverPresets() {
 
         for (int32 pi = 0; pi < plInfo.programCount; pi++) {
             String128 progName;
+            memset(progName, 0, sizeof(progName));
             if (unitInfo->getProgramName(plInfo.id, pi, progName) == kResultOk) {
                 char progBuf[128];
                 str128ToChar(progName, progBuf, 128);
@@ -843,15 +1259,38 @@ void VST3Effect::discoverPresets() {
             }
         }
 
-        
-
         programLists_.push_back(pl);
     }
 
     unitInfo->release();
 
-    if (!programLists_.empty()) {
-        
+    // If this plugin has a known file-preset mapping, prefer file-based
+    // presets over IUnitInfo programs (JUCE-based plugins like Valhalla
+    // often expose only empty "Init" slots via IUnitInfo).
+    bool hasKnownMapping = false;
+    for (int i = 0; knownFxPresetMappings[i].pluginNameSubstring != nullptr; i++) {
+        if (strstr(name_, knownFxPresetMappings[i].pluginNameSubstring) != nullptr) {
+            hasKnownMapping = true;
+            break;
+        }
+    }
+    if (hasKnownMapping) {
+        discoverPresetFiles();
+    }
+
+    // If file scanning didn't find presets, check if IUnitInfo had useful ones
+    if (!usingFilePresets_) {
+        bool hasUsefulPresets = false;
+        for (size_t i = 0; i < programLists_.size(); i++) {
+            if (programLists_[i].programs.size() > 1) {
+                hasUsefulPresets = true;
+                break;
+            }
+        }
+        if (!hasUsefulPresets) {
+            // No file presets and no useful IUnitInfo presets — try anyway
+            discoverPresetFiles();
+        }
     }
 }
 
@@ -892,6 +1331,25 @@ void VST3Effect::SetPreset(int presetIdx) {
     if (presetIdx < 0 || presetIdx >= (int)pl.programs.size()) return;
 
     currentPreset_ = presetIdx;
+
+    // --- File-based preset loading ---
+    if (usingFilePresets_) {
+        if (currentBank_ < (int)filePresetsByBank_.size() &&
+            presetIdx < (int)filePresetsByBank_[currentBank_].size()) {
+
+            const VST3FilePreset &fp = filePresetsByBank_[currentBank_][presetIdx];
+
+            int headerSkip = 0;
+            for (int m = 0; knownFxPresetMappings[m].pluginNameSubstring != nullptr; m++) {
+                if (strstr(name_, knownFxPresetMappings[m].pluginNameSubstring) != nullptr) {
+                    headerSkip = knownFxPresetMappings[m].headerSkipBytes;
+                    break;
+                }
+            }
+            loadPresetFromFile(fp.filePath, headerSkip);
+        }
+        return;
+    }
 
     if (!editController_) return;
     IEditController* ctrl = (IEditController*)editController_;
