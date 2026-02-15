@@ -51,8 +51,12 @@
 [MAPPING] Attached /event/pgback to key:0:,
 [MAPPING] Attached /event/pgfwd to key:0:.
 [APP] No bundled LV2 installer script found to copy to /home/deck/Documents/SDTracker/scripts/install_lv2_steamos.sh
+[BRIDGE] Cleared LD_PRELOAD (removed gameoverlayrenderer)
 [BRIDGE] Current RLIMIT_MEMLOCK: soft=8388608 hard=8388608
-[BRIDGE] WARNING: Could not raise memlock limit above 8388608 — Wine may print warnings. Add a /etc/security/limits.d/ entry for unlimited memlock if audio doesn't work.
+[BRIDGE] WARNING: memlock limit stuck at 8388608 bytes (8 MB). Large Wine plugins (Serum 2) may crash in game mode!
+[BRIDGE] FIX: On Steam Deck, open a terminal (Desktop mode) and run:
+[BRIDGE]   sudo sh -c 'echo "* - memlock unlimited" > /etc/security/limits.d/99-memlock.conf'
+[BRIDGE]   Then reboot. This allows Wine to lock the memory it needs for audio plugins.
 [BRIDGE] Found 3 Proton installation(s)
 [BRIDGE]   [0] Proton - Experimental -> /home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine
 [BRIDGE]   [1] Proton 10.0 -> /home/deck/.steam/steam/steamapps/common/Proton 10.0/files/bin/wine
@@ -67,11 +71,8 @@
 [BRIDGE] Added Wine prefix VST3 dir: /home/deck/Documents/SDTracker/wineprefix/drive_c/Program Files/Common Files/VST3
 [BRIDGE] Wrote yabridgectl config: path = '/home/deck/Documents/SDTracker/yabridge'
 [BRIDGE] Running: "/home/deck/Documents/SDTracker/yabridge/yabridgectl" add "/home/deck/.vst3/win" 2>&1
-[BRIDGE]   ERROR: ld.so: object '/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS32): ignored.
 [BRIDGE] Running: "/home/deck/Documents/SDTracker/yabridge/yabridgectl" add "/home/deck/Documents/SDTracker/wineprefix/drive_c/Program Files/Common Files/VST3" 2>&1
-[BRIDGE]   ERROR: ld.so: object '/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS32): ignored.
 [BRIDGE] Running: WINELOADER="/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine" "/home/deck/Documents/SDTracker/yabridge/yabridgectl" sync 2>&1
-[BRIDGE]   ERROR: ld.so: object '/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS32): ignored.
 [BRIDGE]   Setting up VST2, VST3, and CLAP plugins using:
 [BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-vst2.so
 [BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-vst3.so
@@ -275,7 +276,7 @@
 [AppWindow] VET_SWITCH_VIEW request -> 4
 [AppWindow] Current view loose focus
 [AppWindow] Setting focus to view -> 4
-[IVIEW] onInstrumentChange: inst=0 type=0 current=0x564cba222670 old=(nil)
+[IVIEW] onInstrumentChange: inst=0 type=0 current=0x563ffc409b20 old=(nil)
 [EVENT] key(Right:79):0
 [EVENT] key(W:26):0
 [EVENT] key(Up:82):1
@@ -290,12 +291,12 @@
 [EVENT] key(Right:79):1
 [IVIEW] Update: deferring type switch inst=0 from=0 to=3
 [IVIEW] DrawView: processing pending type switch idx=0 type=3
-[IVIEW] onInstrumentChange: inst=0 type=3 current=0x564cbb9bc8a0 old=(nil)
+[IVIEW] onInstrumentChange: inst=0 type=3 current=0x563ffdba2210 old=(nil)
 [EVENT] key(Right:79):0
 [EVENT] key(Right:79):1
 [IVIEW] Update: deferring type switch inst=0 from=3 to=4
 [IVIEW] DrawView: processing pending type switch idx=0 type=4
-[IVIEW] onInstrumentChange: inst=0 type=4 current=0x564cba222670 old=(nil)
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x563ffc409b20 old=(nil)
 [EVENT] key(Right:79):0
 [EVENT] key(S:22):0
 [EVENT] key(Down:81):1
@@ -314,3 +315,10 @@
 [EVENT] key(Down:81):1
 [EVENT] key(Down:81):0
 [EVENT] key(S:22):1
+[VST3] Pre-load RLIMIT_MEMLOCK: soft=8388608 hard=8388608
+[VST3] Pre-load RLIMIT_AS: soft=unlimited hard=unlimited
+[VST3] Plugin is yabridge-bridged (Wine)
+[VST3] WARNING: memlock limit is only 8388608 bytes (8 MB). Large Wine plugins (e.g. Serum 2) may crash. Fix: run 'sudo sh -c "echo \"* - memlock unlimited\" > /etc/security/limits.d/99-memlock.conf"' then reboot.
+[VST3] About to dlopen: /home/deck/.vst3/yabridge/Serum2.vst3/Contents/x86_64-linux/Serum2.so
+[VST3] dlopen succeeded for /home/deck/.vst3/yabridge/Serum2.vst3/Contents/x86_64-linux/Serum2.so
+[VST3] Calling ModuleEntry...
