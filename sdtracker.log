@@ -1,0 +1,316 @@
+[CONFIG] Trying config path=/home/deck/Documents/SDTracker/config.xml
+[System] Installing SDL audio
+[AUDIO] Audio object initialised with
+[AUDIO] Api:
+[AUDIO] Device:
+[AUDIO] Buffer size:512
+[AUDIO] Pre Buffer Count:2
+[AUDIO] Requested Sample Rate:44100
+[System] Installing RT MIDI
+[AUDIO] Boot: detected PipeWire socket, set SDL_AUDIODRIVER=pipewire
+[CONFIG] Got value for DUMPEVENT=YES
+[DISPLAY] Using driver x11. Screen (1280,800) Bpp:24
+[CONFIG] Got value for SCREENMULT=1
+[DISPLAY] Creating SDL Window (550,240)
+[CONFIG] Got value for FONTTYPE=0
+[DISPLAY] Preparing fonts
+[DISPLAY] Preparing font cache
+[CONFIG] Got value for BACKGROUND=000000
+[CONFIG] Got value for FOREGROUND=F5EBFF
+[DISPLAY] Preparing full font cache
+[RTMidiService] 1 input port(s)
+[CONFIG] Got value for DUMPEVENT=YES
+[RTMidiService]  Midi Through:0
+[RTMidiService] 1 output port(s)
+[RTMidiService]  Midi Through:0
+[CONFIG] Got value for BACKGROUND=000000
+[CONFIG] Got value for FOREGROUND=F5EBFF
+[CONFIG] Got value for BORDER=FF00DD
+[CONFIG] Got value for SONGVIEW_FE=A55B8F
+[CONFIG] Got value for SONGVIEW_00=853B6F
+[CONFIG] Got value for HICOLOR1=B750D1
+[CONFIG] Got value for HICOLOR2=DB33DB
+[CONFIG] Got value for CURSORCOLOR=FF00DD
+[CONFIG] Got value for PLAYCOLOR=FF00DD
+[CONFIG] Got value for MUTECOLOR=F5EBFF
+[CONFIG] Got value for ROWCOLOR1=BA28F9
+[CONFIG] Got value for ROWCOLOR2=FF00FF
+[CONFIG] Got value for ALTROWNUMBER=4
+[AppWindow] Auto-loading last project: /home/deck/Documents/SDTracker/projects/lgpt_SereneReader
+[AUDIO] Audio system running at 44100 Hz, 2 channels
+[MAPPING] Attached /event/lshoulder to key:0:q
+[MAPPING] Attached /event/rshoulder to key:0:w
+[MAPPING] Attached /event/up to key:0:up
+[MAPPING] Attached /event/down to key:0:down
+[MAPPING] Attached /event/left to key:0:left
+[MAPPING] Attached /event/right to key:0:right
+[MAPPING] Attached /event/b to key:0:a
+[MAPPING] Attached /event/a to key:0:s
+[MAPPING] Attached /event/start to key:0:space
+[MAPPING] Attached /event/select to key:0:e
+[MAPPING] Attached /event/pgback to key:0:,
+[MAPPING] Attached /event/pgfwd to key:0:.
+[APP] No bundled LV2 installer script found to copy to /home/deck/Documents/SDTracker/scripts/install_lv2_steamos.sh
+[BRIDGE] Current RLIMIT_MEMLOCK: soft=8388608 hard=8388608
+[BRIDGE] WARNING: Could not raise memlock limit above 8388608 — Wine may print warnings. Add a /etc/security/limits.d/ entry for unlimited memlock if audio doesn't work.
+[BRIDGE] Found 3 Proton installation(s)
+[BRIDGE]   [0] Proton - Experimental -> /home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine
+[BRIDGE]   [1] Proton 10.0 -> /home/deck/.steam/steam/steamapps/common/Proton 10.0/files/bin/wine
+[BRIDGE]   [2] Proton 9.0 (Beta) -> /home/deck/.steam/steam/steamapps/common/Proton 9.0 (Beta)/files/bin/wine
+[BRIDGE] Auto-selected Proton: Proton - Experimental
+[BRIDGE] Set WINELOADER=/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine
+[BRIDGE] Set LD_LIBRARY_PATH=/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/lib:/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/lib64
+[BRIDGE] Prepended yabridge to PATH
+[BRIDGE] Set WINEPREFIX=/home/deck/Documents/SDTracker/wineprefix
+[BRIDGE] yabridge already present at /home/deck/Documents/SDTracker/yabridge
+[BRIDGE] Found yabridgectl: /home/deck/Documents/SDTracker/yabridge/yabridgectl
+[BRIDGE] Added Wine prefix VST3 dir: /home/deck/Documents/SDTracker/wineprefix/drive_c/Program Files/Common Files/VST3
+[BRIDGE] Wrote yabridgectl config: path = '/home/deck/Documents/SDTracker/yabridge'
+[BRIDGE] Running: "/home/deck/Documents/SDTracker/yabridge/yabridgectl" add "/home/deck/.vst3/win" 2>&1
+[BRIDGE]   ERROR: ld.so: object '/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS32): ignored.
+[BRIDGE] Running: "/home/deck/Documents/SDTracker/yabridge/yabridgectl" add "/home/deck/Documents/SDTracker/wineprefix/drive_c/Program Files/Common Files/VST3" 2>&1
+[BRIDGE]   ERROR: ld.so: object '/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS32): ignored.
+[BRIDGE] Running: WINELOADER="/home/deck/.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine" "/home/deck/Documents/SDTracker/yabridge/yabridgectl" sync 2>&1
+[BRIDGE]   ERROR: ld.so: object '/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS32): ignored.
+[BRIDGE]   Setting up VST2, VST3, and CLAP plugins using:
+[BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-vst2.so
+[BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-vst3.so
+[BRIDGE]   - /home/deck/Documents/SDTracker/yabridge/libyabridge-chainloader-clap.so
+[BRIDGE]   
+[BRIDGE]   Found 11 leftover files, rerun with the '--prune' option to remove them:
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaVintageVerb.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaUberMod.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaSupermassive.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaSpaceModulator.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaShimmer.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaRoom.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaPlate.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaFreqEcho.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/ValhallaDelay.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/Serum2.vst3/Contents/moduleinfo.json
+[BRIDGE]   - /home/deck/.vst3/yabridge/Diva(x64).vst3/Contents/moduleinfo.json
+[BRIDGE]   
+[BRIDGE]   Finished setting up 11 plugins (0 new), skipped 0 non-plugin .dll files
+[BRIDGE] Windows VST3 bridge setup completed successfully
+[LoadProject] /home/deck/Documents/SDTracker/projects/lgpt_SereneReader
+
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_SereneReader/samples/Angles Break.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_SereneReader/samples/Angles Break.wav: 64174 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Angles Break.wav (44100 Hz, 2 ch, 64174 frames)
+[Load] /home/deck/Documents/SDTracker/projects/lgpt_SereneReader/samples/Blaze_Break.wav
+[AudioFile] Loaded /home/deck/Documents/SDTracker/projects/lgpt_SereneReader/samples/Blaze_Break.wav: 62235 frames, 2 channels, 44100 Hz
+[SamplePool] Loaded via FFmpeg: Blaze_Break.wav (44100 Hz, 2 ch, 62235 frames)
+[*ERROR*] Corrupt save: bad uncompressed size 1414089788
+[SampleInstrument] Sample size: 64174 frames
+[SampleInstrument] Set loopEnd to 64174
+[SampleInstrument] Sample size: 62235 frames
+[SampleInstrument] Set loopEnd to 62235
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[SampleInstrument] Set loopEnd to 0
+[AUDIO] XDG_RUNTIME_DIR = /run/user/1000
+[AUDIO] SDL_AUDIODRIVER = pipewire
+[AUDIO] PULSE_SERVER    = (not set)
+[AUDIO] SDL audio driver in use: pipewire
+[AUDIO]   Available SDL audio driver [0]: pulseaudio
+[AUDIO]   Available SDL audio driver [1]: alsa
+[AUDIO]   Available SDL audio driver [2]: jack
+[AUDIO]   Available SDL audio driver [3]: pipewire
+[AUDIO]   Available SDL audio driver [4]: dsp
+[AUDIO]   Available SDL audio driver [5]: disk
+[AUDIO]   Available SDL audio driver [6]: dummy
+[AUDIO]   Output device [0]: ACP/ACP3X/ACP6x Audio Coprocessor Speaker
+[AUDIO]   Output device [1]: ACP/ACP3X/ACP6x Audio Coprocessor Headphones
+[AUDIO] Opened audio: driver=pipewire, rate=44100 Hz, channels=2, format=0x8010, samples=512, size=2048
+[AUDIO] pipewire successfully opened with 512 samples
+[EVENT] key(S:22):1
+[EVENT] key(Right:79):1
+[EVENT] key(Right:79):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(S:22):0
+[EVENT] key(W:26):1
+[EVENT] key(Right:79):1
+[AppWindow] VET_SWITCH_VIEW request -> 1
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 1
+[EVENT] key(Right:79):0
+[EVENT] key(W:26):0
+[EVENT] key(S:22):1
+[EVENT] key(Right:79):1
+[EVENT] key(Right:79):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(S:22):0
+[EVENT] key(W:26):1
+[EVENT] key(Right:79):1
+[AppWindow] VET_SWITCH_VIEW request -> 2
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 2
+[EVENT] key(Right:79):0
+[EVENT] key(Right:79):1
+[AppWindow] VET_SWITCH_VIEW request -> 4
+[AppWindow] Current view loose focus
+[AppWindow] Setting focus to view -> 4
+[IVIEW] onInstrumentChange: inst=0 type=0 current=0x564cba222670 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(W:26):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(Up:82):1
+[EVENT] key(Up:82):0
+[EVENT] key(S:22):1
+[EVENT] key(S:22):0
+[EVENT] key(S:22):1
+[EVENT] key(Right:79):1
+[IVIEW] Update: deferring type switch inst=0 from=0 to=3
+[IVIEW] DrawView: processing pending type switch idx=0 type=3
+[IVIEW] onInstrumentChange: inst=0 type=3 current=0x564cbb9bc8a0 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(Right:79):1
+[IVIEW] Update: deferring type switch inst=0 from=3 to=4
+[IVIEW] DrawView: processing pending type switch idx=0 type=4
+[IVIEW] onInstrumentChange: inst=0 type=4 current=0x564cba222670 old=(nil)
+[EVENT] key(Right:79):0
+[EVENT] key(S:22):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(S:22):1
+[VST3] Found 9 VST3 plugins
+[EVENT] key(S:22):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(Down:81):1
+[EVENT] key(Down:81):0
+[EVENT] key(S:22):1
