@@ -14,6 +14,7 @@ enum InstrumentType {
 	IT_SOUNDFONT,
 	IT_VST3,
 	IT_MIDIOUT,
+	IT_AUDIOIN,
 	IT_LAST
 } ;
 

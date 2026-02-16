@@ -21,6 +21,8 @@ Key Enhancements:
 
     Effects support full parameter editing with real value display and scale point labels. Effect configurations are saved and restored with the project.
 
+    Live Audio Input: AudioIn instrument type captures live audio from any input device, mixes it directly into the output bus, and forwards MIDI to external hardware. Effects can be applied to the live stream without triggering notes.
+
     Automated Workspace: On first launch, the software generates a streamlined directory structure in the user's Documents/SDTracker folder for easy management. After that use the options in the Projects page to install the factory samples as well as my Mutated Instruments plugin.
 
 
@@ -142,6 +144,116 @@ Navigate to the Mixer from the Song page with **R + Down**. Return to Song with 
 
 ---
 
+
+## AudioIn Instrument
+
+The **AudioIn** instrument type captures live audio from an SDL2 input device and mixes it directly into the output bus. It also sends MIDI note-on/off messages to an external device, making it ideal for playing a hardware synth while processing its audio return through the tracker's effect chain.
+
+### Architecture
+
+```
+SDL2 Capture Device (F32, queue-based)
+        │
+        ▼
+  CaptureModule (AudioModule on MixBus 0)
+        │  renderCapture(): F32 → fixed-point, volume/pan
+        │  effect->ProcessAudio() if FXSN is active
+        │
+        ▼
+    AudioMixer ──► output
+```
+
+**Key design decisions:**
+
+- **Always-on audio**: A `CaptureModule` (inner `AudioModule`) is registered directly on `MixBus 0` when the instrument is activated. Audio flows continuously without requiring note triggers.
+- **MIDI is separate**: `Start()`/`Stop()` only send MIDI messages. `Render()` returns `false` (no audio contribution through `PlayerChannel`). This decouples audio input from the note sequencer.
+- **Lazy activation**: The capture device is only opened when the user navigates to the instrument view (`Activate()` is called from `fillAudioInParameters()`). This prevents 16 capture devices opening simultaneously.
+- **SDL resampling**: The capture device is opened at the output sample rate (typically 44100Hz) with `flags=0`, so SDL handles any necessary sample rate conversion internally.
+
+### AudioIn Parameters
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| **Type** | 0–5 | Instrument type selector (5 = AudioIn) |
+| **input** | 0–N | SDL2 capture device index |
+| **volume** | `00`–`FF` | Input volume (hex) |
+| **pan** | `00`–`FE` | Pan (`00`=hard left, `7F`=centre, `FE`=hard right) |
+| **midi dev** | 0–N | MIDI output device index |
+| **midi ch** | 00–15 | MIDI output channel |
+| **length** | `00`–`FF` | Note length in ticks (`00`=infinite) |
+| **transpose** | -48–+48 | Semitone transpose applied to outgoing MIDI notes |
+| **automation** | off/on | Table automation toggle |
+| **table** | `00`–`7F`/OFF | Table assignment |
+
+### AudioIn Commands
+
+Commands placed in the phrase command columns on an AudioIn channel:
+
+| Command | Format | Description |
+|---------|--------|-------------|
+| **VOLM** | `VOLM --XX` | Set input volume (`00`–`FF`) |
+| **PAN_** | `PAN_ --XX` | Set pan (`00`–`FE`) |
+| **MVEL** | `MVEL XXYY` | Set MIDI velocity for subsequent notes |
+| **MDCC** | `MDCC XXYY` | Send MIDI CC (XX=controller, YY=value) |
+| **MDPG** | `MDPG --XX` | Send MIDI program change |
+| **LEGA** | `LEGA XXYY` | Send MIDI pitch bend (raw 14-bit) |
+| **PFIN** | `PFIN XXYY` | Send MIDI pitch bend (signed offset from center) |
+| **FXSN** | `FXSN XXYY` | Apply effect slot XX with wet/dry YY (see below) |
+| **TABL** | `TABL --XX` | Trigger table XX |
+| **KILL** | `KILL --XX` | Kill note after XX ticks |
+
+### Effects on AudioIn (FXSN)
+
+Effects from the effect bank (LV2/VST3) can be applied to the live audio input using the `FXSN` command:
+
+```
+FXSN XXYY
+  XX = effect slot (00-0F)
+  YY = wet/dry mix (00=dry, FF=fully wet)
+```
+
+**No note trigger required.** Unlike other instrument types, AudioIn processes `FXSN` even when no note is active on the channel. The effect is applied directly in the `CaptureModule` on the MixBus, bypassing the `PlayerChannel` effect chain entirely.
+
+To use effects on an AudioIn channel:
+
+1. Load an effect (LV2 or VST3) into an effect slot in the Effect view
+2. Place the AudioIn instrument number on any row in the phrase (an instrument number alone is sufficient — no note needed)
+3. Place `FXSN XXYY` on the same or a subsequent row
+4. The effect applies immediately to the live audio stream
+
+To clear an effect: `FXSN FF00` (slot ≥ `10` clears the active effect).
+
+### How AudioIn Works (Technical Detail)
+
+**Audio capture pipeline:**
+
+1. `probeDeviceCapabilities()` opens the device briefly with `SDL_AUDIO_ALLOW_ANY_CHANGE` to discover the native channel count
+2. `openCaptureDevice()` opens the device at the output sample rate with the native channel count and `flags=0` (SDL resamples internally)
+3. Queue-based capture (`callback=NULL`) — audio accumulates in SDL's internal queue
+4. Each audio callback, `renderCapture()` calls `SDL_DequeueAudio()` for exactly one buffer's worth of samples
+5. If the queue grows beyond 4× the needed size (clock drift), `SDL_ClearQueuedAudio()` flushes it entirely
+6. F32 samples are scaled by 32768.0 then converted via `fl2fp()` to match the 16-bit fixed-point pipeline
+7. Volume and pan are applied as fixed-point multiplications
+8. If `FXSN` has set an active effect, `I_Effect::ProcessAudio()` is called in-place
+
+**MIDI output pipeline:**
+
+1. When a note is placed in the phrase, `Start()` stores the note/channel/device and sets `first_=true`
+2. On the first `Render()` call, the deferred MIDI note-on is sent
+3. `Stop()` or note-length expiry sends the corresponding note-off
+4. All MIDI-related commands (`MDCC`, `MDPG`, `LEGA`, `PFIN`) are forwarded via `ProcessCommand()`
+
+**Effect resolution for FXSN (no-note case):**
+
+The `Player::ProcessCommands()` loop normally skips channels with no active instrument. For AudioIn, a special path scans for `FXSN` commands even when no instrument is active. The FXSN handler resolves the AudioIn instrument through a three-tier fallback:
+
+1. Active instrument on the channel
+2. Last instrument that was started on the channel
+3. **Phrase data lookup** — reads the instrument number from the current phrase position (scanning backward if needed) and resolves it via `InstrumentBank`
+
+This allows effects to be applied to AudioIn without ever triggering a note, which would otherwise send unwanted MIDI to external hardware.
+
+---
 ## Sample Recorder
 
 The sample recorder lets you capture audio from any connected input device directly into a WAV file and auto-import it into the current instrument.
@@ -577,7 +689,7 @@ Adjusts the pitch/delay-length of the feedback loop, creating comb-filter and Ka
 #### FXSN — Effect Send
 **Format:** `FXSN:aabb`  
 **Support:** Player  
-Routes the channel's audio through an LV2 effect loaded on the Effects page.
+Routes the channel's audio through an LV2 or VST3 effect loaded on the Effects page. For AudioIn instruments, the effect is applied directly to the live audio stream without requiring a note trigger (see AudioIn Instrument section above).
 
 - `aa` = effect slot number (`00`–`0F`, corresponding to the 16 effect slots).
 - `bb` = wet/dry mix (`00` = fully dry, `FF` = fully wet).
@@ -683,7 +795,7 @@ Example: `TMPO:0078` sets tempo to 120 BPM. `TMPO:00A0` sets tempo to 160 BPM.
 | `FCUT` | `aabb` | Filter cutoff ramp | S |
 | `FLTR` | `aabb` | Instant filter cutoff + resonance | S |
 | `FRES` | `aabb` | Filter resonance ramp | S |
-| `FXSN` | `aabb` | Route to LV2 effect slot | Player |
+| `FXSN` | `aabb` | Route to LV2/VST3 effect slot (works on AudioIn without note) | Player |
 | `GROV` | `aabb` | Set groove pattern | Player |
 | `HOP`  | `aabb` | Hop to phrase position | Player |
 | `IRTG` | `aabb` | Instrument retrigger + transpose | Player |

@@ -28,7 +28,9 @@ protected:
 	void fillSoundFontParameters() ;
 	void fillVST3Parameters() ;
 	void fillMidiOutParameters() ;
+	void fillAudioInParameters() ;
 	void drawMidiOutHelp() ;
+	void drawAudioInHelp() ;
 	InstrumentType getInstrumentType() ;
 	void Update(Observable &o,I_ObservableData *d) ;
 

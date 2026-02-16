@@ -5,6 +5,7 @@
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/I_Instrument.h"
 #include "Application/Instruments/SampleInstrument.h"
+#include "Application/Instruments/AudioInInstrument.h"
 #include "Application/Instruments/I_Effect.h"
 #include "Application/Utils/char.h"
 #include "System/Console/n_assert.h"
@@ -700,6 +701,27 @@ void Player::ProcessCommands() {
                         instrument->ProcessCommand(i,cc4,param4);
                     }
                 }
+            } else {
+                // No active instrument on this channel, but still
+                // process FXSN so AudioIn effects work without a note.
+                int idx = phrase*16+pos;
+                FourCC cmds[4] = {
+                    viewData_->song_->phrase_->cmd1_[idx],
+                    viewData_->song_->phrase_->cmd2_[idx],
+                    viewData_->song_->phrase_->cmd3_[idx],
+                    viewData_->song_->phrase_->cmd4_[idx]
+                };
+                ushort params[4] = {
+                    viewData_->song_->phrase_->param1_[idx],
+                    viewData_->song_->phrase_->param2_[idx],
+                    viewData_->song_->phrase_->param3_[idx],
+                    viewData_->song_->phrase_->param4_[idx]
+                };
+                for (int j = 0; j < 4; j++) {
+                    if (cmds[j] == I_CMD_FXSN) {
+                        ProcessChannelCommand(i, cmds[j], params[j]);
+                    }
+                }
             }
         }
     }
@@ -786,6 +808,45 @@ bool Player::ProcessChannelCommand(int channel,FourCC cmd,ushort param) {
 					// Slot >= MAX_EFFECT_COUNT (e.g. FXSN FF00) = clear effect
 					
 					ch->ClearEffect();
+				}
+				// Also propagate to AudioInInstrument so effects apply
+				// on the CaptureModule (which bypasses PlayerChannel).
+				// Resolve instrument: active > lastInstrument > phrase data.
+				// The phrase-data fallback lets FXSN target AudioIn without
+				// ever triggering a note (which would send unwanted MIDI).
+				I_Instrument *fxInstr = instr ? instr : mixer_->GetLastInstrument(channel);
+				if (!fxInstr && project_) {
+					InstrumentBank *bank = project_->GetInstrumentBank();
+					if (bank) {
+						unsigned char ph = viewData_->currentPlayPhrase_[channel];
+						if (ph != 0xFF) {
+							int p = viewData_->phrasePlayPos_[channel];
+							unsigned char instrNum = viewData_->song_->phrase_->instr_[ph*16+p];
+							if (instrNum == 0xFF) {
+								// Scan backward for most recent instrument on this channel
+								for (int k = p - 1; k >= 0; k--) {
+									unsigned char n = viewData_->song_->phrase_->instr_[ph*16+k];
+									if (n != 0xFF) { instrNum = n; break; }
+								}
+							}
+							if (instrNum != 0xFF) {
+								fxInstr = bank->GetInstrument(instrNum);
+							}
+						}
+					}
+				}
+				if (fxInstr && fxInstr->GetType() == IT_AUDIOIN) {
+					AudioInInstrument *ai = (AudioInInstrument *)fxInstr;
+					if (effectSlot < MAX_EFFECT_COUNT && project_) {
+						I_Effect *effect = project_->GetEffect(effectSlot);
+						if (effect && !effect->IsEmpty()) {
+							ai->SetEffect(effect, wetDry);
+						} else {
+							ai->ClearEffect();
+						}
+					} else {
+						ai->ClearEffect();
+					}
 				}
 				return true;
 			}
