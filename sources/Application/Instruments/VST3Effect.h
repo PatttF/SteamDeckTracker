@@ -125,8 +125,14 @@ private:
     int currentPreset_;
     int32_t programChangeParamIdx_;
 
+    // Embedded preset data (for Valhalla plugins compiled into the binary)
+    bool usingEmbeddedPresets_;
+    std::vector<std::vector<const char *>> embeddedXmlByBank_;
+
     void discoverPresetFiles();
+    void discoverHardcodedPresets();
     bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes);
+    bool loadPresetFromXmlData(const char *xmlData);
 };
 
 #endif

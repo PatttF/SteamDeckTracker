@@ -3,6 +3,7 @@
 #include "System/Console/Trace.h"
 #include "Services/Audio/Audio.h"
 #include "Application/Mixer/MixerService.h"
+#include "Application/Player/PlayerMixer.h"
 #include "Foundation/T_Singleton.h"
 #include <string.h>
 #include <math.h>
@@ -15,7 +16,28 @@ MidiService *AudioInInstrument::svc_ = 0;
 // ---------------------------------------------------------------------------
 
 bool AudioInInstrument::CaptureModule::Render(fixed *buffer, int samplecount) {
+    // Always drain the SDL capture queue to prevent stale audio buildup
     bool result = owner_.renderCapture(buffer, samplecount);
+
+    // Check if all channels referencing this AudioIn instrument are muted.
+    // If so, discard the captured audio (return false) so the mixer ignores it.
+    // This also handles solo, which works by muting all non-soloed channels.
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    if (pm) {
+        bool hasChannel = false;
+        bool allMuted = true;
+        for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+            if (pm->GetLastInstrument(i) == &owner_) {
+                hasChannel = true;
+                if (!pm->IsChannelMuted(i)) {
+                    allMuted = false;
+                    break;
+                }
+            }
+        }
+        if (hasChannel && allMuted) return false;
+    }
+
     // Apply effect chain (set via FXSN command) after capturing
     if (result && owner_.activeEffect_ && !owner_.activeEffect_->IsEmpty()) {
         owner_.activeEffect_->ProcessAudio(buffer, samplecount, owner_.effectWetDry_);

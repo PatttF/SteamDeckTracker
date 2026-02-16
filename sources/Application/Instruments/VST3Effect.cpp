@@ -8,6 +8,14 @@
  */
 
 #include "VST3Effect.h"
+#include "TALReverb4Presets.h"
+#include "ValhallaDelayPresets.h"
+#include "ValhallaPlatePresets.h"
+#include "ValhallaRoomPresets.h"
+#include "ValhallaSpaceModulatorPresets.h"
+#include "ValhallaSupermassivePresets.h"
+#include "ValhallaUberModPresets.h"
+#include "ValhallaVintageVerbPresets.h"
 #include "Application/Model/Config.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "Services/Audio/Audio.h"
@@ -377,6 +385,7 @@ VST3Effect::VST3Effect() {
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
     usingFilePresets_ = false;
+    usingEmbeddedPresets_ = false;
 }
 
 VST3Effect::~VST3Effect() {
@@ -1191,13 +1200,84 @@ bool VST3Effect::loadPresetFromFile(const std::string &filePath, int headerSkipB
 }
 
 // ====================================================================
+// loadPresetFromXmlData: load a preset from embedded XML string data.
+// Wraps in JUCE binary format and feeds to setState, same as file path.
+// ====================================================================
+
+bool VST3Effect::loadPresetFromXmlData(const char *xmlData) {
+    if (!component_ || !xmlData) return false;
+
+    size_t xmlLen = strlen(xmlData);
+    if (xmlLen == 0) return false;
+
+    IComponent *comp = (IComponent *)component_;
+
+    fprintf(stderr, "[VST3FX] loadPresetFromXmlData: xmlLen=%d\n", (int)xmlLen);
+
+    // JUCE copyXmlToBinary format:
+    //   [4-byte magic 0x21324356][4-byte string length LE][XML][0x00]
+    uint32_t magic = 0x21324356;
+    uint32_t strLen = (uint32_t)xmlLen;
+    std::vector<uint8_t> data(8 + xmlLen + 1);
+    memcpy(&data[0], &magic, 4);
+    memcpy(&data[4], &strLen, 4);
+    memcpy(&data[8], xmlData, xmlLen);
+    data[8 + xmlLen] = 0;
+
+    FXMemoryStream stream;
+    stream.setData(&data[0], data.size());
+    fprintf(stderr, "[VST3FX] calling setState with %d bytes...\n", (int)data.size());
+    tresult res = comp->setState(&stream);
+    fprintf(stderr, "[VST3FX] setState result=%d\n", (int)res);
+    if (res != kResultOk) {
+        fprintf(stderr, "[VST3FX] embedded setState FAILED (result=%d)\n", (int)res);
+        return false;
+    }
+
+    // Sync controller
+    if (editController_ && !componentIsController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        stream.resetRead();
+        ctrl->setComponentState(&stream);
+        fprintf(stderr, "[VST3FX] setComponentState done\n");
+    }
+
+    // Sync parameter values back into our Variables
+    if (editController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            VST3PluginParameter &p = parameters_[i];
+            double norm = ctrl->getParamNormalized(p.paramId);
+            p.currentValue = norm;
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaled = (int)(norm * maxVal + 0.5);
+                if (scaled < 0) scaled = 0;
+                if (scaled > maxVal) scaled = maxVal;
+                p.variable->SetInt(scaled, false);
+            }
+        }
+        // Log first few param values for debugging
+        int toLog = parameters_.size() < 8 ? (int)parameters_.size() : 8;
+        for (int i = 0; i < toLog; i++) {
+            fprintf(stderr, "[VST3FX]   param[%d] '%s' = %.6f\n",
+                i, parameters_[i].name, parameters_[i].currentValue);
+        }
+    }
+
+    return true;
+}
+
+// ====================================================================
 // Preset/program discovery and accessors
 // ====================================================================
 
 void VST3Effect::discoverPresets() {
     programLists_.clear();
     filePresetsByBank_.clear();
+    embeddedXmlByBank_.clear();
     usingFilePresets_ = false;
+    usingEmbeddedPresets_ = false;
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
@@ -1229,6 +1309,9 @@ void VST3Effect::discoverPresets() {
     if (res != kResultOk || !unitInfo) {
         // No IUnitInfo — try file-based presets
         discoverPresetFiles();
+        if (!usingFilePresets_) {
+            discoverHardcodedPresets();
+        }
         return;
     }
 
@@ -1280,6 +1363,16 @@ void VST3Effect::discoverPresets() {
 
     // If file scanning didn't find presets, check if IUnitInfo had useful ones
     if (!usingFilePresets_) {
+        // Always try hardcoded/embedded presets first for plugins we have
+        // embedded data for (like Valhalla). The embedded approach uses
+        // setState with actual preset XML, which is far more reliable than
+        // kIsProgramChange for JUCE-based plugins.
+        discoverHardcodedPresets();
+        if (usingEmbeddedPresets_) {
+            // Embedded presets loaded successfully — use them
+            return;
+        }
+
         bool hasUsefulPresets = false;
         for (size_t i = 0; i < programLists_.size(); i++) {
             if (programLists_[i].programs.size() > 1) {
@@ -1290,6 +1383,82 @@ void VST3Effect::discoverPresets() {
         if (!hasUsefulPresets) {
             // No file presets and no useful IUnitInfo presets — try anyway
             discoverPresetFiles();
+        }
+    }
+}
+
+// ====================================================================
+// discoverHardcodedPresets: built-in factory preset names for plugins
+// whose IUnitInfo may not work reliably on all platforms.
+// ====================================================================
+
+// Helper: populate programLists_ and embeddedXmlByBank_ from a
+// ValhallaEmbeddedBank array (generated header data).
+static void loadValhallaEmbedded(
+    const ValhallaEmbeddedBank *banks, int bankCount,
+    std::vector<VST3ProgramList> &programLists,
+    std::vector<std::vector<const char *>> &embeddedXml)
+{
+    programLists.clear();
+    embeddedXml.clear();
+    for (int b = 0; b < bankCount; b++) {
+        VST3ProgramList pl;
+        pl.listId = b;
+        pl.name = banks[b].bankName;
+        std::vector<const char *> xmlPtrs;
+        for (int p = 0; p < banks[b].presetCount; p++) {
+            pl.programs.push_back(banks[b].presets[p].name);
+            xmlPtrs.push_back(banks[b].presets[p].xmlData);
+        }
+        programLists.push_back(pl);
+        embeddedXml.push_back(xmlPtrs);
+    }
+}
+
+void VST3Effect::discoverHardcodedPresets() {
+    // --- TAL-Reverb-4: kIsProgramChange parameter based ---
+    if (strstr(name_, "TAL-Reverb") != nullptr || strstr(name_, "Reverb-4") != nullptr) {
+        programLists_.clear();
+        VST3ProgramList pl;
+        pl.listId = 0;
+        pl.name = "Factory Presets";
+        for (int p = 0; p < TAL_REVERB4_PRESET_COUNT; p++) {
+            pl.programs.push_back(talReverb4PresetNames[p]);
+        }
+        programLists_.push_back(pl);
+        currentBank_ = 0;
+        currentPreset_ = 0;
+        return;
+    }
+
+    // --- Valhalla DSP effects: embedded .vpreset XML data ---
+    struct ValhallaMapping {
+        const char *nameSubstring;
+        const ValhallaEmbeddedBank *banks;
+        int bankCount;
+    };
+    static const ValhallaMapping valhallaMappings[] = {
+        { "ValhallaDelay",          valhallaDelayBanks,          VALHALLA_DELAY_BANK_COUNT },
+        { "ValhallaPlate",          valhallaPlateBanks,          VALHALLA_PLATE_BANK_COUNT },
+        { "ValhallaRoom",           valhallaRoomBanks,           VALHALLA_ROOM_BANK_COUNT },
+        { "ValhallaSpaceModulator", valhallaSpaceModulatorBanks, VALHALLA_SPACEMODULATOR_BANK_COUNT },
+        { "ValhallaSupermassive",   valhallaSupermassiveBanks,   VALHALLA_SUPERMASSIVE_BANK_COUNT },
+        { "ValhallaUberMod",        valhallaUberModBanks,        VALHALLA_UBERMOD_BANK_COUNT },
+        { "ValhallaVintageVerb",    valhallaVintageVerbBanks,    VALHALLA_VINTAGEVERB_BANK_COUNT },
+        { nullptr, nullptr, 0 }
+    };
+
+    for (int i = 0; valhallaMappings[i].nameSubstring != nullptr; i++) {
+        if (strstr(name_, valhallaMappings[i].nameSubstring) != nullptr) {
+            loadValhallaEmbedded(
+                valhallaMappings[i].banks,
+                valhallaMappings[i].bankCount,
+                programLists_,
+                embeddedXmlByBank_);
+            usingEmbeddedPresets_ = true;
+            currentBank_ = 0;
+            currentPreset_ = 0;
+            return;
         }
     }
 }
@@ -1331,6 +1500,15 @@ void VST3Effect::SetPreset(int presetIdx) {
     if (presetIdx < 0 || presetIdx >= (int)pl.programs.size()) return;
 
     currentPreset_ = presetIdx;
+
+    // --- Embedded preset loading (Valhalla plugins compiled into binary) ---
+    if (usingEmbeddedPresets_) {
+        if (currentBank_ < (int)embeddedXmlByBank_.size() &&
+            presetIdx < (int)embeddedXmlByBank_[currentBank_].size()) {
+            loadPresetFromXmlData(embeddedXmlByBank_[currentBank_][presetIdx]);
+        }
+        return;
+    }
 
     // --- File-based preset loading ---
     if (usingFilePresets_) {

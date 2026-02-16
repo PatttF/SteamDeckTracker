@@ -20,6 +20,7 @@
 #include "System/Console/Trace.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "OsTIrusPatches.h"
+#include "TALNoiseMakerPresets.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -2256,25 +2257,48 @@ void VST3Instrument::discoverPresetFiles() {
 }
 
 // ====================================================================
-// discoverHardcodedPresets: use built-in ROM patch names for OsTIrus
+// discoverHardcodedPresets: use built-in ROM patch names for OsTIrus,
+// TAL-NoiseMaker, and other plugins whose factory presets never change.
 // ====================================================================
 void VST3Instrument::discoverHardcodedPresets() {
-    if (strstr(name_, "OsTIrus") == nullptr) return;
-
-    programLists_.clear();
-    for (int b = 0; b < OSTIRUS_BANK_COUNT; b++) {
-        VST3ProgramList pl;
-        pl.listId = b;
-        pl.name = ostirusBankNames[b];
-        for (int p = 0; p < OSTIRUS_PATCHES_PER_BANK; p++) {
-            pl.programs.push_back(ostirusPatchNames[b][p]);
+    // --- OsTIrus: MIDI program-change based ---
+    if (strstr(name_, "OsTIrus") != nullptr) {
+        programLists_.clear();
+        for (int b = 0; b < OSTIRUS_BANK_COUNT; b++) {
+            VST3ProgramList pl;
+            pl.listId = b;
+            pl.name = ostirusBankNames[b];
+            for (int p = 0; p < OSTIRUS_PATCHES_PER_BANK; p++) {
+                pl.programs.push_back(ostirusPatchNames[b][p]);
+            }
+            programLists_.push_back(pl);
         }
-        programLists_.push_back(pl);
+        usingMidiPresets_ = true;
+        currentBank_ = 0;
+        currentPreset_ = 0;
+        return;
     }
 
-    usingMidiPresets_ = true;
-    currentBank_ = 0;
-    currentPreset_ = 0;
+    // --- TAL-NoiseMaker: kIsProgramChange parameter based ---
+    // The native Linux VST3 embeds 256 factory presets in BinaryData.
+    // IUnitInfo exposes them on desktop but may fail on Steam Deck.
+    // Hardcode the names so they're always available; SetPreset uses
+    // the kIsProgramChange parameter to switch (no MIDI, no files).
+    if (strstr(name_, "NoiseMaker") != nullptr) {
+        programLists_.clear();
+        VST3ProgramList pl;
+        pl.listId = 0;
+        pl.name = "Factory Presets";
+        for (int p = 0; p < TAL_NOISEMAKER_PRESET_COUNT; p++) {
+            pl.programs.push_back(talNoiseMakerPresetNames[p]);
+        }
+        programLists_.push_back(pl);
+        // NOT usingMidiPresets_ — SetPreset will use the
+        // kIsProgramChange parameter path.
+        currentBank_ = 0;
+        currentPreset_ = 0;
+        return;
+    }
 }
 
 // ====================================================================
