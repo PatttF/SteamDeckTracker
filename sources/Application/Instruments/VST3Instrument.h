@@ -245,6 +245,19 @@ private:
     bool usingFilePresets_;                     // true when presets come from file scanning
     std::vector<std::vector<VST3FilePreset>> filePresetsByBank_;  // parallel to programLists_
 
+    // Embedded preset support (setState with XML data, like Valhalla/TAL-NoiseMaker)
+    bool usingEmbeddedPresets_;                  // true when presets use embedded XML + setState
+    std::vector<const char *> embeddedXmlPresets_;  // parallel to programLists_[0].programs
+
+    // Embedded compressed XML preset data (for Odin2: zlib-compressed XML → JUCE wrap → setState)
+    bool usingCompressedPresets_;
+    struct CompressedPreset {
+        const uint8_t *data;
+        uint32_t compressedSize;
+        uint32_t originalSize;
+    };
+    std::vector<CompressedPreset> compressedPresets_;  // parallel to programLists_[0].programs
+
     // MIDI-based preset support (for gearmulator/OsTIrus: bank select CC#32 + program change)
     bool usingMidiPresets_;                     // true when presets use MIDI events for selection
 
@@ -282,6 +295,8 @@ private:
     void discoverPatchManagerPresets();
     void discoverHardcodedPresets();
     bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes);
+    bool loadPresetFromXmlData(const char *xmlData);
+    bool loadPresetFromCompressedXmlData(const uint8_t *compressed, uint32_t compSize, uint32_t origSize);
     void setupProcessing(int bufferSize);
 };
 

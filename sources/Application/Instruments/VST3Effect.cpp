@@ -8,7 +8,8 @@
  */
 
 #include "VST3Effect.h"
-#include "TALReverb4Presets.h"
+#include "EfxFragmentsPresetData.h"
+#include "TALReverb4PresetData.h"
 #include "ValhallaDelayPresets.h"
 #include "ValhallaPlatePresets.h"
 #include "ValhallaRoomPresets.h"
@@ -1269,6 +1270,62 @@ bool VST3Effect::loadPresetFromXmlData(const char *xmlData) {
 }
 
 // ====================================================================
+// loadPresetFromCompressedData: decompress zlib data and feed to setState
+// Used for Arturia Efx FRAGMENTS whose PCHK states are binary (not XML).
+// ====================================================================
+bool VST3Effect::loadPresetFromCompressedData(const uint8_t *compressed,
+                                               uint32_t compSize,
+                                               uint32_t origSize) {
+    if (!component_ || !compressed || compSize == 0 || origSize == 0) return false;
+
+    // Decompress
+    std::vector<uint8_t> data(origSize);
+    uLongf destLen = (uLongf)origSize;
+    int zret = uncompress(&data[0], &destLen, compressed, (uLong)compSize);
+    if (zret != Z_OK) {
+        Trace::Error("VST3FX: zlib decompress failed (ret=%d)", zret);
+        return false;
+    }
+    data.resize(destLen);
+
+    // Feed directly to setState (Arturia uses Boost serialization, not JUCE)
+    IComponent *comp = (IComponent *)component_;
+    FXMemoryStream stream;
+    stream.setData(&data[0], data.size());
+    tresult res = comp->setState(&stream);
+    if (res != kResultOk) {
+        Trace::Error("VST3FX: compressed setState FAILED (result=%d)", (int)res);
+        return false;
+    }
+
+    // Sync controller
+    if (editController_ && !componentIsController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        stream.resetRead();
+        ctrl->setComponentState(&stream);
+    }
+
+    // Sync parameter values back into our Variables
+    if (editController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            VST3PluginParameter &p = parameters_[i];
+            double norm = ctrl->getParamNormalized(p.paramId);
+            p.currentValue = norm;
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaled = (int)(norm * maxVal + 0.5);
+                if (scaled < 0) scaled = 0;
+                if (scaled > maxVal) scaled = maxVal;
+                p.variable->SetInt(scaled, false);
+            }
+        }
+    }
+
+    return true;
+}
+
+// ====================================================================
 // Preset/program discovery and accessors
 // ====================================================================
 
@@ -1276,8 +1333,10 @@ void VST3Effect::discoverPresets() {
     programLists_.clear();
     filePresetsByBank_.clear();
     embeddedXmlByBank_.clear();
+    compressedPresets_.clear();
     usingFilePresets_ = false;
     usingEmbeddedPresets_ = false;
+    usingCompressedPresets_ = false;
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
@@ -1368,8 +1427,8 @@ void VST3Effect::discoverPresets() {
         // setState with actual preset XML, which is far more reliable than
         // kIsProgramChange for JUCE-based plugins.
         discoverHardcodedPresets();
-        if (usingEmbeddedPresets_) {
-            // Embedded presets loaded successfully — use them
+        if (usingEmbeddedPresets_ || usingCompressedPresets_) {
+            // Embedded/compressed presets loaded successfully — use them
             return;
         }
 
@@ -1416,16 +1475,24 @@ static void loadValhallaEmbedded(
 }
 
 void VST3Effect::discoverHardcodedPresets() {
-    // --- TAL-Reverb-4: kIsProgramChange parameter based ---
-    if (strstr(name_, "TAL-Reverb") != nullptr || strstr(name_, "Reverb-4") != nullptr) {
+    // --- TAL-Reverb-4: embedded XML + setState ---
+    // kIsProgramChange works on desktop but fails on Steam Deck.
+    // Use the same reliable setState approach as Valhalla/NoiseMaker.
+    if (strstr(name_, "TAL-Reverb") != nullptr || strstr(name_, "Reverb-4") != nullptr ||
+        strstr(name_, "TAL Reverb") != nullptr) {
         programLists_.clear();
+        embeddedXmlByBank_.clear();
         VST3ProgramList pl;
         pl.listId = 0;
         pl.name = "Factory Presets";
-        for (int p = 0; p < TAL_REVERB4_PRESET_COUNT; p++) {
-            pl.programs.push_back(talReverb4PresetNames[p]);
+        std::vector<const char *> xmlPtrs;
+        for (int p = 0; p < TAL_REVERB4_EMBEDDED_COUNT; p++) {
+            pl.programs.push_back(talReverb4EmbeddedPresets[p].name);
+            xmlPtrs.push_back(talReverb4EmbeddedPresets[p].xmlData);
         }
         programLists_.push_back(pl);
+        embeddedXmlByBank_.push_back(xmlPtrs);
+        usingEmbeddedPresets_ = true;
         currentBank_ = 0;
         currentPreset_ = 0;
         return;
@@ -1460,6 +1527,31 @@ void VST3Effect::discoverHardcodedPresets() {
             currentPreset_ = 0;
             return;
         }
+    }
+
+    // --- Arturia Efx FRAGMENTS: compressed binary state data ---
+    // PCHK component states extracted from .nksf files and zlib-compressed.
+    // On Steam Deck the Wine prefix may not have the preset files installed,
+    // so we bundle them.
+    if (strstr(name_, "FRAGMENTS") != nullptr || strstr(name_, "Efx FRAGMENTS") != nullptr) {
+        programLists_.clear();
+        compressedPresets_.clear();
+        VST3ProgramList pl;
+        pl.listId = 0;
+        pl.name = "Factory Presets";
+        for (int p = 0; p < EFX_FRAGMENTS_PRESET_COUNT; p++) {
+            pl.programs.push_back(efxFragmentsEmbeddedPresets[p].name);
+            CompressedPreset cp;
+            cp.data = efxFragmentsEmbeddedPresets[p].compressedData;
+            cp.compressedSize = efxFragmentsEmbeddedPresets[p].compressedSize;
+            cp.originalSize = efxFragmentsEmbeddedPresets[p].originalSize;
+            compressedPresets_.push_back(cp);
+        }
+        programLists_.push_back(pl);
+        usingCompressedPresets_ = true;
+        currentBank_ = 0;
+        currentPreset_ = 0;
+        return;
     }
 }
 
@@ -1501,11 +1593,20 @@ void VST3Effect::SetPreset(int presetIdx) {
 
     currentPreset_ = presetIdx;
 
-    // --- Embedded preset loading (Valhalla plugins compiled into binary) ---
+    // --- Embedded preset loading (Valhalla/TAL plugins compiled into binary) ---
     if (usingEmbeddedPresets_) {
         if (currentBank_ < (int)embeddedXmlByBank_.size() &&
             presetIdx < (int)embeddedXmlByBank_[currentBank_].size()) {
             loadPresetFromXmlData(embeddedXmlByBank_[currentBank_][presetIdx]);
+        }
+        return;
+    }
+
+    // --- Compressed binary preset loading (Efx FRAGMENTS) ---
+    if (usingCompressedPresets_) {
+        if (presetIdx < (int)compressedPresets_.size()) {
+            const CompressedPreset &cp = compressedPresets_[presetIdx];
+            loadPresetFromCompressedData(cp.data, cp.compressedSize, cp.originalSize);
         }
         return;
     }

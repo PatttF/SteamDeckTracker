@@ -306,22 +306,24 @@ void EffectView::fillEffectParameters() {
             position._y += 2;
         }
 
-        // Footer controls: volume and wet/dry
+        // Footer controls — single horizontal row
         FourCC volId = (current_->GetEffectType() == ET_LV2) ? LV2FX_VOLUME : VST3FX_VOLUME;
         FourCC wetId = (current_->GetEffectType() == ET_LV2) ? LV2FX_WETDRY : VST3FX_WETDRY;
 
-        Variable *v = current_->FindVariable(volId);
-        if (v) {
-            UIIntVarField *f1 = new UIIntVarField(position, *v, "volume: %2.2X", 0, 0xFF, 1, 0x10);
-            T_SimpleList<UIField>::Insert(f1);
-            position._y += 1;
-        }
+        {
+            GUIPoint p(1, position._y);
+            Variable *v = current_->FindVariable(volId);
+            if (v) {
+                UIIntVarField *f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+                T_SimpleList<UIField>::Insert(f1);
+            }
 
-        v = current_->FindVariable(wetId);
-        if (v) {
-            UIIntVarField *f1 = new UIIntVarField(position, *v, "wet/dry: %2.2X", 0, 0xFF, 1, 0x10);
-            T_SimpleList<UIField>::Insert(f1);
-            position._y += 1;
+            p._x = 9;
+            v = current_->FindVariable(wetId);
+            if (v) {
+                UIIntVarField *f1 = new UIIntVarField(p, *v, "wet:%2.2X", 0, 0xFF, 1, 0x10);
+                T_SimpleList<UIField>::Insert(f1);
+            }
         }
     } else {
         position._y += 2;

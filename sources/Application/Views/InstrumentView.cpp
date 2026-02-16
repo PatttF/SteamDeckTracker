@@ -201,9 +201,9 @@ void InstrumentView::onInstrumentChange() {
 	SetFocus(T_SimpleList<UIField>::GetFirst()) ;
 	IteratorPtr<UIField> it2(T_SimpleList<UIField>::GetIterator()) ;
 	for (it2->Begin();!it2->IsDone();it2->Next()) {
-        UIIntVarField &field=(UIIntVarField &)it2->CurrentItem() ;
-        if (field.GetVariableID()==lastFocusID_) {
-            SetFocus(&field) ;
+        UIIntVarField *field = dynamic_cast<UIIntVarField *>(&it2->CurrentItem()) ;
+        if (field && field->GetVariableID()==lastFocusID_) {
+            SetFocus(field) ;
             break ;
         }
     } ;
@@ -402,7 +402,6 @@ void InstrumentView::fillMidiParameters() {
 	Variable *v=instrument->FindVariable(MIP_CHANNEL) ;
 	UIIntVarField* f1=new UIIntVarField(position,*v,"channel: %2.2d",0,0x0F,1,0x04,1) ;
 	T_SimpleList<UIField>::Insert(f1) ;
-	f1->SetFocus() ;
 
 	position._y+=1;
 	v=instrument->FindVariable(MIP_VOLUME) ;
@@ -881,26 +880,28 @@ void InstrumentView::fillLV2Parameters() {
             position._y += 2;
         }
 
-    // Footer controls - stacked vertically since LV2 has no note blocks
-    Variable *v=instrument->FindVariable(LV2IP_VOLUME) ;
-	UIIntVarField* f1=new UIIntVarField(position,*v,"volume: %2.2X",0,0xFF,1,0x10) ;
-	T_SimpleList<UIField>::Insert(f1) ;
-	f1->SetFocus() ;
+    // Footer controls — single horizontal row
+	{
+		GUIPoint p(1, position._y);
+		Variable *v = instrument->FindVariable(LV2IP_VOLUME);
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
 
-	position._y += 1;
-	v=instrument->FindVariable(LV2IP_PAN) ;
-	f1=new UIIntVarField(position,*v,"pan: %2.2X",0,0xFE,1,0x10) ;
-	T_SimpleList<UIField>::Insert(f1) ;
+		p._x = 9;
+		v = instrument->FindVariable(LV2IP_PAN);
+		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
 
-	position._y += 1;
-	v=instrument->FindVariable(LV2IP_TABLEAUTO) ;
-	UIIntVarField *f2=new UIIntVarField(position,*v,"automation: %s",0,1,1,1) ;
-	T_SimpleList<UIField>::Insert(f2) ;
+		p._x = 17;
+		v = instrument->FindVariable(LV2IP_TABLEAUTO);
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "auto:%s", 0, 1, 1, 1);
+		T_SimpleList<UIField>::Insert(f2);
 
-	position._y += 1;
-	v=instrument->FindVariable(LV2IP_TABLE) ;
-	f1=new UIIntVarOffField(position,*v,"table: %2.2X",0,0x7F,1,0x10) ;
-	T_SimpleList<UIField>::Insert(f1) ;
+		p._x = 29;
+		v = instrument->FindVariable(LV2IP_TABLE);
+		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0, 0x7F, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
+	}
 
 } ;
 
@@ -978,31 +979,28 @@ void InstrumentView::fillSoundFontParameters() {
 
 	position._y += 1;
 
-	// Volume
-	v = instrument->FindVariable(SFIP_VOLUME);
-	f1 = new UIIntVarField(position, *v, "volume: %2.2X", 0, 0xFF, 1, 0x10);
-	T_SimpleList<UIField>::Insert(f1);
+	// Footer controls — single horizontal row
+	{
+		GUIPoint p(1, position._y);
+		v = instrument->FindVariable(SFIP_VOLUME);
+		f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
 
-	position._y += 1;
+		p._x = 9;
+		v = instrument->FindVariable(SFIP_PAN);
+		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
 
-	// Pan
-	v = instrument->FindVariable(SFIP_PAN);
-	f1 = new UIIntVarField(position, *v, "pan: %2.2X", 0, 0xFE, 1, 0x10);
-	T_SimpleList<UIField>::Insert(f1);
+		p._x = 17;
+		v = instrument->FindVariable(SFIP_TABLEAUTO);
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "auto:%s", 0, 1, 1, 1);
+		T_SimpleList<UIField>::Insert(f2);
 
-	position._y += 2;
-
-	// Table automation
-	v = instrument->FindVariable(SFIP_TABLEAUTO);
-	UIIntVarField *f2 = new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
-	T_SimpleList<UIField>::Insert(f2);
-
-	position._y += 1;
-
-	// Table
-	v = instrument->FindVariable(SFIP_TABLE);
-	f1 = new UIIntVarOffField(position, *v, "table: %2.2X", 0x00, 0x7F, 1, 0x10);
-	T_SimpleList<UIField>::Insert(f1);
+		p._x = 29;
+		v = instrument->FindVariable(SFIP_TABLE);
+		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0x00, 0x7F, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
+	}
 }
 
 void InstrumentView::fillVST3Parameters() {
@@ -1189,26 +1187,28 @@ void InstrumentView::fillVST3Parameters() {
 		position._y += 2;
 	}
 
-	// Footer controls
-	Variable *v = instrument->FindVariable(VST3IP_VOLUME);
-	UIIntVarField *f1 = new UIIntVarField(position, *v, "volume: %2.2X", 0, 0xFF, 1, 0x10);
-	T_SimpleList<UIField>::Insert(f1);
-	f1->SetFocus();
+	// Footer controls — single horizontal row
+	{
+		GUIPoint p(1, position._y);
+		Variable *v = instrument->FindVariable(VST3IP_VOLUME);
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
 
-	position._y += 1;
-	v = instrument->FindVariable(VST3IP_PAN);
-	f1 = new UIIntVarField(position, *v, "pan: %2.2X", 0, 0xFE, 1, 0x10);
-	T_SimpleList<UIField>::Insert(f1);
+		p._x = 9;
+		v = instrument->FindVariable(VST3IP_PAN);
+		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
 
-	position._y += 1;
-	v = instrument->FindVariable(VST3IP_TABLEAUTO);
-	UIIntVarField *f2 = new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
-	T_SimpleList<UIField>::Insert(f2);
+		p._x = 17;
+		v = instrument->FindVariable(VST3IP_TABLEAUTO);
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "auto:%s", 0, 1, 1, 1);
+		T_SimpleList<UIField>::Insert(f2);
 
-	position._y += 1;
-	v = instrument->FindVariable(VST3IP_TABLE);
-	f1 = new UIIntVarOffField(position, *v, "table: %2.2X", 0, 0x7F, 1, 0x10);
-	T_SimpleList<UIField>::Insert(f1);
+		p._x = 29;
+		v = instrument->FindVariable(VST3IP_TABLE);
+		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0, 0x7F, 1, 0x10);
+		T_SimpleList<UIField>::Insert(f1);
+	}
 }
 
 

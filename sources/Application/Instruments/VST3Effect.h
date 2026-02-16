@@ -125,14 +125,24 @@ private:
     int currentPreset_;
     int32_t programChangeParamIdx_;
 
-    // Embedded preset data (for Valhalla plugins compiled into the binary)
+    // Embedded preset data (for Valhalla/TAL plugins compiled into the binary)
     bool usingEmbeddedPresets_;
     std::vector<std::vector<const char *>> embeddedXmlByBank_;
+
+    // Embedded compressed binary preset data (for Arturia Efx FRAGMENTS)
+    bool usingCompressedPresets_;
+    struct CompressedPreset {
+        const uint8_t *data;
+        uint32_t compressedSize;
+        uint32_t originalSize;
+    };
+    std::vector<CompressedPreset> compressedPresets_;  // parallel to programLists_[0].programs
 
     void discoverPresetFiles();
     void discoverHardcodedPresets();
     bool loadPresetFromFile(const std::string &filePath, int headerSkipBytes);
     bool loadPresetFromXmlData(const char *xmlData);
+    bool loadPresetFromCompressedData(const uint8_t *compressed, uint32_t compSize, uint32_t origSize);
 };
 
 #endif

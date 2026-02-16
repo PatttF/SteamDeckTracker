@@ -20,7 +20,8 @@
 #include "System/Console/Trace.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "OsTIrusPatches.h"
-#include "TALNoiseMakerPresets.h"
+#include "TALNoiseMakerPresetData.h"
+#include "Odin2PresetData.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -1970,7 +1971,11 @@ static const VST3PluginPresetMapping knownPresetMappings[] = {
 void VST3Instrument::discoverPresets() {
     programLists_.clear();
     filePresetsByBank_.clear();
+    embeddedXmlPresets_.clear();
+    compressedPresets_.clear();
     usingFilePresets_ = false;
+    usingEmbeddedPresets_ = false;
+    usingCompressedPresets_ = false;
     usingMidiPresets_ = false;
     currentBank_ = 0;
     currentPreset_ = 0;
@@ -2064,29 +2069,45 @@ void VST3Instrument::discoverPresets() {
         discoverPresetFiles();
     }
 
-    // If file scanning didn't find presets, check if IUnitInfo had useful ones
-    bool hasUsefulPresets = false;
+    // If file scanning didn't find presets, try hardcoded/bundled presets
+    // first, then fall back to IUnitInfo or other methods.
     if (!usingFilePresets_) {
+        // Try hardcoded/bundled presets first for plugins we have data for
+        // (TAL-NoiseMaker, OsTIrus, etc.).  This ensures reliable preset
+        // names even when IUnitInfo returns useless data on some platforms.
+        discoverHardcodedPresets();
+        if (usingEmbeddedPresets_) {
+            // Embedded XML presets loaded (e.g. NoiseMaker) — use setState
+            return;
+        }
+        if (usingCompressedPresets_) {
+            // Compressed XML presets loaded (e.g. Odin2) — decompress + setState
+            return;
+        }
+        if (usingMidiPresets_) {
+            // Fully handled (e.g. OsTIrus with MIDI program change)
+            return;
+        }
+
+        bool hasUsefulPresets = false;
         for (size_t i = 0; i < programLists_.size(); i++) {
             if (programLists_[i].programs.size() > 1) {
                 hasUsefulPresets = true;
                 break;
             }
         }
-        if (!hasUsefulPresets) {
-            // No file presets and no useful IUnitInfo presets — try other methods
-            discoverPresetFiles();
+        if (hasUsefulPresets) {
+            // Either hardcoded presets loaded (e.g. NoiseMaker) or IUnitInfo
+            // had useful programs — use them via kIsProgramChange
+            return;
         }
-    }
 
-    // If file-based scanning also didn't find anything, try hardcoded ROM presets
-    if (!usingFilePresets_ && !hasUsefulPresets) {
-        discoverHardcodedPresets();
-    }
+        // No useful presets yet — try file scanning
+        discoverPresetFiles();
 
-    // If no hardcoded presets either, try patchmanager cache (other gearmulator)
-    if (!usingFilePresets_ && !usingMidiPresets_ && !hasUsefulPresets) {
-        discoverPatchManagerPresets();
+        if (!usingFilePresets_ && !usingMidiPresets_) {
+            discoverPatchManagerPresets();
+        }
     }
 }
 
@@ -2279,22 +2300,48 @@ void VST3Instrument::discoverHardcodedPresets() {
         return;
     }
 
-    // --- TAL-NoiseMaker: kIsProgramChange parameter based ---
+    // --- TAL-NoiseMaker: embedded XML + setState ---
     // The native Linux VST3 embeds 256 factory presets in BinaryData.
-    // IUnitInfo exposes them on desktop but may fail on Steam Deck.
-    // Hardcode the names so they're always available; SetPreset uses
-    // the kIsProgramChange parameter to switch (no MIDI, no files).
+    // kIsProgramChange works on desktop but fails on Steam Deck.
+    // Use the reliable setState approach: JUCE-wrap each preset's XML
+    // and feed it directly to IComponent::setState().
     if (strstr(name_, "NoiseMaker") != nullptr) {
         programLists_.clear();
+        embeddedXmlPresets_.clear();
         VST3ProgramList pl;
         pl.listId = 0;
         pl.name = "Factory Presets";
-        for (int p = 0; p < TAL_NOISEMAKER_PRESET_COUNT; p++) {
-            pl.programs.push_back(talNoiseMakerPresetNames[p]);
+        for (int p = 0; p < TAL_NOISEMAKER_EMBEDDED_COUNT; p++) {
+            pl.programs.push_back(talNoiseMakerEmbeddedPresets[p].name);
+            embeddedXmlPresets_.push_back(talNoiseMakerEmbeddedPresets[p].xmlData);
         }
         programLists_.push_back(pl);
-        // NOT usingMidiPresets_ — SetPreset will use the
-        // kIsProgramChange parameter path.
+        usingEmbeddedPresets_ = true;
+        currentBank_ = 0;
+        currentPreset_ = 0;
+        return;
+    }
+
+    // --- Odin2: compressed XML + zlib decompress + JUCE wrap + setState ---
+    // Factory presets extracted from Odin2.so BinaryData (JUCE ValueTree
+    // binary streams → XML), then zlib-compressed for embedding.
+    // At runtime: decompress → JUCE-wrap XML → setState.
+    if (strstr(name_, "Odin") != nullptr) {
+        programLists_.clear();
+        compressedPresets_.clear();
+        VST3ProgramList pl;
+        pl.listId = 0;
+        pl.name = "Factory Presets";
+        for (int p = 0; p < ODIN2_EMBEDDED_COUNT; p++) {
+            pl.programs.push_back(odin2EmbeddedPresets[p].name);
+            CompressedPreset cp;
+            cp.data = odin2EmbeddedPresets[p].compressedData;
+            cp.compressedSize = odin2EmbeddedPresets[p].compressedSize;
+            cp.originalSize = odin2EmbeddedPresets[p].originalSize;
+            compressedPresets_.push_back(cp);
+        }
+        programLists_.push_back(pl);
+        usingCompressedPresets_ = true;
         currentBank_ = 0;
         currentPreset_ = 0;
         return;
@@ -3426,6 +3473,24 @@ void VST3Instrument::SetPreset(int presetIdx) {
 
     currentPreset_ = presetIdx;
 
+    // --- Embedded XML preset loading (TAL-NoiseMaker, etc.) ---
+    if (usingEmbeddedPresets_) {
+        if (presetIdx < (int)embeddedXmlPresets_.size() &&
+            embeddedXmlPresets_[presetIdx] != nullptr) {
+            loadPresetFromXmlData(embeddedXmlPresets_[presetIdx]);
+        }
+        return;
+    }
+
+    // --- Compressed XML preset loading (Odin2, etc.) ---
+    if (usingCompressedPresets_) {
+        if (presetIdx < (int)compressedPresets_.size()) {
+            const CompressedPreset &cp = compressedPresets_[presetIdx];
+            loadPresetFromCompressedXmlData(cp.data, cp.compressedSize, cp.originalSize);
+        }
+        return;
+    }
+
     // --- File-based preset loading ---
     if (usingFilePresets_) {
         if (currentBank_ < (int)filePresetsByBank_.size() &&
@@ -3539,6 +3604,86 @@ void VST3Instrument::SetPreset(int presetIdx) {
 
         break;
     }
+}
+
+// ====================================================================
+// loadPresetFromXmlData: apply embedded preset XML via setState
+// (same approach as VST3Effect — JUCE-wrap the XML and feed to setState)
+// ====================================================================
+bool VST3Instrument::loadPresetFromXmlData(const char *xmlData) {
+    if (!component_ || !xmlData) return false;
+
+    size_t xmlLen = strlen(xmlData);
+    if (xmlLen == 0) return false;
+
+    IComponent *comp = (IComponent *)component_;
+
+    // JUCE copyXmlToBinary format:
+    //   [4-byte magic 0x21324356][4-byte string length LE][XML][0x00]
+    uint32_t magic = 0x21324356;
+    uint32_t strLen = (uint32_t)xmlLen;
+    std::vector<uint8_t> data(8 + xmlLen + 1);
+    memcpy(&data[0], &magic, 4);
+    memcpy(&data[4], &strLen, 4);
+    memcpy(&data[8], xmlData, xmlLen);
+    data[8 + xmlLen] = 0;
+
+    SimpleMemoryStream stream;
+    stream.setData(&data[0], data.size());
+    tresult res = comp->setState(&stream);
+    if (res != kResultOk) {
+        Trace::Error("VST3: embedded setState FAILED (result=%d)", (int)res);
+        return false;
+    }
+
+    // Sync controller
+    if (editController_ && !componentIsController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        stream.resetRead();
+        ctrl->setComponentState(&stream);
+    }
+
+    // Sync parameter values back into our Variables
+    if (editController_) {
+        IEditController *ctrl = (IEditController *)editController_;
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            VST3PluginParameter &p = parameters_[i];
+            double norm = ctrl->getParamNormalized(p.paramId);
+            p.currentValue = norm;
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaled = (int)(norm * maxVal + 0.5);
+                if (scaled < 0) scaled = 0;
+                if (scaled > maxVal) scaled = maxVal;
+                p.variable->SetInt(scaled, false);
+            }
+        }
+    }
+
+    return true;
+}
+
+// ====================================================================
+// loadPresetFromCompressedXmlData: decompress zlib XML, JUCE-wrap, setState
+// Used for Odin2 whose presets are zlib-compressed XML (not raw binary).
+// ====================================================================
+bool VST3Instrument::loadPresetFromCompressedXmlData(const uint8_t *compressed,
+                                                      uint32_t compSize,
+                                                      uint32_t origSize) {
+    if (!component_ || !compressed || compSize == 0 || origSize == 0) return false;
+
+    // Decompress
+    std::vector<uint8_t> xmlBuf(origSize + 1);
+    uLongf destLen = (uLongf)origSize;
+    int zret = uncompress(&xmlBuf[0], &destLen, compressed, (uLong)compSize);
+    if (zret != Z_OK) {
+        Trace::Error("VST3: zlib decompress failed (ret=%d)", zret);
+        return false;
+    }
+    xmlBuf[destLen] = 0;  // null-terminate the XML
+
+    // Apply via the existing JUCE-wrap + setState path
+    return loadPresetFromXmlData((const char *)&xmlBuf[0]);
 }
 
 // ====================================================================
