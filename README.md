@@ -22,6 +22,7 @@ Key Enhancements:
     Effects support full parameter editing with real value display and scale point labels. Effect configurations are saved and restored with the project.
 
     Live Audio Input: AudioIn instrument type captures live audio from any input device, mixes it directly into the output bus, and forwards MIDI to external hardware. Effects can be applied to the live stream without triggering notes.
+    MIDI Input Routing: Connect any MIDI controller or keyboard to play instruments live with full velocity, CC, pitch bend, and aftertouch support. Assign input device and channel per instrument for flexible routing.
 
     Automated Workspace: On first launch, the software generates a streamlined directory structure in the user's Documents/SDTracker folder for easy management. After that use the options in the Projects page to install the factory samples as well as my Mutated Instruments plugin.
 
@@ -252,6 +253,48 @@ The `Player::ProcessCommands()` loop normally skips channels with no active inst
 3. **Phrase data lookup** — reads the instrument number from the current phrase position (scanning backward if needed) and resolves it via `InstrumentBank`
 
 This allows effects to be applied to AudioIn without ever triggering a note, which would otherwise send unwanted MIDI to external hardware.
+
+
+## MIDI Input Routing
+
+SDTracker supports **live MIDI input** from external controllers and keyboards. Any instrument (VST3, LV2, SoundFont, or Sample) can be assigned to receive notes and expression data from a connected MIDI device, enabling real-time performance alongside tracker playback.
+
+### Setup
+
+Every instrument has two MIDI input fields in the footer of the Instrument page:
+
+| Field | Description |
+|-------|-------------|
+| **midi dev** | MIDI input device index (`--` = disabled, `0`–`N` = device number) |
+| **midi ch** | MIDI channel to listen on (`0`–`15`) |
+
+Set both fields to assign an instrument to a specific device and channel. The connected device name is shown next to the settings. When disabled (`--`), the instrument ignores all MIDI input.
+
+Multiple instruments can listen on the same device but different channels. Only the **first matching instrument** (lowest instrument number) receives each message.
+
+### What Gets Forwarded
+
+All standard MIDI performance data is passed through to the instrument:
+
+| MIDI Message | Instruments | Behaviour |
+|---|---|---|
+| **Note On** (0x90) | All | Triggers the instrument with the incoming note and velocity. Up to 4 simultaneous live notes are supported (polyphonic, using dedicated live channels). |
+| **Note Off** (0x80) | All | Stops the matching live note. |
+| **Velocity** | VST3, LV2, SF2 | Full 0–127 velocity is forwarded. VST3 receives it as a float (0.0–1.0). LV2 and SoundFont use the raw byte value for layer/split selection. |
+| **Control Change** (0xB0) | VST3, LV2 | CC number and value are forwarded. VST3 maps to `kLegacyMIDICCOutEvent`. LV2 receives raw MIDI bytes in the atom buffer. |
+| **Pitch Bend** (0xE0) | VST3, LV2 | 14-bit pitch bend (LSB + MSB) is forwarded. |
+| **Channel Aftertouch** (0xD0) | VST3, LV2 | Pressure value forwarded as aftertouch. |
+| **Poly Aftertouch** (0xA0) | VST3, LV2 | Per-note pressure forwarded with note number. |
+
+SoundFont instruments receive velocity but do not process CC, aftertouch, or pitch bend (they are sample-based with no MIDI expression support). Sample instruments use the base class no-op for `QueueMidiEvent`.
+
+### Live Polyphony
+
+MIDI input uses 4 dedicated live channels (separate from the 16 tracker channels) to allow polyphonic playing. When all 4 channels are in use, the oldest note is stolen for new input. Live notes do not interfere with tracker playback — both can run simultaneously.
+
+### Hot-Plugging
+
+MIDI devices are re-scanned each time you enter the Instrument page (while playback is stopped). Newly connected controllers will appear automatically.
 
 ---
 ## Sample Recorder

@@ -14,8 +14,6 @@ protected:
 	virtual void RestoreContent(TiXmlElement *element)=0 ;
 private:
 	const char *nodeName_ ;
-public:
-	const char *GetNodeName() const { return nodeName_; }
 } ;
 
 #endif

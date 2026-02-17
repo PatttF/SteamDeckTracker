@@ -111,13 +111,11 @@ I_Instrument *InstrumentBank::GetInstrument(int i) {
 } ;
 
 void InstrumentBank::SaveContent(TiXmlNode *node) {
-	Trace::Debug("SAVE: InstrumentBank::SaveContent enter");
 	char hex[3] ;
 	for (int i=0;i<MAX_INSTRUMENT_COUNT;i++) {
 
 		I_Instrument *instr=instrument_[i] ;
 		if (!instr->IsEmpty()) {
-			Trace::Debug("SAVE: instrument %d type=%d", i, instr->GetType());
 			TiXmlElement data("INSTRUMENT") ;
 			hex2char(i,hex) ;
 			data.SetAttribute("ID",hex) ;
@@ -161,7 +159,6 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 			}
 			// VST3 instruments: save plugin path, class ID, and full state blobs
 			if (instr->GetType() == IT_VST3) {
-				Trace::Debug("SAVE: VST3 instrument %d — saving params", i);
 				VST3Instrument *vin = (VST3Instrument *)instr;
 				// Save parameter values directly to XML (no Insert)
 				int pc = vin->GetParameterCount();
@@ -180,7 +177,6 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					count++;
 				}
 				// Save full component state blob (base64)
-				Trace::Debug("SAVE: VST3 instrument %d — GetComponentStateBase64", i);
 				std::string compState = vin->GetComponentStateBase64();
 				if (!compState.empty()) {
 					TiXmlElement paramp("PARAM");
@@ -190,7 +186,6 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					count++;
 				}
 				// Save full controller state blob (base64)
-				Trace::Debug("SAVE: VST3 instrument %d — GetControllerStateBase64", i);
 				std::string ctrlState = vin->GetControllerStateBase64();
 				if (!ctrlState.empty()) {
 					TiXmlElement paramp("PARAM");
@@ -244,10 +239,8 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 				}
 			}
 			if (count) node->InsertEndChild(data) ;
-			Trace::Debug("SAVE: instrument %d done (count=%d)", i, count);
 		}
 	}
-	Trace::Debug("SAVE: InstrumentBank::SaveContent done");
 } ;
 
 void InstrumentBank::RestoreContent(TiXmlElement *element) {

@@ -1161,37 +1161,77 @@ void VST3Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
 }
 
 void VST3Instrument::QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2) {
-    // Map raw MIDI bytes to VST3 kLegacyMIDICCOutEvent
     unsigned char type = status & 0xF0;
     int8_t channel = status & 0x0F;
-    PendingMidiCC mc;
-    mc.channel = channel;
+
+    // Determine the VST3 ControllerNumber and normalized value for this MIDI message
+    int controllerNumber = -1;
+    double normalizedValue = 0.0;
 
     switch (type) {
         case 0xB0: // CC
+            controllerNumber = data1 & 0x7F;
+            normalizedValue = (data2 & 0x7F) / 127.0;
+            break;
+        case 0xA0: // Poly aftertouch — maps to kAfterTouch (128)
+            controllerNumber = 128;
+            normalizedValue = (data2 & 0x7F) / 127.0;
+            break;
+        case 0xD0: // Channel aftertouch — maps to kAfterTouch (128)
+            controllerNumber = 128;
+            normalizedValue = (data1 & 0x7F) / 127.0;
+            break;
+        case 0xE0: { // Pitch bend — maps to kPitchBend (129)
+            controllerNumber = 129;
+            int bend14 = (data1 & 0x7F) | ((data2 & 0x7F) << 7);
+            normalizedValue = bend14 / 16383.0;
+            break;
+        }
+        default:
+            return;
+    }
+
+    // Prefer IMidiMapping parameter changes — this is the standard VST3 way
+    // and works with all compliant plugins (including yabridge-bridged ones).
+    auto it = midiCcToParamId_.find(controllerNumber);
+    if (it != midiCcToParamId_.end()) {
+        PendingParamChange pc;
+        pc.paramId = it->second;
+        pc.value = normalizedValue;
+        pendingEventsMutex_.Lock();
+        pendingParamChanges_.push_back(pc);
+        pendingEventsMutex_.Unlock();
+        return;
+    }
+
+    // Fallback: send as kLegacyMIDICCOutEvent for plugins that don't
+    // implement IMidiMapping (e.g. JUCE-based gearmulator).
+    PendingMidiCC mc;
+    mc.channel = channel;
+    switch (type) {
+        case 0xB0:
             mc.controlNumber = data1 & 0x7F;
             mc.value = data2 & 0x7F;
             mc.value2 = 0;
             break;
-        case 0xA0: // Poly aftertouch
-            mc.controlNumber = 128; // kAfterTouch in ControllerNumbers
+        case 0xA0:
+            mc.controlNumber = 128;
             mc.value = data2 & 0x7F;
-            mc.value2 = data1 & 0x7F; // note number
+            mc.value2 = data1 & 0x7F;
             break;
-        case 0xD0: // Channel aftertouch
-            mc.controlNumber = 128; // kAfterTouch
+        case 0xD0:
+            mc.controlNumber = 128;
             mc.value = data1 & 0x7F;
             mc.value2 = 0;
             break;
-        case 0xE0: // Pitch bend
-            mc.controlNumber = 129; // kPitchBend in ControllerNumbers
-            mc.value = data1 & 0x7F;  // LSB
-            mc.value2 = data2 & 0x7F; // MSB
+        case 0xE0:
+            mc.controlNumber = 129;
+            mc.value = data1 & 0x7F;
+            mc.value2 = data2 & 0x7F;
             break;
         default:
-            return; // Unsupported message type
+            return;
     }
-
     pendingEventsMutex_.Lock();
     pendingMidiCCs_.push_back(mc);
     pendingEventsMutex_.Unlock();
@@ -1783,6 +1823,27 @@ void VST3Instrument::loadPluginInner() {
                 stream.resetRead();
                 ctrl->setComponentState(&stream);
             }
+        }
+    }
+
+    // Query IMidiMapping to build CC → paramId lookup table.
+    // When a plugin implements this interface, we send CC/pitch bend/aftertouch
+    // as parameter changes (which all VST3 plugins understand) instead of
+    // kLegacyMIDICCOutEvent (which many plugins ignore).
+    midiCcToParamId_.clear();
+    if (editController_) {
+        IEditController* ctrl = (IEditController*)editController_;
+        IMidiMapping* mm = nullptr;
+        tresult mmRes = ctrl->queryInterface(IMidiMapping::iid, (void**)&mm);
+        if (mmRes == kResultOk && mm) {
+            // Query all standard CCs (0-127) plus kAfterTouch(128) and kPitchBend(129)
+            for (int cc = 0; cc < 130; cc++) {
+                ParamID pid = 0;
+                if (mm->getMidiControllerAssignment(0, 0, (CtrlNumber)cc, pid) == kResultOk) {
+                    midiCcToParamId_[cc] = pid;
+                }
+            }
+            mm->release();
         }
     }
 
@@ -3909,6 +3970,7 @@ void VST3Instrument::cleanupPlugin() {
     currentBank_ = 0;
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
+    midiCcToParamId_.clear();
 }
 
 // ====================================================================

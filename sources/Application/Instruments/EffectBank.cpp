@@ -63,12 +63,10 @@ void EffectBank::Init() {
 }
 
 void EffectBank::SaveContent(TiXmlNode *node) {
-    Trace::Debug("SAVE: EffectBank::SaveContent enter");
     char hex[3];
     for (int i = 0; i < MAX_EFFECT_COUNT; i++) {
         I_Effect *effect = effects_[i];
         if (!effect->IsEmpty()) {
-            Trace::Debug("SAVE: effect %d type=%d", i, effect->GetEffectType());
             TiXmlElement data("EFFECT_SLOT");
             hex2char(i, hex);
             data.SetAttribute("ID", hex);

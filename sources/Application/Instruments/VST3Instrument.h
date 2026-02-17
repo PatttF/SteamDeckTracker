@@ -195,6 +195,11 @@ private:
     void *editController_;                  // IEditController*
     bool componentIsController_;            // true if component == controller
 
+    // IMidiMapping cache: maps ControllerNumbers → ParamID for CC/pitchbend/aftertouch
+    // Populated at load time; used by QueueMidiEvent to send parameter changes
+    // instead of kLegacyMIDICCOutEvent when the plugin supports it.
+    std::map<int, uint32_t> midiCcToParamId_;
+
     // Audio buffers
     float *audioBufferL_;
     float *audioBufferR_;
