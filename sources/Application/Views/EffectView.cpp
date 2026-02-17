@@ -43,6 +43,7 @@ EffectView::EffectView(GUIWindow &w, ViewData *data) : FieldView(w, data) {
     currentTypeIndex_ = 0;  // VST3 default
     pendingTypeEffectIdx_ = -1;
     pendingEffectType_ = ET_VST3;
+    lastFocusID_ = 0;
     memset(pluginLabel_, 0, sizeof(pluginLabel_));
     memset(paramText_, 0, sizeof(paramText_));
 }
@@ -52,6 +53,9 @@ EffectView::~EffectView() {
 
 void EffectView::onEffectChange(FourCC focusField) {
     ClearFocus();
+
+    // If no specific field requested, use the last known focus
+    if (focusField == 0) focusField = lastFocusID_;
 
     I_Effect *old = current_;
     current_ = project_->GetEffect(currentEffect_);
@@ -445,6 +449,11 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
                 }
             }
         }
+    }
+
+    UIIntVarField *ivf = dynamic_cast<UIIntVarField *>(GetFocus());
+    if (ivf) {
+        lastFocusID_ = ivf->GetVariableID();
     }
 }
 

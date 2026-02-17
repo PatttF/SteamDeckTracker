@@ -817,14 +817,24 @@ static const VST3FxPresetMapping knownFxPresetMappings[] = {
         ".vpreset",
         0
     },
-    // Arturia Efx FRAGMENTS: NKS .nksf files containing VST3 state in RIFF/NIKS
-    // PCHK chunk. Presets live under ProgramData/Arturia/Efx FRAGMENTS/.
+    // Arturia Efx FRAGMENTS: native Boost serialization presets (extensionless)
+    // under ProgramData/Arturia/Presets/Efx FRAGMENTS/.
     {
         "Efx FRAGMENTS",
         {
             nullptr  // Directories resolved at runtime from WINEPREFIX
         },
-        ".nksf",
+        "",  // extensionless files
+        0
+    },
+    // Arturia Efx MOTIONS: native Boost serialization presets (extensionless)
+    // under ProgramData/Arturia/Presets/Efx MOTIONS/.
+    {
+        "Efx MOTIONS",
+        {
+            nullptr  // Directories resolved at runtime from WINEPREFIX
+        },
+        "",  // extensionless files
         0
     },
     // Sentinel
@@ -837,7 +847,8 @@ static void findFxPresetFiles(const std::string &dir, const char *extension,
     DIR *d = opendir(dir.c_str());
     if (!d) return;
     struct dirent *ent;
-    size_t extLen = strlen(extension);
+    size_t extLen = extension ? strlen(extension) : 0;
+    bool extensionless = (extLen == 0);
 
     while ((ent = readdir(d)) != nullptr) {
         if (ent->d_name[0] == '.') continue;
@@ -850,10 +861,17 @@ static void findFxPresetFiles(const std::string &dir, const char *extension,
             std::string subCat = category.empty() ? name : category + "/" + name;
             findFxPresetFiles(full, extension, subCat, bankMap);
         } else if (S_ISREG(st.st_mode)) {
-            if (name.size() > extLen &&
-                name.substr(name.size() - extLen) == extension) {
+            bool match = false;
+            if (extensionless) {
+                // Match files with no extension (no dot in filename)
+                match = (name.find('.') == std::string::npos);
+            } else {
+                match = (name.size() > extLen &&
+                         name.substr(name.size() - extLen) == extension);
+            }
+            if (match) {
                 VST3FilePreset fp;
-                fp.name = name.substr(0, name.size() - extLen);
+                fp.name = extensionless ? name : name.substr(0, name.size() - extLen);
                 fp.filePath = full;
                 std::string bankName = category.empty() ? "Presets" : category;
                 bankMap[bankName].push_back(fp);
@@ -921,15 +939,18 @@ void VST3Effect::discoverPresetFiles() {
             }
         }
 
-        if (strstr(name_, "Efx FRAGMENTS") != nullptr ||
-            strstr(name_, "FRAGMENTS") != nullptr) {
-            // Arturia Efx FRAGMENTS: NKS presets under ProgramData
-            const char *prefixes[] = { "", "/pfx", nullptr };
-            for (int pi = 0; prefixes[pi] != nullptr; pi++) {
-                std::string base = pfxBase + prefixes[pi]
-                    + "/drive_c/ProgramData/Arturia/Efx FRAGMENTS"
-                      "/Third Party/Native Instruments/presets";
-                scanDirs.push_back(base);
+        // Arturia plugins: native presets under ProgramData/Arturia/Presets/<pluginName>/
+        const char *arturiaFxNames[] = { "Efx FRAGMENTS", "Efx MOTIONS", nullptr };
+        for (int ai = 0; arturiaFxNames[ai] != nullptr; ai++) {
+            if (strstr(name_, arturiaFxNames[ai]) != nullptr) {
+                const char *prefixes[] = { "", "/pfx", nullptr };
+                for (int pi = 0; prefixes[pi] != nullptr; pi++) {
+                    std::string base = pfxBase + prefixes[pi]
+                        + "/drive_c/ProgramData/Arturia/Presets/"
+                        + arturiaFxNames[ai];
+                    scanDirs.push_back(base);
+                }
+                break;
             }
         }
     }

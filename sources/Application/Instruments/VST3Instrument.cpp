@@ -1857,14 +1857,16 @@ void VST3Instrument::discoverParameters() {
     }
 }
 
-// Helper: recursively find files with a given extension in a directory
+// Helper: recursively find files with a given extension in a directory.
+// When extension is an empty string, matches extensionless files (no dot in name).
 static void findPresetFiles(const std::string &dir, const char *extension,
                             const std::string &category,
                             std::map<std::string, std::vector<VST3FilePreset>> &bankMap) {
     DIR *d = opendir(dir.c_str());
     if (!d) return;
     struct dirent *ent;
-    size_t extLen = strlen(extension);
+    size_t extLen = extension ? strlen(extension) : 0;
+    bool extensionless = (extLen == 0);
 
     while ((ent = readdir(d)) != nullptr) {
         if (ent->d_name[0] == '.') continue;
@@ -1878,11 +1880,17 @@ static void findPresetFiles(const std::string &dir, const char *extension,
             std::string subCat = category.empty() ? name : category + "/" + name;
             findPresetFiles(full, extension, subCat, bankMap);
         } else if (S_ISREG(st.st_mode)) {
-            // Check extension
-            if (name.size() > extLen &&
-                name.substr(name.size() - extLen) == extension) {
+            bool match = false;
+            if (extensionless) {
+                // Match files with no extension (no dot in filename)
+                match = (name.find('.') == std::string::npos);
+            } else {
+                match = (name.size() > extLen &&
+                         name.substr(name.size() - extLen) == extension);
+            }
+            if (match) {
                 VST3FilePreset fp;
-                fp.name = name.substr(0, name.size() - extLen);
+                fp.name = extensionless ? name : name.substr(0, name.size() - extLen);
                 fp.filePath = full;
                 std::string bankName = category.empty() ? "Presets" : category;
                 bankMap[bankName].push_back(fp);
@@ -1958,6 +1966,17 @@ static const VST3PluginPresetMapping knownPresetMappings[] = {
         },
         ".noisemakerpreset",
         0,   // No header skip — raw XML wrapped via JUCE binary format
+        nullptr, 0
+    },
+    // Arturia MiniFreak V: native Boost serialization presets (extensionless)
+    // under ProgramData/Arturia/Presets/MiniFreak V/.
+    {
+        "MiniFreak",
+        {
+            nullptr  // Directories resolved at runtime from WINEPREFIX
+        },
+        "",   // extensionless files
+        0,
         nullptr, 0
     },
     // Sentinel
@@ -2232,6 +2251,21 @@ void VST3Instrument::discoverPresetFiles() {
                     scanDirs.push_back(base + "/Factory Presets");
                     scanDirs.push_back(base);
                 }
+            }
+        } else if (strstr(name_, "MiniFreak") != nullptr) {
+            // Arturia MiniFreak V: native presets under ProgramData/Arturia/Presets/MiniFreak V/
+            std::string pfxBase;
+            const char *wpEnv = getenv("WINEPREFIX");
+            if (wpEnv && wpEnv[0]) {
+                pfxBase = wpEnv;
+            } else {
+                pfxBase = homeDir + "/Documents/SDTracker/wineprefix";
+            }
+            const char *prefixes[] = { "", "/pfx", nullptr };
+            for (int pi = 0; prefixes[pi] != nullptr; pi++) {
+                std::string base = pfxBase + prefixes[pi]
+                    + "/drive_c/ProgramData/Arturia/Presets/MiniFreak V";
+                scanDirs.push_back(base);
             }
         }
     }

@@ -38,5 +38,6 @@ private:
     EffectType pendingEffectType_;
     char bankLabel_[80];
     char presetLabel_[80];
+    FourCC lastFocusID_;
 };
 #endif
