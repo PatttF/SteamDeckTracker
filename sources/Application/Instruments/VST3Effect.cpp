@@ -1998,6 +1998,9 @@ void VST3Effect::SaveContent(TiXmlNode *node) {
     effect.SetAttribute("PATH", pluginPath_);
     effect.SetAttribute("CID", tuidHex(pluginClassId_).c_str());
 
+    // Lock to prevent the audio thread from modifying parameters_ concurrently.
+    // ProcessAudio uses TryLock so it will just pass through dry signal.
+    pluginMutex_.Lock();
     for (size_t i = 0; i < parameters_.size(); i++) {
         if (parameters_[i].variable) {
             TiXmlElement param("PARAM");
@@ -2006,6 +2009,7 @@ void VST3Effect::SaveContent(TiXmlNode *node) {
             effect.InsertEndChild(param);
         }
     }
+    pluginMutex_.Unlock();
 
     Variable *vol = FindVariable(VST3FX_VOLUME);
     if (vol) {

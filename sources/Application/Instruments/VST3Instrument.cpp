@@ -618,7 +618,25 @@ bool VST3Instrument::Init() {
                         var->SetString(kv.second.c_str());
                     }
                 }
+
+                // Extract saved bank/preset before clearing (these Variables
+                // are only created by the view, so FindVariable won't find
+                // them — we must restore them explicitly)
+                int savedBank = -1, savedPreset = -1;
+                auto bankIt = pendingParamValues_.find("bank");
+                if (bankIt != pendingParamValues_.end())
+                    savedBank = atoi(bankIt->second.c_str());
+                auto presetIt = pendingParamValues_.find("preset");
+                if (presetIt != pendingParamValues_.end())
+                    savedPreset = atoi(presetIt->second.c_str());
+
                 pendingParamValues_.clear();
+
+                // Restore bank/preset selection after state is loaded
+                if (savedBank >= 0)
+                    SetCurrentBank(savedBank);
+                if (savedPreset >= 0)
+                    SetPreset(savedPreset);
             }
         }
     }
@@ -637,8 +655,9 @@ bool VST3Instrument::Start(int channel, unsigned char note, bool retrigger) {
     PendingNoteEvent evt;
     evt.channel = 0; // VST3 always channel 0
     evt.pitch = note;
-    evt.velocity = 0.8f;
+    evt.velocity = nextVelocity_ / 127.0f;
     evt.noteId = note; // use pitch as noteId
+    nextVelocity_ = 127; // reset for tracker playback
 
     pendingEventsMutex_.Lock();
     // If retriggering, send note-off for previous note
@@ -1139,6 +1158,43 @@ void VST3Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
         vibratoLFO_[channel].depth = depth / 255.0f;
         vibratoLFO_[channel].active = true;
     }
+}
+
+void VST3Instrument::QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2) {
+    // Map raw MIDI bytes to VST3 kLegacyMIDICCOutEvent
+    unsigned char type = status & 0xF0;
+    int8_t channel = status & 0x0F;
+    PendingMidiCC mc;
+    mc.channel = channel;
+
+    switch (type) {
+        case 0xB0: // CC
+            mc.controlNumber = data1 & 0x7F;
+            mc.value = data2 & 0x7F;
+            mc.value2 = 0;
+            break;
+        case 0xA0: // Poly aftertouch
+            mc.controlNumber = 128; // kAfterTouch in ControllerNumbers
+            mc.value = data2 & 0x7F;
+            mc.value2 = data1 & 0x7F; // note number
+            break;
+        case 0xD0: // Channel aftertouch
+            mc.controlNumber = 128; // kAfterTouch
+            mc.value = data1 & 0x7F;
+            mc.value2 = 0;
+            break;
+        case 0xE0: // Pitch bend
+            mc.controlNumber = 129; // kPitchBend in ControllerNumbers
+            mc.value = data1 & 0x7F;  // LSB
+            mc.value2 = data2 & 0x7F; // MSB
+            break;
+        default:
+            return; // Unsupported message type
+    }
+
+    pendingEventsMutex_.Lock();
+    pendingMidiCCs_.push_back(mc);
+    pendingEventsMutex_.Unlock();
 }
 
 bool VST3Instrument::IsInitialized() {
@@ -1770,27 +1826,13 @@ void VST3Instrument::loadPluginInner() {
 
         setupProcessing(initBlock);
 
-        // Force-load preset 0 via setParamNormalized on the controller —
-        // some plugins (especially JUCE-based) don't load their init preset
-        // automatically after initialize()+setActive().
-        if (programChangeParamIdx_ >= 0 && editController_) {
-            IEditController* ctrl = (IEditController*)editController_;
-            ParameterInfo info;
-            if (ctrl->getParameterInfo(0, info) == kResultOk || true) {
-                // Use the stored program change param
-                ParamID pcId = parameters_[programChangeParamIdx_].paramId;
-                int stepCount = parameters_[programChangeParamIdx_].stepCount;
-                double norm = (stepCount > 0) ? (1.0 / (double)stepCount) : 0.0; // preset 1
-                ctrl->setParamNormalized(pcId, norm);
-
-                // Queue it for the audio processor too
-                PendingParamChange pc;
-                pc.paramId = pcId;
-                pc.value = norm;
-                pendingEventsMutex_.Lock();
-                pendingParamChanges_.push_back(pc);
-                pendingEventsMutex_.Unlock();
-            }
+        // Force-load preset 0 so the plugin actually applies its init
+        // preset.  Many plugins (MiniFreak V, JUCE-based, etc.) don't
+        // load any sound automatically after initialize()+setActive().
+        // SetPreset handles all preset types: file, embedded, compressed,
+        // MIDI, and IUnitInfo program-change.
+        if (GetPresetCount() > 0) {
+            SetPreset(0);
         }
     }
 }

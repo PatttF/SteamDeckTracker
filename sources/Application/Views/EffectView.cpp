@@ -43,7 +43,7 @@ EffectView::EffectView(GUIWindow &w, ViewData *data) : FieldView(w, data) {
     currentTypeIndex_ = 0;  // VST3 default
     pendingTypeEffectIdx_ = -1;
     pendingEffectType_ = ET_VST3;
-    lastFocusID_ = 0;
+    lastFocusIndex_ = -1;
     memset(pluginLabel_, 0, sizeof(pluginLabel_));
     memset(paramText_, 0, sizeof(paramText_));
 }
@@ -53,9 +53,7 @@ EffectView::~EffectView() {
 
 void EffectView::onEffectChange(FourCC focusField) {
     ClearFocus();
-
-    // If no specific field requested, use the last known focus
-    if (focusField == 0) focusField = lastFocusID_;
+    int savedIndex = lastFocusIndex_;
 
     I_Effect *old = current_;
     current_ = project_->GetEffect(currentEffect_);
@@ -71,7 +69,7 @@ void EffectView::onEffectChange(FourCC focusField) {
     T_SimpleList<UIField>::Empty();
     fillEffectParameters();
 
-    // If a specific field was requested, try to focus it
+    // If a specific FourCC was requested (e.g. bank/preset change), try to focus it
     UIField *targetField = nullptr;
     if (focusField != 0) {
         IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
@@ -81,6 +79,20 @@ void EffectView::onEffectChange(FourCC focusField) {
                 targetField = ivf;
                 break;
             }
+        }
+    }
+
+    // Fall back to restore by field list index (handles parameter fields
+    // which all have FourCC=0 and can't be distinguished by ID)
+    if (!targetField && savedIndex >= 0) {
+        int idx = 0;
+        IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
+        for (fit->Begin(); !fit->IsDone(); fit->Next()) {
+            if (idx == savedIndex) {
+                targetField = &fit->CurrentItem();
+                break;
+            }
+            idx++;
         }
     }
 
@@ -451,10 +463,7 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
         }
     }
 
-    UIIntVarField *ivf = dynamic_cast<UIIntVarField *>(GetFocus());
-    if (ivf) {
-        lastFocusID_ = ivf->GetVariableID();
-    }
+    lastFocusIndex_ = GetFocusIndex();
 }
 
 void EffectView::DrawView() {
@@ -577,6 +586,14 @@ void EffectView::Update(Observable &o, I_ObservableData *d) {
         }
     }
 
-    onEffectChange();
+    // Only rebuild if the notification came from the effect itself (not a
+    // WatchedVariable). WatchedVariable notifications for type/bank/preset
+    // are handled above; any other WatchedVariable change (e.g. parameter
+    // value) doesn't need a view rebuild — the field redraws itself.
+    WatchedVariable *wv = dynamic_cast<WatchedVariable *>(&o);
+    if (!wv) {
+        onEffectChange();
+        isDirty_ = true;
+    }
 }
 

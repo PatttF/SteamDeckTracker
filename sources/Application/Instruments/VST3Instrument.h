@@ -86,6 +86,7 @@ public:
     // Render audio — fills interleaved stereo fixed-point buffer
     virtual bool Render(int channel, fixed *buffer, int size, bool updateTick);
     virtual void ProcessCommand(int channel, FourCC cc, ushort value);
+    virtual void QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2);
 
     virtual bool IsInitialized();
 

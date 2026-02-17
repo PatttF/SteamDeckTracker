@@ -7,6 +7,10 @@
 #include "ViewData.h"
 #include <string>
 
+// Generic MIDI input device/channel FourCC IDs shared across instrument types
+#define IMDI MAKE_FOURCC('I','M','D','I')  // Instrument MIDI Input Device
+#define IMIC MAKE_FOURCC('I','M','I','C')  // Instrument MIDI Input Channel
+
 class UIActionField; // forward declaration to avoid header dependency
 
 class InstrumentView: public FieldView, public I_Observer {
@@ -31,6 +35,9 @@ protected:
 	void fillAudioInParameters() ;
 	void drawMidiOutHelp() ;
 	void drawAudioInHelp() ;
+	void drawMidiInputInfo() ;
+	int getMidiInDeviceCount() ;
+	const char *getMidiInDeviceName(int index) ;
 	InstrumentType getInstrumentType() ;
 	void Update(Observable &o,I_ObservableData *d) ;
 

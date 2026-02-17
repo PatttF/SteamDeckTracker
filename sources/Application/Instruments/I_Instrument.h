@@ -21,7 +21,7 @@ enum InstrumentType {
 class I_Instrument:public VariableContainer, public Observable {
       
 public:
-	I_Instrument() {} ;
+	I_Instrument() : nextVelocity_(127) {} ;
 	virtual ~I_Instrument() {} ;
 
 	  // Initialisation routine
@@ -59,5 +59,15 @@ public:
 	  virtual void GetTableState(TableSaveState &state)=0 ;	 
 	  virtual void SetTableState(TableSaveState &state)=0 ;	 
 
+	  // Set the velocity for the next Start() call (0-127). Instruments
+	  // that support velocity should consume nextVelocity_ in Start().
+	  void SetNextVelocity(unsigned char vel) { nextVelocity_ = vel; }
+
+	  // Queue a raw MIDI event (CC, aftertouch, pitch bend, etc.) for
+	  // instruments that support it. Default does nothing.
+	  virtual void QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2) {}
+
+protected:
+	  unsigned char nextVelocity_;
 };
 #endif

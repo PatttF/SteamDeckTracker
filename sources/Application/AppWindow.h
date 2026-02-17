@@ -24,6 +24,8 @@
 #define PROP_INVERT 0x80
 #include "Application/LogicalSize.h"
 
+class MidiInputRouter;
+
 class AppWindow : public GUIWindow, I_Observer, Status {
   protected:
     AppWindow(I_GUIWindowImp &imp);
@@ -82,6 +84,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     ThemeView *_themeView;
 
     Path _root;
+    MidiInputRouter *_midiInputRouter;
 
     bool _isDirty;
     bool _closeProject;

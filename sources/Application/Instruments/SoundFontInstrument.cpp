@@ -145,9 +145,9 @@ bool SoundFontInstrument::Start(int channel, unsigned char note, bool retrigger)
 
     float driverRate = (float)Audio::GetInstance()->GetSampleRate();
 
-    // Navigate the SF2 preset for this note + velocity (use velocity 127 for
-    // now; the user volume is applied separately)
-    int velocity = 127;
+    // Navigate the SF2 preset for this note + velocity
+    int velocity = nextVelocity_;
+    nextVelocity_ = 127; // reset for tracker playback
 
     // Navigate the SF2 preset using the hydra navigator to get all
     // oscillators (layers/splits) for this note+velocity combination.

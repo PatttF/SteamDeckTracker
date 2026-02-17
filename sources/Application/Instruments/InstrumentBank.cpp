@@ -111,44 +111,22 @@ I_Instrument *InstrumentBank::GetInstrument(int i) {
 } ;
 
 void InstrumentBank::SaveContent(TiXmlNode *node) {
+	Trace::Debug("SAVE: InstrumentBank::SaveContent enter");
 	char hex[3] ;
 	for (int i=0;i<MAX_INSTRUMENT_COUNT;i++) {
 
 		I_Instrument *instr=instrument_[i] ;
 		if (!instr->IsEmpty()) {
+			Trace::Debug("SAVE: instrument %d type=%d", i, instr->GetType());
 			TiXmlElement data("INSTRUMENT") ;
 			hex2char(i,hex) ;
 			data.SetAttribute("ID",hex) ;
 			data.SetAttribute("TYPE",InstrumentTypeData[instr->GetType()]) ;
 
 			IteratorPtr<Variable> it(instr->GetIterator()) ;
-			// For LV2 instruments, ensure parameter Variables exist and are
-			// synchronized from the instrument's internal parameter state so
-			// they will be serialized reliably.
-			if (instr->GetType() == IT_LV2) {
-				LV2Instrument *lin = (LV2Instrument *)instr;
-				int pc = lin->GetParameterCount();
-				for (int pi = 0; pi < pc; ++pi) {
-					const LV2PluginParameter *p = lin->GetParameter(pi);
-					if (!p) continue;
-					char varName[64];
-					snprintf(varName, sizeof(varName), "p%d", pi);
-					// compute scaled 0-127 value from parameter currentValue
-					int scaled = 0;
-					if (p->maxValue > p->minValue) {
-						float normalized = (p->currentValue - p->minValue) / (p->maxValue - p->minValue);
-						scaled = int(normalized * 127.0f + 0.5f);
-						if (scaled < 0) scaled = 0; if (scaled > 127) scaled = 127;
-					}
-					Variable *v = instr->FindVariable(varName);
-					if (v) {
-						v->SetInt(scaled, false);
-					} else {
-						Variable *nv = new Variable(varName, MAKE_FOURCC('L','P',pi/256,pi%256), scaled);
-						instr->Insert(nv);
-					}
-				}
-			}
+			// NOTE: Do NOT call instr->Insert() here — that modifies the
+			// linked list while the audio thread may be iterating it, causing
+			// a crash.  Parameter values are written directly to XML below.
 
 			int count=0 ;
 			for (it->Begin();!it->IsDone();it->Next()) {
@@ -183,7 +161,9 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 			}
 			// VST3 instruments: save plugin path, class ID, and full state blobs
 			if (instr->GetType() == IT_VST3) {
+				Trace::Debug("SAVE: VST3 instrument %d — saving params", i);
 				VST3Instrument *vin = (VST3Instrument *)instr;
+				// Save parameter values directly to XML (no Insert)
 				int pc = vin->GetParameterCount();
 				for (int pi = 0; pi < pc; ++pi) {
 					const VST3PluginParameter *p = vin->GetParameter(pi);
@@ -192,15 +172,15 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					snprintf(varName, sizeof(varName), "v3p%d", pi);
 					int scaled = (int)(p->currentValue * 255.0 + 0.5);
 					if (scaled < 0) scaled = 0; if (scaled > 255) scaled = 255;
-					Variable *v = instr->FindVariable(varName);
-					if (v) {
-						v->SetInt(scaled, false);
-					} else {
-						Variable *nv = new Variable(varName, MAKE_FOURCC('V','P',pi/256,pi%256), scaled);
-						instr->Insert(nv);
-					}
+					char buf[16]; snprintf(buf, sizeof(buf), "%d", scaled);
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", varName);
+					paramp.SetAttribute("VALUE", buf);
+					data.InsertEndChild(paramp);
+					count++;
 				}
 				// Save full component state blob (base64)
+				Trace::Debug("SAVE: VST3 instrument %d — GetComponentStateBase64", i);
 				std::string compState = vin->GetComponentStateBase64();
 				if (!compState.empty()) {
 					TiXmlElement paramp("PARAM");
@@ -210,6 +190,7 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					count++;
 				}
 				// Save full controller state blob (base64)
+				Trace::Debug("SAVE: VST3 instrument %d — GetControllerStateBase64", i);
 				std::string ctrlState = vin->GetControllerStateBase64();
 				if (!ctrlState.empty()) {
 					TiXmlElement paramp("PARAM");
@@ -263,8 +244,10 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 				}
 			}
 			if (count) node->InsertEndChild(data) ;
+			Trace::Debug("SAVE: instrument %d done (count=%d)", i, count);
 		}
 	}
+	Trace::Debug("SAVE: InstrumentBank::SaveContent done");
 } ;
 
 void InstrumentBank::RestoreContent(TiXmlElement *element) {

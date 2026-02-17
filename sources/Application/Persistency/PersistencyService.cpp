@@ -9,6 +9,7 @@ PersistencyService::PersistencyService():Service(MAKE_FOURCC('S','V','P','S')) {
 
 void PersistencyService::Save(const char *name) {
 
+    Trace::Debug("SAVE: PersistencyService::Save(%s)", name);
     Path filename(name);
 
     TiXmlDocument doc(filename.GetPath());
@@ -18,13 +19,19 @@ void PersistencyService::Save(const char *name) {
 	// Loop on all registered service
 	// accumulating XML flow
 	
+	int serviceIdx = 0;
 	IteratorPtr<SubService> it(GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Persistent *currentItem=(Persistent *)&it->CurrentItem() ;
+		Trace::Debug("SAVE: Saving service %d: %s", serviceIdx, currentItem->GetNodeName());
 		currentItem->Save(node) ;
+		Trace::Debug("SAVE: Service %d done", serviceIdx);
+		serviceIdx++;
 	} ;
 
+	Trace::Debug("SAVE: Writing file...");
 	doc.SaveFile() ;
+	Trace::Debug("SAVE: File written successfully");
 };
 
 bool PersistencyService::Load() {

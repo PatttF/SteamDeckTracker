@@ -82,6 +82,7 @@ public:
     // Should always fill interleaved stereo / 16bit
     virtual bool Render(int channel, fixed *buffer, int size, bool updateTick);
     virtual void ProcessCommand(int channel, FourCC cc, ushort value);
+    virtual void QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2);
 
     virtual bool IsInitialized();
 

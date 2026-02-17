@@ -937,6 +937,9 @@ void LV2Effect::SaveContent(TiXmlNode *node) {
     TiXmlElement effect("EFFECT");
     effect.SetAttribute("URI", pluginURI_);
 
+    // Lock to prevent the audio thread from modifying parameters_ concurrently.
+    // ProcessAudio uses TryLock so it will just pass through dry signal.
+    pluginMutex_.Lock();
     // Save parameter values
     for (size_t i = 0; i < parameters_.size(); i++) {
         if (parameters_[i].variable) {
@@ -946,6 +949,7 @@ void LV2Effect::SaveContent(TiXmlNode *node) {
             effect.InsertEndChild(param);
         }
     }
+    pluginMutex_.Unlock();
 
     // Save volume and wet/dry
     Variable *vol = FindVariable(LV2FX_VOLUME);

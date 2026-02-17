@@ -11,6 +11,7 @@
 #include "Application/Views/ModalDialogs/SelectProjectDialog.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "Player/Player.h"
+#include "Player/MidiInputRouter.h"
 #include "Services/Midi/MidiService.h"
 #include "System/Console/Trace.h"
 #include "UIFramework/Interfaces/I_GUIWindowFactory.h"
@@ -89,6 +90,7 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     _mixerView = 0;
     _grooveView = 0;
     _themeView = 0;
+    _midiInputRouter = 0;
     _closeProject = 0;
     _loadAfterSaveAsProject = 0;
     _loadAfterResume = 0;
@@ -151,7 +153,14 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     Redraw();
 };
 
-AppWindow::~AppWindow() { MidiService::GetInstance()->Close(); }
+AppWindow::~AppWindow() {
+    if (_midiInputRouter) {
+        _midiInputRouter->Close();
+        delete _midiInputRouter;
+        _midiInputRouter = nullptr;
+    }
+    MidiService::GetInstance()->Close();
+}
 
 void AppWindow::DrawString(const char *string, GUIPoint &pos,
                            GUITextProperties &props, bool force) {
@@ -409,6 +418,10 @@ void AppWindow::LoadProject(const Path &p) {
     bool playerOK = player->Init(project, _viewData);
     player->AddObserver(*this);
 
+    // Initialize MIDI input router for live instrument playing
+    _midiInputRouter = new MidiInputRouter();
+    _midiInputRouter->Init(project, PlayerMixer::GetInstance());
+
     // Create the controller
     UIController *controller = UIController::GetInstance();
     controller->Init(project, _viewData);
@@ -465,6 +478,13 @@ void AppWindow::CloseProject() {
     Player *player = Player::GetInstance();
     player->Stop();
     player->RemoveObserver(*this);
+
+    // Clean up MIDI input router before player reset
+    if (_midiInputRouter) {
+        _midiInputRouter->Close();
+        delete _midiInputRouter;
+        _midiInputRouter = nullptr;
+    }
 
     player->Reset();
 

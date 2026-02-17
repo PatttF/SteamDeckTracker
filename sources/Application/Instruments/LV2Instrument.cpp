@@ -289,7 +289,26 @@ bool LV2Instrument::Init() {
             v->SetString(val.c_str(), false);
         }
     }
+
+    // Extract saved bank/preset before clearing (these Variables
+    // are only created by the view, so FindVariable won't find
+    // them — we must restore them explicitly)
+    int savedBank = -1, savedPreset = -1;
+    auto bankIt = pendingParamValues_.find("bank");
+    if (bankIt != pendingParamValues_.end())
+        savedBank = atoi(bankIt->second.c_str());
+    auto presetIt = pendingParamValues_.find("preset");
+    if (presetIt != pendingParamValues_.end())
+        savedPreset = atoi(presetIt->second.c_str());
+
     pendingParamValues_.clear();
+
+    // Restore bank/preset selection after state is loaded
+    if (savedBank >= 0)
+        SetCurrentBank(savedBank);
+    if (savedPreset >= 0)
+        SetPreset(savedPreset);
+
     return true;
 }
 
@@ -331,9 +350,10 @@ bool LV2Instrument::Start(int channel, unsigned char note, bool retrigger) {
         MidiEvent noteOn;
         noteOn.data[0] = 0x90;  // Note On on MIDI ch 0
         noteOn.data[1] = note;
-        noteOn.data[2] = 100;   // Velocity
+        noteOn.data[2] = nextVelocity_;   // Velocity from MIDI input or 127
         noteOn.size = 3;
         pendingMidiEvents_.push_back(noteOn);
+        nextVelocity_ = 127; // reset for tracker playback
 
         lastNote_[channel] = note;
         playing_[channel] = true;
@@ -904,6 +924,19 @@ void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
     }
 }
 
+void LV2Instrument::QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2) {
+    MidiEvent evt;
+    evt.data[0] = status;
+    evt.data[1] = data1;
+    evt.data[2] = data2;
+    // Channel aftertouch and program change are 2-byte messages
+    unsigned char type = status & 0xF0;
+    evt.size = (type == 0xC0 || type == 0xD0) ? 2 : 3;
+
+    SysMutexLocker lock(pendingEventsMutex_);
+    pendingMidiEvents_.push_back(evt);
+}
+
 bool LV2Instrument::IsInitialized() {
     return true;
 }
@@ -1077,6 +1110,13 @@ void LV2Instrument::SetPlugin(const char *uri) {
 
         // Discover presets (file-based for Surge XT/Vital, patchmanager for gearmulator)
         discoverPresets();
+
+        // Force-load preset 0 so the plugin produces sound immediately.
+        // Without this, plugins sit in an empty/silent init state until
+        // the user manually changes preset.
+        if (GetPresetCount() > 0) {
+            SetPreset(0);
+        }
 
         // Update the 'plugin' Variable so the value is saved with the project
         Variable *pv = FindVariable(LV2IP_PLUGIN);

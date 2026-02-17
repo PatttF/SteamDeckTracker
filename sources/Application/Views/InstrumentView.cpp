@@ -212,6 +212,26 @@ void InstrumentView::onInstrumentChange() {
 	}
 } ;
 
+int InstrumentView::getMidiInDeviceCount() {
+	MidiService *svc = MidiService::GetInstance();
+	if (!svc) return 0;
+	int count = 0;
+	IteratorPtr<MidiInDevice> it(svc->GetInIterator());
+	for (it->Begin(); !it->IsDone(); it->Next()) count++;
+	return count;
+}
+
+const char *InstrumentView::getMidiInDeviceName(int index) {
+	MidiService *svc = MidiService::GetInstance();
+	if (!svc) return "";
+	int i = 0;
+	IteratorPtr<MidiInDevice> it(svc->GetInIterator());
+	for (it->Begin(); !it->IsDone(); it->Next(), i++) {
+		if (i == index) return it->CurrentItem().GetName();
+	}
+	return "";
+}
+
 void InstrumentView::fillSampleParameters() {
 
 	int i=viewData_->currentInstrument_ ;
@@ -219,6 +239,7 @@ void InstrumentView::fillSampleParameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	SampleInstrument *instrument=(SampleInstrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for MIDI input footer
 
     // Local variables used to create fields
     Variable *v = nullptr;
@@ -389,6 +410,29 @@ void InstrumentView::fillSampleParameters() {
 	f1=new UIIntVarOffField(position,*v,"table: %2.2X",0x00,0x7F,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
+	// MIDI input footer row
+	{
+		GUIPoint p(1, position._y + 1);
+		Variable *mv = instrument->FindVariable(IMDI);
+		if (!mv) {
+			mv = new Variable("midi dev", IMDI, 0);
+			instrument->Insert(mv);
+		}
+		int maxDev = getMidiInDeviceCount() - 1;
+		if (maxDev < 0) maxDev = 0;
+		UIIntVarField *mf1 = new UIIntVarField(p, *mv, "midi:%d", 0, maxDev, 1, 1);
+		T_SimpleList<UIField>::Insert(mf1);
+
+		p._x = 14;
+		mv = instrument->FindVariable(IMIC);
+		if (!mv) {
+			mv = new Variable("midi ch", IMIC, 0);
+			instrument->Insert(mv);
+		}
+		UIIntVarField *mf2 = new UIIntVarField(p, *mv, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
+		T_SimpleList<UIField>::Insert(mf2);
+	}
+
 } ;
 
 void InstrumentView::fillMidiParameters() {
@@ -439,6 +483,7 @@ void InstrumentView::fillMidiOutParameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	MidiOutInstrument *instrument=(MidiOutInstrument *)instr ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for MIDI input footer
 
 	// Type selector: Sample vs SF2 vs VST3 vs LV2 vs MidiOut
 	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P')) ;
@@ -541,6 +586,7 @@ void InstrumentView::fillAudioInParameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	AudioInInstrument *instrument=(AudioInInstrument *)instr ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for MIDI input footer
 
 	// Ensure capture device is open and registered on the MixBus
 	instrument->Activate();
@@ -652,6 +698,7 @@ void InstrumentView::fillLV2Parameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	LV2Instrument *instrument=(LV2Instrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for MIDI input footer
 	
 	// Constants for two-column layout
 	const int COL_WIDTH = 27;      // Width of each column (25 + 2 space gap)
@@ -903,6 +950,29 @@ void InstrumentView::fillLV2Parameters() {
 		T_SimpleList<UIField>::Insert(f1);
 	}
 
+	// MIDI input footer row
+	{
+		GUIPoint p(1, position._y + 1);
+		Variable *v = instrument->FindVariable(IMDI);
+		if (!v) {
+			v = new Variable("midi dev", IMDI, 0);
+			instrument->Insert(v);
+		}
+		int maxDev = getMidiInDeviceCount() - 1;
+		if (maxDev < 0) maxDev = 0;
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "midi:%d", 0, maxDev, 1, 1);
+		T_SimpleList<UIField>::Insert(f1);
+
+		p._x = 14;
+		v = instrument->FindVariable(IMIC);
+		if (!v) {
+			v = new Variable("midi ch", IMIC, 0);
+			instrument->Insert(v);
+		}
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
+		T_SimpleList<UIField>::Insert(f2);
+	}
+
 } ;
 
 void InstrumentView::fillSoundFontParameters() {
@@ -912,6 +982,7 @@ void InstrumentView::fillSoundFontParameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	SoundFontInstrument *instrument=(SoundFontInstrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for MIDI input footer
 
 	// Local variables used to create fields
 	Variable *v = nullptr;
@@ -1001,6 +1072,29 @@ void InstrumentView::fillSoundFontParameters() {
 		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0x00, 0x7F, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 	}
+
+	// MIDI input footer row
+	{
+		GUIPoint p(1, position._y + 1);
+		Variable *v = instrument->FindVariable(IMDI);
+		if (!v) {
+			v = new Variable("midi dev", IMDI, 0);
+			instrument->Insert(v);
+		}
+		int maxDev = getMidiInDeviceCount() - 1;
+		if (maxDev < 0) maxDev = 0;
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "midi:%d", 0, maxDev, 1, 1);
+		T_SimpleList<UIField>::Insert(f1);
+
+		p._x = 14;
+		v = instrument->FindVariable(IMIC);
+		if (!v) {
+			v = new Variable("midi ch", IMIC, 0);
+			instrument->Insert(v);
+		}
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
+		T_SimpleList<UIField>::Insert(f2);
+	}
 }
 
 void InstrumentView::fillVST3Parameters() {
@@ -1012,6 +1106,7 @@ void InstrumentView::fillVST3Parameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	VST3Instrument *instrument=(VST3Instrument *)instr ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for MIDI input footer
 
 	const int COL_WIDTH = 27;
 	const int MAX_ROWS = 17;
@@ -1208,6 +1303,29 @@ void InstrumentView::fillVST3Parameters() {
 		v = instrument->FindVariable(VST3IP_TABLE);
 		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0, 0x7F, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
+	}
+
+	// MIDI input footer row
+	{
+		GUIPoint p(1, position._y + 1);
+		Variable *v = instrument->FindVariable(IMDI);
+		if (!v) {
+			v = new Variable("midi dev", IMDI, 0);
+			instrument->Insert(v);
+		}
+		int maxDev = getMidiInDeviceCount() - 1;
+		if (maxDev < 0) maxDev = 0;
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "midi:%d", 0, maxDev, 1, 1);
+		T_SimpleList<UIField>::Insert(f1);
+
+		p._x = 14;
+		v = instrument->FindVariable(IMIC);
+		if (!v) {
+			v = new Variable("midi ch", IMIC, 0);
+			instrument->Insert(v);
+		}
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
+		T_SimpleList<UIField>::Insert(f2);
 	}
 }
 
@@ -1681,6 +1799,45 @@ void InstrumentView::drawMidiOutHelp() {
 	}
 }
 
+void InstrumentView::drawMidiInputInfo() {
+	InstrumentType it = getInstrumentType();
+	if (it == IT_MIDI || it == IT_MIDIOUT || it == IT_AUDIOIN) return;
+
+	int i = viewData_->currentInstrument_;
+	InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+	I_Instrument *instr = bank->GetInstrument(i);
+	if (!instr) return;
+
+	Variable *vDev = instr->FindVariable(IMDI);
+	if (!vDev) return;
+	int devIdx = vDev->GetInt();
+	const char *name = getMidiInDeviceName(devIdx);
+	if (!name || !name[0]) return;
+
+	// Truncate name to fit the remaining screen width
+	char buf[60];
+	snprintf(buf, sizeof(buf), "%.56s", name);
+
+	// Find the Y position of the IMDI field by scanning UIFields
+	GUIPoint pos;
+	pos._x = 22;  // after "midi:N  ch:XX"
+	bool found = false;
+	IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
+	for (fit->Begin(); !fit->IsDone(); fit->Next()) {
+		UIIntVarField *vf = dynamic_cast<UIIntVarField *>(&fit->CurrentItem());
+		if (vf && vf->GetVariableID() == IMDI) {
+			pos._y = vf->GetPosition()._y;
+			found = true;
+			break;
+		}
+	}
+	if (!found) return;
+
+	GUITextProperties props;
+	SetColor(CD_HILITE2);
+	DrawString(pos._x, pos._y, buf, props);
+}
+
 void InstrumentView::DrawView() {
 
 	// Process any pending type switch before drawing to avoid showing stale UI
@@ -1721,6 +1878,7 @@ void InstrumentView::DrawView() {
     // Draw fields
 
     FieldView::Redraw();
+    drawMidiInputInfo();
     drawMidiOutHelp();
     drawAudioInHelp();
     drawMap() ;
