@@ -1,0 +1,99 @@
+
+#ifndef _APPLICATION_MIXER_H_
+#define _APPLICATION_MIXER_H_
+
+#include "Foundation/T_Singleton.h"
+#include "Application/Model/Project.h"
+#include "Application/Views/ViewData.h"
+#include "Application/Utils/fixed.h"
+#include "Application/Audio/AudioFileStreamer.h"
+#include "PlayerChannel.h"
+#include "Foundation/Observable.h"
+#include "Services/Audio/AudioOut.h"
+#include <atomic>
+
+class I_Effect;
+
+#define STREAM_MIX_BUS 8
+
+class PlayerMixer: public T_Singleton<PlayerMixer>,public Observable,public I_Observer {
+public:
+	PlayerMixer() ;
+	virtual ~PlayerMixer() {} ;
+
+	bool Start() ;
+	void Stop() ;
+	bool Init(Project *project) ;
+	void Close() ;
+
+	void OnPlayerStart() ;
+	void OnPlayerStop() ;
+
+	void StartInstrument(int channel,I_Instrument *instrument,unsigned char note,bool newInstrument) ;
+	void StopInstrument(int channel) ;
+
+	// Stop all channels currently playing the given instrument and clear
+	// any lastInstrument_ references to it. Must be called before deleting
+	// an instrument to prevent use-after-free in the audio thread.
+	void ReleaseInstrument(I_Instrument *instrument) ;
+
+	// Clear any PlayerChannel activeEffect_ pointers that reference the
+	// given effect. Must be called before deleting an effect to prevent
+	// use-after-free in the audio thread.
+	void ReleaseEffect(I_Effect *effect) ;
+
+	// Force-clear assigned instruments on channels (used for audition stop).
+	void ForceClearAllChannels();
+
+	int GetChannelNote(int Channel) ;
+	I_Instrument *GetInstrument(int channel) ;
+	I_Instrument *GetLastInstrument(int channel) ;
+
+	void StartChannel(int channel) ;
+	void StopChannel(int channel) ;
+
+	bool IsChannelPlaying(int channel) ;
+	
+	void StartStreaming(const Path &) ;
+	void StopStreaming()  ;
+
+	bool Clipped() ;
+
+	void Update(Observable &o,I_ObservableData *d) ;
+	int GetPlayedBufferPercentage() ;   
+
+	void SetChannelMute(int channel,bool mute) ;
+	bool IsChannelMuted(int channel) ;
+
+	PlayerChannel *GetChannel(int channel) ;
+
+	char *GetPlayedNote(int channel) ;
+	char *GetPlayedOctive(int channel) ;
+	
+	AudioOut *GetAudioOut() ;
+
+	void Lock() ;
+	void Unlock() ;
+
+private:
+
+	Project *project_ ;
+	bool clipped_ ;
+	
+    I_Instrument *lastInstrument_[SONG_CHANNEL_COUNT] ;
+	std::atomic<bool> isChannelPlaying_[SONG_CHANNEL_COUNT] ;
+
+	AudioFileStreamer fileStreamer_ ;
+	PlayerChannel *channel_[SONG_CHANNEL_COUNT] ;
+
+	// store trigger notes, 0xFF = none
+	
+    unsigned char notes_[SONG_CHANNEL_COUNT] ;
+
+    // Cached values to avoid redundant calls on every audio tick
+    int cachedPregain_ = -1;
+    int cachedSoftclip_ = -999;
+    int cachedSoftclipGain_ = -999;
+} ;
+
+#endif

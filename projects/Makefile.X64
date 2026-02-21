@@ -1,0 +1,55 @@
+-include $(PWD)/rules_base
+
+# config
+DEFINES := \
+        -DPLATFORM_$(PLATFORM) \
+        -D_64BIT \
+	-DCPP_MEMORY \
+	-D__LINUX_ALSA__ \
+	-D__LINUX_ALSASEQ__ \
+        -DSDL2 \
+        -DSDLAUDIO \
+        -DRTMIDI \
+        -DFFMPEG_ENABLED \
+        -D_FEAT_MIDI_MULTITHREAD
+
+ALSA_CFLAGS := $(shell pkg-config alsa --cflags)
+ALSA_LIBS := $(shell pkg-config alsa --libs)
+JACK_CFLAGS := $(shell pkg-config jack --cflags)
+JACK_LIBS := $(shell pkg-config jack --libs)
+SDL_CFLAGS := $(shell pkg-config sdl2 --cflags)
+SDL_LIBS := $(shell pkg-config sdl2 --libs)
+LV2_CFLAGS := $(shell pkg-config lilv-0 --cflags)
+LV2_LIBS := $(shell pkg-config lilv-0 --libs)
+X11_CFLAGS := $(shell pkg-config x11 --cflags 2>/dev/null)
+X11_LIBS := $(shell pkg-config x11 --libs 2>/dev/null)
+DRM_CFLAGS := $(shell pkg-config libdrm --cflags 2>/dev/null)
+DRM_LIBS := $(shell pkg-config libdrm --libs 2>/dev/null)
+VAAPI_CFLAGS := $(shell pkg-config libva --cflags 2>/dev/null)
+VAAPI_LIBS := $(shell pkg-config libva --libs 2>/dev/null)
+VAAPI_EXTRA_LIBS := -lva-drm -lva-x11
+VDPAU_CFLAGS := $(shell pkg-config vdpau --cflags 2>/dev/null)
+VDPAU_LIBS := $(shell pkg-config vdpau --libs 2>/dev/null)
+BZIP_LIBS := -lbz2
+# Use our minimal static FFmpeg build
+FFMPEG_PREFIX := $(PWD)/../ffmpeg-build/install
+FFMPEG_CFLAGS := -I$(FFMPEG_PREFIX)/include
+FFMPEG_LIBS := $(FFMPEG_PREFIX)/lib/libavformat.a \
+               $(FFMPEG_PREFIX)/lib/libavcodec.a \
+               $(FFMPEG_PREFIX)/lib/libswresample.a \
+               $(FFMPEG_PREFIX)/lib/libavutil.a \
+               -lm -lpthread -lz -lzstd
+
+# optimization (with debug symbols for profiling)
+OPT_FLAGS := -O3 -g -ffast-math
+INCLUDES := $(ALSA_CFLAGS) $(JACK_CFLAGS) $(SDL_CFLAGS) $(LV2_CFLAGS) $(X11_CFLAGS) $(DRM_CFLAGS) $(VAAPI_CFLAGS) $(VDPAU_CFLAGS) $(FFMPEG_CFLAGS) -I$(PWD)/../sources -I$(PWD)/../vst3sdk
+CFLAGS := $(OPT_FLAGS) $(DEFINES) $(INCLUDES) -Wall
+CXXFLAGS := $(CFLAGS) -std=gnu++11
+LIBS := $(ALSA_LIBS) $(JACK_LIBS) $(SDL_LIBS) $(LV2_LIBS) $(FFMPEG_LIBS) $(X11_LIBS) $(DRM_LIBS) $(VAAPI_LIBS) $(VAAPI_EXTRA_LIBS) $(VDPAU_LIBS) $(BZIP_LIBS) -ldl
+LDFLAGS := -static-libgcc -static-libstdc++ 
+OUTPUT := ../../SDTracker
+EXTENSION := bin
+
+# build rule
+%.bin: $(OFILES)
+	$(CXX) $(LDFLAGS) -o $(OUTPUT) $(OFILES) $(LIBS)

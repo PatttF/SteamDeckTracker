@@ -1,0 +1,14 @@
+prefix=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install
+exec_prefix=${prefix}
+libdir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/lib
+includedir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/include
+
+Name: libavfilter
+Description: FFmpeg audio/video filtering library
+Version: 11.12.100
+Requires: libswscale >= 9.3.100, libavformat >= 62.9.101, libavcodec >= 62.23.103, libswresample >= 6.2.100, libavutil >= 60.25.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavfilter -pthread -lm -latomic -lz -lva
+Libs.private: 
+Cflags: -I${includedir}

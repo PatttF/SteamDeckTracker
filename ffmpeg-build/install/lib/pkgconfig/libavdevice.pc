@@ -1,0 +1,14 @@
+prefix=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install
+exec_prefix=${prefix}
+libdir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/lib
+includedir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/include
+
+Name: libavdevice
+Description: FFmpeg device handling library
+Version: 62.2.100
+Requires: libavfilter >= 11.12.100, libswscale >= 9.3.100, libavformat >= 62.9.101, libavcodec >= 62.23.103, libswresample >= 6.2.100, libavutil >= 60.25.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavdevice -lm -latomic -ldrm -lxcb -lxcb-shm -lxcb-shape -lxcb-xfixes -lasound -lsndio -lXv -lX11 -lXext
+Libs.private: 
+Cflags: -I${includedir}

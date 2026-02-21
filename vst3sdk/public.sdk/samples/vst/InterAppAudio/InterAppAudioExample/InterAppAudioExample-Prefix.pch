@@ -1,0 +1,26 @@
+//-----------------------------------------------------------------------------
+// Project     : VST SDK
+//
+// Category    : Examples
+// Filename    : public.sdk/samples/vst/interappaudio/InterAppAudioExample/InterAppAudioExample-Prefix.pch
+// Created by  : Steinberg, 08/2013
+// Description :
+//
+//-----------------------------------------------------------------------------
+// This file is part of a Steinberg SDK. It is subject to the license terms
+// in the LICENSE file found in the top-level directory of this distribution
+// and at www.steinberg.net/sdklicenses.
+// No part of the SDK, including this file, may be copied, modified, propagated,
+// or distributed except according to the terms contained in the LICENSE file.
+//-----------------------------------------------------------------------------
+
+#import <Availability.h>
+
+#ifndef __IPHONE_3_0
+#warning "This project uses features only available in iOS SDK 3.0 and later."
+#endif
+
+#ifdef __OBJC__
+	#import <UIKit/UIKit.h>
+	#import <Foundation/Foundation.h>
+#endif

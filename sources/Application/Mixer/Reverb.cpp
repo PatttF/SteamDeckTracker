@@ -1,0 +1,156 @@
+#include "Reverb.h"
+#include "Services/Audio/Audio.h"
+#include <string.h>
+
+Reverb::Reverb() 
+    : writePos_(0)
+    , decay_(0.5f)
+    , damping_(0.3f)
+    , dampL_(0)
+    , dampR_(0)
+    , inputL_(0)
+    , inputR_(0)
+    , initialized_(false) 
+{
+    // Initialize tap offsets scaled to actual sample rate
+    // Target delay times in ms: ~35, ~63, ~100, ~161
+    int sampleRate = Audio::GetInstance()->GetSampleRate();
+    tapOffsets_[0] = (sampleRate * 35) / 1000;    // ~35ms
+    tapOffsets_[1] = (sampleRate * 63) / 1000;    // ~63ms  
+    tapOffsets_[2] = (sampleRate * 100) / 1000;   // ~100ms
+    tapOffsets_[3] = (sampleRate * 161) / 1000;   // ~161ms
+
+    // Clamp to buffer size
+    for (int i = 0; i < NUM_TAPS; i++) {
+        if (tapOffsets_[i] >= REVERB_BUFFER_SIZE) {
+            tapOffsets_[i] = REVERB_BUFFER_SIZE - 1;
+        }
+    }
+    
+    // Tap gains (decreasing for later reflections)
+    tapGains_[0] = 0.4f;
+    tapGains_[1] = 0.3f;
+    tapGains_[2] = 0.2f;
+    tapGains_[3] = 0.15f;
+    
+    // Pre-cache as fixed-point to avoid per-sample fl2fp
+    for (int i = 0; i < NUM_TAPS; i++) {
+        tapGainsFixed_[i] = fl2fp(tapGains_[i]);
+    }
+    decayFixed_ = fl2fp(decay_);
+    dampCoefFixed_ = fl2fp(damping_);
+    dampInvFixed_ = fl2fp(1.0f - damping_);
+}
+
+Reverb::~Reverb() {
+}
+
+void Reverb::Init() {
+    if (initialized_) return;
+    Clear();
+    initialized_ = true;
+}
+
+void Reverb::Clear() {
+    memset(buffer_, 0, sizeof(buffer_));
+    writePos_ = 0;
+    dampL_ = 0;
+    dampR_ = 0;
+    inputL_ = 0;
+    inputR_ = 0;
+}
+
+void Reverb::Feed(fixed left, fixed right, float sendAmount) {
+    if (!initialized_) {
+        Init();
+    }
+    
+    if (sendAmount < 0.001f) return;
+    
+    // Accumulate input scaled by send amount
+    fixed sendFixed = fl2fp(sendAmount);
+    inputL_ = fp_add(inputL_, fp_mul(left, sendFixed));
+    inputR_ = fp_add(inputR_, fp_mul(right, sendFixed));
+}
+
+void Reverb::GetOutput(fixed &left, fixed &right) {
+    if (!initialized_) {
+        left = 0;
+        right = 0;
+        return;
+    }
+    
+    // Read from multiple tap positions and sum
+    fixed outL = 0;
+    fixed outR = 0;
+    
+    for (int t = 0; t < NUM_TAPS; t++) {
+        int readPos = writePos_ - tapOffsets_[t];
+        if (readPos < 0) readPos += REVERB_BUFFER_SIZE;
+        
+        fixed tapL = buffer_[readPos * 2];
+        fixed tapR = buffer_[readPos * 2 + 1];
+        
+        outL = fp_add(outL, fp_mul(tapL, tapGainsFixed_[t]));
+        outR = fp_add(outR, fp_mul(tapR, tapGainsFixed_[t]));
+    }
+    
+    left = outL;
+    right = outR;
+}
+
+void Reverb::Advance() {
+    if (!initialized_) return;
+    
+    // Read the oldest sample for feedback
+    int feedbackPos = writePos_ - (REVERB_BUFFER_SIZE - 1);
+    if (feedbackPos < 0) feedbackPos += REVERB_BUFFER_SIZE;
+    
+    fixed fbL = buffer_[feedbackPos * 2];
+    fixed fbR = buffer_[feedbackPos * 2 + 1];
+    
+    // Apply damping (simple lowpass filter on feedback) using cached fixed-point
+    dampL_ = fp_add(fp_mul(fbL, dampInvFixed_), fp_mul(dampL_, dampCoefFixed_));
+    dampR_ = fp_add(fp_mul(fbR, dampInvFixed_), fp_mul(dampR_, dampCoefFixed_));
+    
+    // Mix input with decayed feedback
+    fixed writeL = fp_add(inputL_, fp_mul(dampL_, decayFixed_));
+    fixed writeR = fp_add(inputR_, fp_mul(dampR_, decayFixed_));
+    
+    // Soft limit to prevent runaway
+    const fixed limit = fl2fp(0.95f);
+    const fixed neglimit = fl2fp(-0.95f);
+    if (writeL > limit) writeL = limit;
+    if (writeL < neglimit) writeL = neglimit;
+    if (writeR > limit) writeR = limit;
+    if (writeR < neglimit) writeR = neglimit;
+    
+    // Write to buffer
+    buffer_[writePos_ * 2] = writeL;
+    buffer_[writePos_ * 2 + 1] = writeR;
+    
+    // Advance write position
+    writePos_++;
+    if (writePos_ >= REVERB_BUFFER_SIZE) {
+        writePos_ = 0;
+    }
+    
+    // Clear accumulated input for next sample
+    inputL_ = 0;
+    inputR_ = 0;
+}
+
+void Reverb::SetDecay(float value) {
+    if (value < 0.0f) value = 0.0f;
+    if (value > 0.95f) value = 0.95f;  // Limit to prevent infinite feedback
+    decay_ = value;
+    decayFixed_ = fl2fp(value);
+}
+
+void Reverb::SetDamping(float value) {
+    if (value < 0.0f) value = 0.0f;
+    if (value > 1.0f) value = 1.0f;
+    damping_ = value;
+    dampCoefFixed_ = fl2fp(value);
+    dampInvFixed_ = fl2fp(1.0f - value);
+}

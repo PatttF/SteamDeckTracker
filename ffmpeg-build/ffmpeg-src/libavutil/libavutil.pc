@@ -1,0 +1,14 @@
+prefix=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install
+exec_prefix=${prefix}
+libdir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/lib
+includedir=/home/pat/Desktop/SteamDeckTracker/ffmpeg-build/install/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 60.25.100
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -lva-drm -lva -lva-x11 -lva -lvdpau -lX11 -lm -lz -ldrm -lva -latomic -pthread -lX11
+Libs.private: 
+Cflags: -I${includedir}
