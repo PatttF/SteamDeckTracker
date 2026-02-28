@@ -414,8 +414,14 @@ void InstrumentView::fillSampleParameters() {
 		GUIPoint fp(17, position._y);
 		Variable *fxv = instrument->FindVariable(IFXS);
 		if (!fxv) {
-			fxv = new Variable("fx slot", IFXS, -1);
-			instrument->Insert(fxv);
+			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
+			wfx->AddObserver(*this);
+			instrument->Insert(wfx);
+			fxv = wfx;
+		}
+		if (WatchedVariable *wtvfx = dynamic_cast<WatchedVariable *>(fxv)) {
+			wtvfx->RemoveObserver(*this);
+			wtvfx->AddObserver(*this);
 		}
 		UIIntVarOffField *ff = new UIIntVarOffField(fp, *fxv, "fx:%2.2X", 0x00, 0x0F, 1, 0x04);
 		T_SimpleList<UIField>::Insert(ff);
@@ -704,8 +710,14 @@ void InstrumentView::fillAudioInParameters() {
 		GUIPoint fp(17, position._y);
 		Variable *fxv = instrument->FindVariable(IFXS);
 		if (!fxv) {
-			fxv = new Variable("fx slot", IFXS, -1);
-			instrument->Insert(fxv);
+			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
+			wfx->AddObserver(*this);
+			instrument->Insert(wfx);
+			fxv = wfx;
+		}
+		if (WatchedVariable *wtvfx = dynamic_cast<WatchedVariable *>(fxv)) {
+			wtvfx->RemoveObserver(*this);
+			wtvfx->AddObserver(*this);
 		}
 		UIIntVarOffField *ff = new UIIntVarOffField(fp, *fxv, "fx:%2.2X", 0x00, 0x0F, 1, 0x04);
 		T_SimpleList<UIField>::Insert(ff);
@@ -975,8 +987,14 @@ void InstrumentView::fillLV2Parameters() {
 		p._x = 37;
 		v = instrument->FindVariable(IFXS);
 		if (!v) {
-			v = new Variable("fx slot", IFXS, -1);
-			instrument->Insert(v);
+			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
+			wfx->AddObserver(*this);
+			instrument->Insert(wfx);
+			v = wfx;
+		}
+		if (WatchedVariable *wtvfx = dynamic_cast<WatchedVariable *>(v)) {
+			wtvfx->RemoveObserver(*this);
+			wtvfx->AddObserver(*this);
 		}
 		UIIntVarOffField *f3 = new UIIntVarOffField(p, *v, "fx:%2.2X", 0x00, 0x0F, 1, 0x04);
 		T_SimpleList<UIField>::Insert(f3);
@@ -1107,8 +1125,14 @@ void InstrumentView::fillSoundFontParameters() {
 		p._x = 37;
 		v = instrument->FindVariable(IFXS);
 		if (!v) {
-			v = new Variable("fx slot", IFXS, -1);
-			instrument->Insert(v);
+			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
+			wfx->AddObserver(*this);
+			instrument->Insert(wfx);
+			v = wfx;
+		}
+		if (WatchedVariable *wtvfx = dynamic_cast<WatchedVariable *>(v)) {
+			wtvfx->RemoveObserver(*this);
+			wtvfx->AddObserver(*this);
 		}
 		UIIntVarOffField *f3 = new UIIntVarOffField(p, *v, "fx:%2.2X", 0x00, 0x0F, 1, 0x04);
 		T_SimpleList<UIField>::Insert(f3);
@@ -1348,8 +1372,14 @@ void InstrumentView::fillVST3Parameters() {
 		p._x = 37;
 		v = instrument->FindVariable(IFXS);
 		if (!v) {
-			v = new Variable("fx slot", IFXS, -1);
-			instrument->Insert(v);
+			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
+			wfx->AddObserver(*this);
+			instrument->Insert(wfx);
+			v = wfx;
+		}
+		if (WatchedVariable *wtvfx = dynamic_cast<WatchedVariable *>(v)) {
+			wtvfx->RemoveObserver(*this);
+			wtvfx->AddObserver(*this);
 		}
 		UIIntVarOffField *f3 = new UIIntVarOffField(p, *v, "fx:%2.2X", 0x00, 0x0F, 1, 0x04);
 		T_SimpleList<UIField>::Insert(f3);
@@ -2094,6 +2124,26 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 return;
             }
         }
+
+		// Handle changes to the instrument-level effect slot (IFXS).
+		Variable *var = dynamic_cast<Variable *>(&o);
+		if (var && var->GetID() == IFXS) {
+			int slot = var->GetInt();
+			int idx = viewData_->currentInstrument_;
+			InstrumentBank *bank2 = viewData_->project_->GetInstrumentBank();
+			I_Instrument *instr2 = bank2->GetInstrument(idx);
+			if (instr2 && instr2->GetType() == IT_AUDIOIN) {
+				AudioInInstrument *ai = (AudioInInstrument *)instr2;
+				if (slot >= 0 && viewData_->project_) {
+					I_Effect *eff = viewData_->project_->GetEffect(slot);
+					if (eff && !eff->IsEmpty()) ai->SetEffect(eff, 255);
+					else ai->ClearEffect();
+				} else {
+					ai->ClearEffect();
+				}
+			}
+			return;
+		}
 
         // Handle SF2 preset changes (only if type is not changing)
         if (instr->GetType() == IT_SOUNDFONT) {

@@ -7,6 +7,8 @@
 #include "Externals/Soundfont/ENAB.H"
 #include "Externals/Soundfont/HYDRA.H"
 #include <cstring>
+#include <algorithm>
+#include <cctype>
 
 #define LIST_SIZE 15
 #define LIST_WIDTH 28
@@ -46,7 +48,7 @@ ImportSoundFontDialog::~ImportSoundFontDialog() {
     sf2List_.Empty();
 }
 
-void ImportSoundFontDialog::scanForSF2Files(Path *folder) {
+void ImportSoundFontDialog::scanForSF2Files(Path folder) {
     // Clear existing list
     IteratorPtr<Path> it(sf2List_.GetIterator());
     for (it->Begin(); !it->IsDone(); it->Next()) {
@@ -55,10 +57,9 @@ void ImportSoundFontDialog::scanForSF2Files(Path *folder) {
     sf2List_.Empty();
     currentFile_ = 0;
     topIndex_ = 0;
+    Trace::Log("SF2", "ImportSoundFontDialog: scanning folder %s", folder.GetPath().c_str());
 
-    if (!folder) return;
-
-    I_Dir *dir = FileSystem::GetInstance()->Open(folder->GetPath().c_str());
+    I_Dir *dir = FileSystem::GetInstance()->Open(folder.GetPath().c_str());
     if (!dir) return;
 
     dir->GetContent("*");
@@ -69,6 +70,7 @@ void ImportSoundFontDialog::scanForSF2Files(Path *folder) {
     // First pass: add directories (for navigation)
     for (dit->Begin(); !dit->IsDone(); dit->Next()) {
         Path &current = dit->CurrentItem();
+        Trace::Log("SF2", "ImportSoundFontDialog: entry '%s' isDir=%d", current.GetPath().c_str(), current.IsDirectory()?1:0);
         if (current.IsDirectory()) {
             if (current.GetName().substr(0, 1) != ".") {
                 Path *p = new Path(current);
@@ -78,16 +80,20 @@ void ImportSoundFontDialog::scanForSF2Files(Path *folder) {
     }
 
     // Add ".." for navigating up (only if not at samplelib root)
-    if (folder->GetPath() != sampleLib_.GetPath()) {
-        Path *parent = new Path(folder->GetParent());
+    if (folder.GetPath() != sampleLib_.GetPath()) {
+        Path *parent = new Path(folder.GetParent());
         sf2List_.Insert(parent);
     }
 
-    // Second pass: add .sf2 files
+    // Second pass: add .sf2 files (case-insensitive extension check)
     for (dit->Begin(); !dit->IsDone(); dit->Next()) {
         Path &current = dit->CurrentItem();
         if (!current.IsDirectory()) {
-            if (current.Matches("*.sf2") || current.Matches("*.SF2")) {
+            const std::string name = current.GetName();
+            std::string lname = name;
+            std::transform(lname.begin(), lname.end(), lname.begin(), [](unsigned char c){ return std::tolower(c); });
+            Trace::Log("SF2", "ImportSoundFontDialog: file '%s' name='%s'", current.GetPath().c_str(), name.c_str());
+            if (lname.size() >= 4 && lname.substr(lname.size()-4) == ".sf2") {
                 Path *p = new Path(current);
                 sf2List_.Insert(p);
             }
@@ -95,11 +101,12 @@ void ImportSoundFontDialog::scanForSF2Files(Path *folder) {
     }
 
     delete dir;
+    Trace::Log("SF2", "ImportSoundFontDialog: found %d entries", sf2List_.Size());
 }
 
 void ImportSoundFontDialog::OnFocus() {
     Path current(sampleLib_);
-    scanForSF2Files(&current);
+    scanForSF2Files(current);
     isDirty_ = true;
 }
 
@@ -249,8 +256,8 @@ void ImportSoundFontDialog::selectFile() {
             Path &selected = it->CurrentItem();
 
             if (selected.IsDirectory()) {
-                // Navigate into directory
-                scanForSF2Files(&selected);
+                // Navigate into directory (pass by value/reference to avoid dangling pointer)
+                scanForSF2Files(selected);
                 isDirty_ = true;
                 return;
             }

@@ -18,7 +18,7 @@ public:
     virtual void ProcessButtonMask(unsigned short mask, bool pressed);
 
 protected:
-    void scanForSF2Files(Path *folder);
+    void scanForSF2Files(Path folder);
     void warpToNext(int dir);
     void selectFile();
     void loadPresetsForCurrent();

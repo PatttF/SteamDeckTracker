@@ -76,7 +76,7 @@ All colors are defined by a set of hexadecimal triplet for RGB. Here's an exampl
 
 ```xml
 <CONFIG>
-    <BACKGROUND   value = "1D0A1F" />
+    <BACKGROUND   value = "000000" />
     <FOREGROUND   value = "F5EBFF" /> <!-- Text and cursor in cursor -->
     <BORDER       value = "FF00DD" /> <!--Dialog Border-->
     <HICOLOR1     value = "B750D1" /> <!-- Highlight color 1 -->

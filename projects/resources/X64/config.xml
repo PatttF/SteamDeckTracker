@@ -17,7 +17,7 @@
     -->
     <!-- Default colors below -->
     <!-- Default colors below -->
-    <BACKGROUND   value = "1D0A1F" />
+    <BACKGROUND   value = "000000" />
     <FOREGROUND   value = "F5EBFF" /> <!-- Text and cursor in cursor -->
     <BORDER       value = "FF00DD" /> <!--Dialog Border-->
     <HICOLOR1     value = "B750D1" /> <!-- Highlight color 1 -->
@@ -31,6 +31,6 @@
     <ROWCOLOR2    value = "FF00FF" /> <!--Row count color 2-->
     <ALTROWNUMBER value = "4"/>       <!--How many rows of each ROWCOLOR-->
     <ALTROWNUMBER value = "4"/>
-    <FONTTYPE     value = '0' />     <!-- '0':original '1':digital '2':monster 'CUSTOM': load custom_font.xml-->
+    <FONTTYPE     value = '1' />     <!-- '0':original '1':digital '2':monster 'CUSTOM': load custom_font.xml-->
 
 </CONFIG>

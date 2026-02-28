@@ -61,7 +61,7 @@ std::string Path::GetPath() const
 	return fullPath_ ;
 } ;
 
-std::string Path::GetCanonicalPath() {
+std::string Path::GetCanonicalPath() const {
 	std::string copy=GetPath(); 
 	std::string::size_type pos ;
 	while ((pos=copy.find("\\")) != std::string::npos) {
@@ -89,7 +89,7 @@ void Path::getType() {
 	} ;
 } ;
 
-std::string Path::GetName() {
+std::string Path::GetName() const {
 
 	unsigned int index=0 ;
 	for (unsigned int i=0;i<strlen(path_);i++) {
@@ -126,7 +126,7 @@ bool Path::Matches(const char *pattern) {
 	return wildcardfit(pattern,name.c_str())  == 1 ;
 } ;
 
-Path Path::GetParent() {
+Path Path::GetParent() const {
 	std::string current=GetCanonicalPath() ;
 	std::string::size_type index=current.rfind("/",current.size()-2) ;
 	std::string parentPath=current.substr(0,index) ;

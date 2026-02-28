@@ -95,7 +95,7 @@ Config::Config()
 	<ROWCOLOR1    value = "BA28F9" />
 	<ROWCOLOR2    value = "FF00FF" />
 	<ALTROWNUMBER value = "4"/>
-	<FONTTYPE     value = '0' />
+	<FONTTYPE     value = '1' />
 </CONFIG>
 )";
 

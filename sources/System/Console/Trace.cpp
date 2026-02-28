@@ -15,8 +15,11 @@ Trace::Trace()
 
 void Trace::AddLine(const char* line)
 {
-  // Logging disabled: no-op
-  (void)line;
+  if (logger_) {
+    logger_->AddLine(line);
+  } else {
+    fprintf(stderr, "%s\n", line);
+  }
 }
 
 
@@ -24,9 +27,9 @@ void Trace::AddLine(const char* line)
 
 Trace::Logger *Trace::SetLogger(Trace::Logger& logger)
 {
-  // Disable changing logger; keep as no-op and return nullptr
-  (void)logger;
-  return nullptr;
+  Trace::Logger *prev = logger_;
+  logger_ = &logger;
+  return prev;
 }
 
 
@@ -34,16 +37,24 @@ Trace::Logger *Trace::SetLogger(Trace::Logger& logger)
 
 void Trace::VLog(const char* category,  const char *fmt, va_list args) 
 {
-  // Logging disabled: no-op
-  (void)category; (void)fmt; (void)args;
+  char buffer[1024];
+  int n = 0;
+  if (category && category[0]) {
+    n = snprintf(buffer, sizeof(buffer), "%s: ", category);
+    if (n < 0) n = 0;
+  }
+  vsnprintf(buffer + n, sizeof(buffer) - n, fmt, args);
+  Trace::GetInstance()->AddLine(buffer);
 }
 
 //------------------------------------------------------------------------------
 
 void Trace::Log(const char* category, const char *fmt, ...) 
 {
-  // Logging disabled: no-op
-  (void)category; (void)fmt;
+  va_list args;
+  va_start(args, fmt);
+  VLog(category, fmt, args);
+  va_end(args);
 }
 
 
@@ -51,8 +62,10 @@ void Trace::Log(const char* category, const char *fmt, ...)
 
 void Trace::Debug(const char *fmt, ...) 
 {
-  // Debug logging disabled (no-op)
-  (void)fmt;
+  va_list args;
+  va_start(args, fmt);
+  VLog("DEBUG", fmt, args);
+  va_end(args);
 }
 
 
@@ -60,8 +73,10 @@ void Trace::Debug(const char *fmt, ...)
 
 void Trace::Error(const char *fmt, ...) 
 {
-  // Error logging disabled (no-op)
-  (void)fmt;
+  va_list args;
+  va_start(args, fmt);
+  VLog("ERROR", fmt, args);
+  va_end(args);
 }
 
 

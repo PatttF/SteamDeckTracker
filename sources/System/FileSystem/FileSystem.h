@@ -32,9 +32,9 @@ public:
   Path Descend(const std::string& leaf);
 
 	std::string GetPath() const;
-	std::string GetCanonicalPath() ;
-	std::string GetName() ;
-	Path GetParent() ;
+	std::string GetCanonicalPath() const ;
+	std::string GetName() const ;
+	Path GetParent() const ;
 
 	int Compare(const Path &other) ;
 
