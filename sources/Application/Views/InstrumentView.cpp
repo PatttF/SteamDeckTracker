@@ -28,6 +28,8 @@
 #include "System/System/System.h"
 #include "System/Console/Trace.h"
 #include "Application/Player/Player.h"
+#include "Application/AppWindow.h"
+#include "Application/Player/MidiInputRouter.h"
 #include <map>
 #include <vector>
 #include <string>
@@ -234,6 +236,16 @@ const char *InstrumentView::getMidiInDeviceName(int index) {
 
 void InstrumentView::fillSampleParameters() {
 
+	// Re-scan MIDI ports for hot-plugged devices (only when not playing)
+	{
+		Player *pl = Player::GetInstance();
+		if (!pl || !pl->IsRunning()) {
+			MidiService::GetInstance()->RefreshDevices();
+			if (MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter())
+				router->RefreshDevices();
+		}
+	}
+
 	int i=viewData_->currentInstrument_ ;
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	I_Instrument *instr=bank->GetInstrument(i) ;
@@ -415,12 +427,12 @@ void InstrumentView::fillSampleParameters() {
 		GUIPoint p(1, position._y + 1);
 		Variable *mv = instrument->FindVariable(IMDI);
 		if (!mv) {
-			mv = new Variable("midi dev", IMDI, 0);
+			mv = new Variable("midi dev", IMDI, VAR_OFF);
 			instrument->Insert(mv);
 		}
 		int maxDev = getMidiInDeviceCount() - 1;
 		if (maxDev < 0) maxDev = 0;
-		UIIntVarField *mf1 = new UIIntVarField(p, *mv, "midi:%d", 0, maxDev, 1, 1);
+		UIIntVarOffField *mf1 = new UIIntVarOffField(p, *mv, "midi:%d", 0, maxDev, 1, 1);
 		T_SimpleList<UIField>::Insert(mf1);
 
 		p._x = 14;
@@ -493,6 +505,8 @@ void InstrumentView::fillMidiOutParameters() {
 	Player *player = Player::GetInstance();
 	if (!player || !player->IsRunning()) {
 		MidiService::GetInstance()->RefreshDevices();
+		if (MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter())
+			router->RefreshDevices();
 	}
 
 	int i=viewData_->currentInstrument_ ;
@@ -596,6 +610,8 @@ void InstrumentView::fillAudioInParameters() {
 	Player *player = Player::GetInstance();
 	if (!player || !player->IsRunning()) {
 		MidiService::GetInstance()->RefreshDevices();
+		if (MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter())
+			router->RefreshDevices();
 	}
 
 	int i=viewData_->currentInstrument_ ;
@@ -727,6 +743,16 @@ void InstrumentView::fillAudioInParameters() {
 void InstrumentView::fillLV2Parameters() {
 
 	lv2SaveField_ = nullptr;
+
+	// Re-scan MIDI ports for hot-plugged devices (only when not playing)
+	{
+		Player *pl = Player::GetInstance();
+		if (!pl || !pl->IsRunning()) {
+			MidiService::GetInstance()->RefreshDevices();
+			if (MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter())
+				router->RefreshDevices();
+		}
+	}
 
 	int i=viewData_->currentInstrument_ ;
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
@@ -1005,12 +1031,12 @@ void InstrumentView::fillLV2Parameters() {
 		GUIPoint p(1, position._y + 1);
 		Variable *v = instrument->FindVariable(IMDI);
 		if (!v) {
-			v = new Variable("midi dev", IMDI, 0);
+			v = new Variable("midi dev", IMDI, VAR_OFF);
 			instrument->Insert(v);
 		}
 		int maxDev = getMidiInDeviceCount() - 1;
 		if (maxDev < 0) maxDev = 0;
-		UIIntVarField *f1 = new UIIntVarField(p, *v, "midi:%d", 0, maxDev, 1, 1);
+		UIIntVarOffField *f1 = new UIIntVarOffField(p, *v, "midi:%d", 0, maxDev, 1, 1);
 		T_SimpleList<UIField>::Insert(f1);
 
 		p._x = 14;
@@ -1026,6 +1052,16 @@ void InstrumentView::fillLV2Parameters() {
 } ;
 
 void InstrumentView::fillSoundFontParameters() {
+
+	// Re-scan MIDI ports for hot-plugged devices (only when not playing)
+	{
+		Player *pl = Player::GetInstance();
+		if (!pl || !pl->IsRunning()) {
+			MidiService::GetInstance()->RefreshDevices();
+			if (MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter())
+				router->RefreshDevices();
+		}
+	}
 
 	int i=viewData_->currentInstrument_ ;
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
@@ -1143,12 +1179,12 @@ void InstrumentView::fillSoundFontParameters() {
 		GUIPoint p(1, position._y + 1);
 		Variable *v = instrument->FindVariable(IMDI);
 		if (!v) {
-			v = new Variable("midi dev", IMDI, 0);
+			v = new Variable("midi dev", IMDI, VAR_OFF);
 			instrument->Insert(v);
 		}
 		int maxDev = getMidiInDeviceCount() - 1;
 		if (maxDev < 0) maxDev = 0;
-		UIIntVarField *f1 = new UIIntVarField(p, *v, "midi:%d", 0, maxDev, 1, 1);
+		UIIntVarOffField *f1 = new UIIntVarOffField(p, *v, "midi:%d", 0, maxDev, 1, 1);
 		T_SimpleList<UIField>::Insert(f1);
 
 		p._x = 14;
@@ -1165,6 +1201,16 @@ void InstrumentView::fillSoundFontParameters() {
 void InstrumentView::fillVST3Parameters() {
 
 	vst3SaveField_ = nullptr;
+
+	// Re-scan MIDI ports for hot-plugged devices (only when not playing)
+	{
+		Player *pl = Player::GetInstance();
+		if (!pl || !pl->IsRunning()) {
+			MidiService::GetInstance()->RefreshDevices();
+			if (MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter())
+				router->RefreshDevices();
+		}
+	}
 
 	int i=viewData_->currentInstrument_ ;
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
@@ -1390,12 +1436,12 @@ void InstrumentView::fillVST3Parameters() {
 		GUIPoint p(1, position._y + 1);
 		Variable *v = instrument->FindVariable(IMDI);
 		if (!v) {
-			v = new Variable("midi dev", IMDI, 0);
+			v = new Variable("midi dev", IMDI, VAR_OFF);
 			instrument->Insert(v);
 		}
 		int maxDev = getMidiInDeviceCount() - 1;
 		if (maxDev < 0) maxDev = 0;
-		UIIntVarField *f1 = new UIIntVarField(p, *v, "midi:%d", 0, maxDev, 1, 1);
+		UIIntVarOffField *f1 = new UIIntVarOffField(p, *v, "midi:%d", 0, maxDev, 1, 1);
 		T_SimpleList<UIField>::Insert(f1);
 
 		p._x = 14;

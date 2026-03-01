@@ -107,8 +107,21 @@ void MidiService::StopStartedDevices() {
 }
 
 void MidiService::RefreshDevices() {
-	// Stop any running devices before rebuilding list
+	// Stop any running OUTPUT devices before rebuilding list
 	StopStartedDevices();
+	// Stop and close all running INPUT devices before destroying them.
+	// The RtMidi callback thread can still fire after deletion if the port
+	// is not explicitly closed first, leading to a use-after-free crash.
+	{
+		IteratorPtr<MidiInDevice> it(inList_.GetIterator());
+		for (it->Begin(); !it->IsDone(); it->Next()) {
+			MidiInDevice &dev = it->CurrentItem();
+			if (dev.IsRunning()) {
+				dev.Stop();
+				dev.Close();
+			}
+		}
+	}
 	// Clear project-level device pointer (it points into our list)
 	if (device_) {
 		device_ = 0;

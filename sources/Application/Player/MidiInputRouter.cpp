@@ -1,7 +1,9 @@
 #include "MidiInputRouter.h"
 #include "PlayerMixer.h"
 #include "Player.h"
+#include "Application/Application.h"
 #include "Application/Model/Project.h"
+#include "UIFramework/BasicDatas/GUIEvent.h"
 #include "Application/Instruments/InstrumentBank.h"
 #include "Application/Instruments/I_Instrument.h"
 #include "Services/Midi/MidiService.h"
@@ -218,6 +220,44 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
         }
     }
 
+    // Handle MIDI transport messages (0xFA=start, 0xFB=continue, 0xFC=stop).
+    // GetType() uses status_ & 0xF0 which maps all 0xFx messages to MIDI_MIDI_CLOCK,
+    // so we must inspect the raw status byte here.
+    //
+    // Simulate a physical START button press+release by pushing ET_PADBUTTONDOWN
+    // and ET_PADBUTTONUP events with value=8 (EPBM_START = 1<<8) onto the SDL
+    // queue.  They are processed on the main thread exactly like a real keypress,
+    // through the current view (page-sensitive), with correct locking.
+    // Only push when the state change makes sense to avoid toggling backwards.
+    if (msg->status_ == 0xFA || msg->status_ == 0xFB) {
+        // MIDI Start/Continue: only simulate START if player is not already running
+        Player *tpl = Player::GetInstance();
+        if (tpl && !tpl->IsRunning()) {
+            GUIWindow *w = Application::GetInstance()->GetWindow();
+            if (w) {
+                GUIEvent dn(8 /*START bit index*/, ET_PADBUTTONDOWN, 0);
+                GUIEvent up(8 /*START bit index*/, ET_PADBUTTONUP, 0);
+                w->PushEvent(dn);
+                w->PushEvent(up);
+            }
+        }
+        return;
+    }
+    if (msg->status_ == 0xFC) {
+        // MIDI Stop: only simulate START (toggle-to-stop) if player is running
+        Player *tpl = Player::GetInstance();
+        if (tpl && tpl->IsRunning()) {
+            GUIWindow *w = Application::GetInstance()->GetWindow();
+            if (w) {
+                GUIEvent dn(8 /*START bit index*/, ET_PADBUTTONDOWN, 0);
+                GUIEvent up(8 /*START bit index*/, ET_PADBUTTONUP, 0);
+                w->PushEvent(dn);
+                w->PushEvent(up);
+            }
+        }
+        return;
+    }
+
     bool isNoteOn = (type == MidiMessage::MIDI_NOTE_ON && data2 > 0);
     bool isNoteOff = (type == MidiMessage::MIDI_NOTE_OFF ||
                       (type == MidiMessage::MIDI_NOTE_ON && data2 == 0));
@@ -244,6 +284,9 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
                                 ps = allocPluginSlot(i);
                                 if (ps >= 0) {
                                     int ch = LIVE_CH_BASE + pluginSlots_[ps].slot;
+                                    // Stop whatever may have been on this channel (handles
+                                    // the steal-oldest case when all live slots are full)
+                                    mixer_->StopInstrument(ch);
                                     instr->SetNextVelocity(data2);
                                     mixer_->StartInstrument(ch, instr, data1, true);
                                     pluginSlots_[ps].noteCount = 1;
@@ -255,7 +298,9 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
                         } else if (isNoteOff) {
                             int ps = findPluginSlot(i);
                             if (ps >= 0) {
-                                pluginSlots_[ps].noteCount--;
+                                // Guard against underflow from stale/duplicate note-offs
+                                if (pluginSlots_[ps].noteCount > 0)
+                                    pluginSlots_[ps].noteCount--;
                                 if (pluginSlots_[ps].noteCount <= 0) {
                                     instr->QueueMidiEvent(0x80, data1, 0);
                                     int ch = LIVE_CH_BASE + pluginSlots_[ps].slot;
@@ -326,6 +371,9 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
                     ps = allocPluginSlot(i);
                     if (ps < 0) break; // no slots available
                     int ch = LIVE_CH_BASE + pluginSlots_[ps].slot;
+                    // Stop whatever may have been on this channel (handles
+                    // the steal-oldest case when all live slots are full)
+                    mixer_->StopInstrument(ch);
                     instr->SetNextVelocity(data2);
                     mixer_->StartInstrument(ch, instr, data1, true);
                     pluginSlots_[ps].noteCount = 1;
@@ -337,7 +385,9 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
             } else if (isNoteOff) {
                 int ps = findPluginSlot(i);
                 if (ps >= 0) {
-                    pluginSlots_[ps].noteCount--;
+                    // Guard against underflow from stale/duplicate note-offs
+                    if (pluginSlots_[ps].noteCount > 0)
+                        pluginSlots_[ps].noteCount--;
                     if (pluginSlots_[ps].noteCount <= 0) {
                         // Last note released: send note-off and stop channel
                         // (triggers release tail via PlayerChannel::releasing_)

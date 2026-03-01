@@ -101,9 +101,11 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
   unsigned playPos=viewData_->songY_+viewData_->songOffset_ ;
   lastSongPos_ = playPos;
 
-  // Clear all channel based data
+  // Clear all channel based data.
+  // Only stop sequencer channels 0-7; channels 8-15 are live MIDI channels
+  // managed by MidiInputRouter and must not be interrupted by sequencer start.
 
-	for (int i=0;i<SONG_CHANNEL_COUNT;i++)
+	for (int i=0;i<8;i++)
   {
 		mixer_->StopChannel(i) ;
 		timeToLive_[i]=0 ;
@@ -136,7 +138,7 @@ void Player::Start(PlayMode mode,bool forceSongMode) {
   {
 		case PM_SONG:
 		{
-			for (int i=0;i<SONG_CHANNEL_COUNT;i++)
+			for (int i=0;i<8;i++) // sequencer channels only; live MIDI channels (8-15) managed by MidiInputRouter
 			{
 				mixer_->StartChannel(i) ;
 				updateSongPos(playPos, i, viewData_->chainRow_);
@@ -224,7 +226,9 @@ void Player::Stop() {
 
 	mixer_->Lock() ;
 
-	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+	// Only stop sequencer channels 0-7; live MIDI channels (8-15) are managed
+	// by MidiInputRouter and should not be interrupted by sequencer stop.
+	for (int i=0;i<8;i++) {
 		mixer_->StopChannel(i) ;
 		// Clear any active LV2 effects on this channel
 		PlayerChannel *ch = mixer_->GetChannel(i);
