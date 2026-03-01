@@ -232,6 +232,7 @@ void Player::Stop() {
 	}
 	MidiService::GetInstance()->OnPlayerStop() ;
 	mixer_->OnPlayerStop() ;
+	project_->GetInstrumentBank()->OnStop() ;
 
 	SyncMaster::GetInstance()->Stop() ;
 	isRunning_=false ;

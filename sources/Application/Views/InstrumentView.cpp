@@ -304,7 +304,7 @@ void InstrumentView::fillSampleParameters() {
     position._x -= 5;
     position._y += 1;
     v=instrument->FindVariable(SIP_VOLUME) ;
-	f1=new UIIntVarField(position,*v,"volume: %d [%2.2X]",0,255,1,10) ;
+	f1=new UIIntVarField(position,*v,"volume: %2.2X",0,255,1,10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
     position._y+=1 ;
@@ -366,7 +366,7 @@ void InstrumentView::fillSampleParameters() {
 
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_ATTENUATE) ;
-	f1=new UIIntVarField(position,*v,"attenuate: %d [%2.2X]",1,0xFF,1,0x10) ;
+	f1=new UIIntVarField(position,*v,"attenuate: %2.2X",1,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._y+=1 ;
@@ -402,7 +402,7 @@ void InstrumentView::fillSampleParameters() {
 
 	v=instrument->FindVariable(SIP_TABLEAUTO) ;
 	position._y+=2 ;
-	UIIntVarField *f2=new UIIntVarField(position,*v,"automation: %s",0,1,1,1) ;
+	UIIntVarField *f2=new UIIntVarField(position,*v,"Auto: %s",0,1,1,1) ;
 	T_SimpleList<UIField>::Insert(f2) ;
 
 	position._y+=1 ;
@@ -411,7 +411,7 @@ void InstrumentView::fillSampleParameters() {
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	{
-		GUIPoint fp(17, position._y);
+		GUIPoint fp(22, position._y);
 		Variable *fxv = instrument->FindVariable(IFXS);
 		if (!fxv) {
 			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
@@ -459,6 +459,23 @@ void InstrumentView::fillMidiParameters() {
 	I_Instrument *instr=bank->GetInstrument(i) ;
 	MidiInstrument *instrument=(MidiInstrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
+	position._y -= 1;  // shift up to make room for type selector
+
+	// Type selector — allows switching away from legacy MIDI instrument
+	Variable *tv = instrument->FindVariable(MAKE_FOURCC('I','T','Y','P'));
+	if (!tv) {
+		static char *instrTypes[] = { (char*)"Sample", (char*)"SF2", (char*)"VST3", (char*)"LV2", (char*)"MidiOut", (char*)"AudioIn" };
+		WatchedVariable *wtv = new WatchedVariable("type", MAKE_FOURCC('I','T','Y','P'), instrTypes, 6, 0);
+		instrument->Insert(wtv);
+		tv = wtv;
+	}
+	UIIntVarField *typeField = new UIIntVarField(position, *tv, "Type: %s", 0, 5, 1, 7);
+	T_SimpleList<UIField>::Insert(typeField);
+	position._y += 1;
+	if (WatchedVariable *wtv = dynamic_cast<WatchedVariable *>(tv)) {
+		wtv->RemoveObserver(*this);
+		wtv->AddObserver(*this);
+	}
 
 	Variable *v=instrument->FindVariable(MIP_CHANNEL) ;
 	UIIntVarField* f1=new UIIntVarField(position,*v,"channel: %2.2d",0,0x0F,1,0x04,1) ;
@@ -476,7 +493,7 @@ void InstrumentView::fillMidiParameters() {
 
 	v=instrument->FindVariable(MIP_TABLEAUTO) ;
 	position._y+=2 ;
-	UIIntVarField *f2=new UIIntVarField(position,*v,"automation: %s",0,1,1,1) ;
+	UIIntVarField *f2=new UIIntVarField(position,*v,"Auto: %s",0,1,1,1) ;
 	T_SimpleList<UIField>::Insert(f2) ;
 
 	position._y+=1;
@@ -577,7 +594,7 @@ void InstrumentView::fillMidiOutParameters() {
 	// Table automation
 	Variable *vta = instrument->FindVariable(MOIP_TABLEAUTO) ;
 	if (vta) {
-		UIIntVarField *f1 = new UIIntVarField(position, *vta, "automation: %s", 0, 1, 1, 1) ;
+		UIIntVarField *f1 = new UIIntVarField(position, *vta, "Auto: %s", 0, 1, 1, 1) ;
 		T_SimpleList<UIField>::Insert(f1) ;
 		position._y += 1;
 	}
@@ -693,7 +710,7 @@ void InstrumentView::fillAudioInParameters() {
 	// Table automation
 	Variable *vta = instrument->FindVariable(AIP_TABLEAUTO) ;
 	if (vta) {
-		UIIntVarField *f1 = new UIIntVarField(position, *vta, "automation: %s", 0, 1, 1, 1) ;
+		UIIntVarField *f1 = new UIIntVarField(position, *vta, "Auto: %s", 0, 1, 1, 1) ;
 		T_SimpleList<UIField>::Insert(f1) ;
 		position._y += 1;
 	}
@@ -966,25 +983,25 @@ void InstrumentView::fillLV2Parameters() {
 	{
 		GUIPoint p(1, position._y);
 		Variable *v = instrument->FindVariable(LV2IP_VOLUME);
-		UIIntVarField *f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "volume:%2.2X", 0, 0xFF, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 9;
+		p._x = 11;
 		v = instrument->FindVariable(LV2IP_PAN);
 		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 17;
+		p._x = 18;
 		v = instrument->FindVariable(LV2IP_TABLEAUTO);
-		UIIntVarField *f2 = new UIIntVarField(p, *v, "auto:%s", 0, 1, 1, 1);
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "Auto:%s", 0, 1, 1, 1);
 		T_SimpleList<UIField>::Insert(f2);
 
-		p._x = 29;
+		p._x = 30;
 		v = instrument->FindVariable(LV2IP_TABLE);
-		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0, 0x7F, 1, 0x10);
+		f1 = new UIIntVarOffField(p, *v, "table:%2.2X", 0, 0x7F, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 37;
+		p._x = 39;
 		v = instrument->FindVariable(IFXS);
 		if (!v) {
 			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
@@ -1104,25 +1121,25 @@ void InstrumentView::fillSoundFontParameters() {
 	{
 		GUIPoint p(1, position._y);
 		v = instrument->FindVariable(SFIP_VOLUME);
-		f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+		f1 = new UIIntVarField(p, *v, "volume:%2.2X", 0, 0xFF, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 9;
+		p._x = 11;
 		v = instrument->FindVariable(SFIP_PAN);
 		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 17;
+		p._x = 18;
 		v = instrument->FindVariable(SFIP_TABLEAUTO);
-		UIIntVarField *f2 = new UIIntVarField(p, *v, "auto:%s", 0, 1, 1, 1);
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "Auto:%s", 0, 1, 1, 1);
 		T_SimpleList<UIField>::Insert(f2);
 
-		p._x = 29;
+		p._x = 30;
 		v = instrument->FindVariable(SFIP_TABLE);
-		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0x00, 0x7F, 1, 0x10);
+		f1 = new UIIntVarOffField(p, *v, "table:%2.2X", 0x00, 0x7F, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 37;
+		p._x = 39;
 		v = instrument->FindVariable(IFXS);
 		if (!v) {
 			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);
@@ -1351,25 +1368,25 @@ void InstrumentView::fillVST3Parameters() {
 	{
 		GUIPoint p(1, position._y);
 		Variable *v = instrument->FindVariable(VST3IP_VOLUME);
-		UIIntVarField *f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
+		UIIntVarField *f1 = new UIIntVarField(p, *v, "volume:%2.2X", 0, 0xFF, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 9;
+		p._x = 11;
 		v = instrument->FindVariable(VST3IP_PAN);
 		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 17;
+		p._x = 18;
 		v = instrument->FindVariable(VST3IP_TABLEAUTO);
-		UIIntVarField *f2 = new UIIntVarField(p, *v, "auto:%s", 0, 1, 1, 1);
+		UIIntVarField *f2 = new UIIntVarField(p, *v, "Auto:%s", 0, 1, 1, 1);
 		T_SimpleList<UIField>::Insert(f2);
 
-		p._x = 29;
+		p._x = 30;
 		v = instrument->FindVariable(VST3IP_TABLE);
-		f1 = new UIIntVarOffField(p, *v, "tbl:%2.2X", 0, 0x7F, 1, 0x10);
+		f1 = new UIIntVarOffField(p, *v, "table:%2.2X", 0, 0x7F, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 37;
+		p._x = 39;
 		v = instrument->FindVariable(IFXS);
 		if (!v) {
 			WatchedVariable *wfx = new WatchedVariable("fx slot", IFXS, -1);

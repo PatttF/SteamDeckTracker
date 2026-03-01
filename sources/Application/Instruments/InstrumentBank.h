@@ -17,6 +17,7 @@ public:
 	virtual void RestoreContent(TiXmlElement *element);
 	void Init() ;
 	void OnStart() ;
+	void OnStop() ;
 	unsigned short GetNext() ;
 	unsigned short Clone(unsigned short i) ;
 	// Change the type of the instrument at index 'i' to 'type', preserving matching variables where possible

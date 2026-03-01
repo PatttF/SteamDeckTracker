@@ -7,7 +7,7 @@
 #include <string>
 
 // Number of theme colors editable
-#define THEME_COLOR_COUNT 14
+#define THEME_COLOR_COUNT 15
 // RGB components per color
 #define THEME_COMPONENT_COUNT 3
 

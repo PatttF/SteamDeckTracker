@@ -135,6 +135,11 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
     surface_ = SDL_CreateRGBSurface(0, screenRect_.Width(), screenRect_.Height(),
                                      32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
     NAssert(surface_);
+    // SDL defaults surfaces with an alpha mask to BLENDMODE_BLEND.
+    // That makes SDL_FillRect(color with alpha=0) a no-op, leaving areas
+    // between characters as pure black instead of the background color.
+    // Force BLENDMODE_NONE so fills and blits write raw pixel values.
+    SDL_SetSurfaceBlendMode(surface_, SDL_BLENDMODE_NONE);
 
     // Create a streaming texture to upload the software surface to the renderer
     screenTexture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ABGR8888,
@@ -199,17 +204,23 @@ void SDLGUIWindowImp::prepareFullFonts()
 	for (int i=0;i<FONT_COUNT;i++)
   {
     
-	  fonts[i] = SDL_CreateRGBSurface(
+	  // Use the exact same pixel format as the main surface so that the raw
+	  // pixel bytes we memcpy in are interpreted identically on blit — no
+	  // SDL format conversion will occur between font surface and surface_.
+	  fonts[i] = SDL_CreateRGBSurfaceWithFormat(
                  SDL_SWSURFACE,
-                 8*mult_, 8*mult_, 
-                 bitDepth_,
-                 0, 0, 0, 0);
+                 8*mult_, 8*mult_,
+                 surface_->format->BitsPerPixel,
+                 surface_->format->format);
 		if (fonts[i]==NULL) 
     {
 			Trace::Error("[DISPLAY] Failed to create font surface %d",i) ;
 		}
     else
     {
+			// Force BLENDMODE_NONE so cached blits copy raw pixels (bypassing
+			// alpha-blend which would make alpha=0 pixels transparent)
+			SDL_SetSurfaceBlendMode(fonts[i], SDL_BLENDMODE_NONE);
 			SDL_LockSurface(fonts[i]) ;
 			int pixelSize=fonts[i]->format->BytesPerPixel ;
 			unsigned char *bgPtr=(unsigned char *)&backgroundColor_ ;
@@ -536,12 +547,72 @@ void SDLGUIWindowImp::Unlock()
 
 void SDLGUIWindowImp::Flush()
 {
+    // The software surface is drawn with SDL_MapRGB which leaves alpha=0 in every pixel.
+    // SDL_BLENDMODE_ADD multiplies source color by per-pixel alpha, so a=0 contributes
+    // nothing to the glow passes.  Force all pixels to a=0xFF before upload — this is
+    // ~130k OR ops at 550×240 and is negligible on modern hardware.
+    {
+        int total = surface_->w * surface_->h;
+        uint32_t *px = (uint32_t *)surface_->pixels;
+        for (int i = 0; i < total; i++) px[i] |= 0xFF000000u;
+    }
+
     // Upload the software surface to the streaming texture
     SDL_UpdateTexture(screenTexture_, NULL, surface_->pixels, surface_->pitch);
 
-    // Clear the renderer and copy the texture (the full software-drawn frame)
+    // Clear the renderer
+
     SDL_RenderClear(renderer_);
+
+    // ── CRT phosphor glow (Blade Runner terminal effect) ──
+    // Step 1: draw the sharp, full-alpha base frame first.
+    SDL_SetTextureBlendMode(screenTexture_, SDL_BLENDMODE_NONE);
+    SDL_SetTextureAlphaMod(screenTexture_, 255);
     SDL_RenderCopy(renderer_, screenTexture_, NULL, NULL);
+
+    // Step 2: layer additive glow passes ON TOP of the sharp frame.
+    // Additive blend: dst += src * (alpha/255).  Dark background adds ~0;
+    // bright amber/cyan text blooms visibly without washing out dark areas.
+
+    // Pass A: wide outer halo — ±4px offsets
+    SDL_SetTextureBlendMode(screenTexture_, SDL_BLENDMODE_ADD);
+    SDL_SetTextureAlphaMod(screenTexture_, 5);
+    {
+        const int off = 4;
+        const int ox[] = {-off, 0, off, -off, off, -off, 0, off};
+        const int oy[] = {-off, -off, -off,    0,   0,  off, off, off};
+        for (int i = 0; i < 8; i++) {
+            SDL_Rect dst = { ox[i], oy[i], screenRect_.Width(), screenRect_.Height() };
+            SDL_RenderCopy(renderer_, screenTexture_, NULL, &dst);
+        }
+    }
+
+    // Pass B: mid glow — ±2px offsets
+    SDL_SetTextureAlphaMod(screenTexture_, 10);
+    {
+        const int off = 2;
+        const int ox[] = {-off, 0, off, -off, off, -off, 0, off};
+        const int oy[] = {-off, -off, -off,    0,   0,  off, off, off};
+        for (int i = 0; i < 8; i++) {
+            SDL_Rect dst = { ox[i], oy[i], screenRect_.Width(), screenRect_.Height() };
+            SDL_RenderCopy(renderer_, screenTexture_, NULL, &dst);
+        }
+    }
+
+    // Pass C: tight 1px bloom — direct neighbours only
+    SDL_SetTextureAlphaMod(screenTexture_, 18);
+    {
+        const int ox[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        const int oy[] = {-1, -1, -1,  0,  0,  1, 1, 1};
+        for (int i = 0; i < 8; i++) {
+            SDL_Rect dst = { ox[i], oy[i], screenRect_.Width(), screenRect_.Height() };
+            SDL_RenderCopy(renderer_, screenTexture_, NULL, &dst);
+        }
+    }
+
+    // Restore state for DrawGraphics() overlay passes
+    SDL_SetTextureBlendMode(screenTexture_, SDL_BLENDMODE_NONE);
+    SDL_SetTextureAlphaMod(screenTexture_, 255);
 
     // Do NOT call SDL_RenderPresent here — that happens in Present()
     // after DrawGraphics() has added hardware-accelerated overlays

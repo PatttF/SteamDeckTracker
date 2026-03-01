@@ -45,6 +45,7 @@ public:
     virtual const char *GetName();
 
     virtual void OnStart();
+    virtual void OnStop();
 
     virtual void Purge() {}
 

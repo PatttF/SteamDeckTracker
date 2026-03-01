@@ -82,18 +82,21 @@ Config::Config()
 <CONFIG>
 	<DUMPEVENT value="YES"/>
 	<SCREENMULT value="1"/>
-	<BACKGROUND   value = "000000" />
-	<FOREGROUND   value = "F5EBFF" />
-	<BORDER       value = "FF00DD" />
-	<HICOLOR1     value = "B750D1" />
-	<HICOLOR2     value = "DB33DB" />
-	<SONGVIEW_FE  value = "A55B8F" />
-	<SONGVIEW_00  value = "853B6F" />
-	<CURSORCOLOR  value = "FF00DD" />
-	<PLAYCOLOR    value = "FF00DD" />
-	<MUTECOLOR    value = "F5EBFF" />
-	<ROWCOLOR1    value = "BA28F9" />
-	<ROWCOLOR2    value = "FF00FF" />
+	<BACKGROUND   value = "040810" />
+	<FOREGROUND   value = "CF8A1E" />
+	<BORDER       value = "00C8E8" />
+	<CLIPCOLOR    value = "FF3300" />
+	<HICOLOR1     value = "FF6A00" />
+	<HICOLOR2     value = "E8A800" />
+	<CONSOLECOLOR value = "00C8E8" />
+	<SONGVIEW_FE  value = "6A3800" />
+	<SONGVIEW_00  value = "3A1E00" />
+	<CURSORCOLOR  value = "00C8E8" />
+	<PLAYCOLOR    value = "00C8E8" />
+	<MUTECOLOR    value = "CF8A1E" />
+	<ROWCOLOR1    value = "7A4500" />
+	<ROWCOLOR2    value = "5A2E00" />
+	<MAJORBEAT    value = "A86000" />
 	<ALTROWNUMBER value = "4"/>
 	<FONTTYPE     value = '1' />
 </CONFIG>

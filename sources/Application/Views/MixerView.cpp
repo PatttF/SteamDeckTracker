@@ -597,114 +597,171 @@ void MixerView::DrawGraphics() {
         }
     }
 
-    // ── Pixel oscilloscope (M8-style waveform trace) ──
-    // GPU-optimized: batch all glow rects and trace rects into arrays,
-    // then issue two SDL_RenderFillRects() calls instead of 2×N individual ones.
-    // We still need per-column color changes, so we group runs of same-color
-    // columns and batch each run.
+    // ── Enhanced pixel oscilloscope ──
+    // Layers (back-to-front):
+    //   1. Tinted dark background + horizontal grid lines + border frame
+    //   2. Filled body (center-line → waveform, very dim)
+    //   3. Wide outer glow (±1px halo, dim)
+    //   4. Tight inner glow (±0px, medium)
+    //   5. Bright 2px trace with electric cyan→magenta gradient
     if (scopeWidthPx_ > 0 && scopeHeightPx_ > 0) {
         int sx = scopeLeftPx_;
         int sy = scopeTopPx_;
         int sw = scopeWidthPx_;
         int sh = scopeHeightPx_;
 
-        // Use theme background color for scope area — single rect
-        SDL_SetRenderDrawColor(renderer,
-            AppWindow::backgroundColor_._r & 0xFF,
-            AppWindow::backgroundColor_._g & 0xFF,
-            AppWindow::backgroundColor_._b & 0xFF, 0xFF);
+        // ── 1a. Background: dark blue-tinted panel ──
+        int bgR = AppWindow::backgroundColor_._r & 0xFF;
+        int bgG = AppWindow::backgroundColor_._g & 0xFF;
+        int bgB = AppWindow::backgroundColor_._b & 0xFF;
+        // Clamp helpers
+        auto clamp255 = [](int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); };
+        int sbR = clamp255(bgR + 0x04);
+        int sbG = clamp255(bgG + 0x06);
+        int sbB = clamp255(bgB + 0x14);
+        SDL_SetRenderDrawColor(renderer, sbR, sbG, sbB, 0xFF);
         SDL_Rect scopeBgRect = { sx * mult + ax, sy * mult + ay, sw * mult, sh * mult };
         SDL_RenderFillRect(renderer, &scopeBgRect);
 
-        // Subtle center line — single rect
-        int centerY = sy + sh / 2;
-        int clR = (AppWindow::backgroundColor_._r & 0xFF) + 0x10;
-        int clG = (AppWindow::backgroundColor_._g & 0xFF) + 0x14;
-        int clB = (AppWindow::backgroundColor_._b & 0xFF) + 0x16;
-        if (clR > 255) clR = 255;
-        if (clG > 255) clG = 255;
-        if (clB > 255) clB = 255;
-        SDL_SetRenderDrawColor(renderer, clR, clG, clB, 0xFF);
-        SDL_Rect clRect = { sx * mult + ax, centerY * mult + ay, sw * mult, 1 * mult };
-        SDL_RenderFillRect(renderer, &clRect);
+        // ── 1b. Subtle horizontal grid lines at 25%, 50%, 75% ──
+        int gridR = clamp255(bgR + 0x18);
+        int gridG = clamp255(bgG + 0x20);
+        int gridB = clamp255(bgB + 0x30);
+        SDL_SetRenderDrawColor(renderer, gridR, gridG, gridB, 0xFF);
+        for (int qi = 1; qi <= 3; qi++) {
+            int gy = sy + (sh * qi) / 4;
+            // center line slightly brighter
+            if (qi == 2) {
+                SDL_SetRenderDrawColor(renderer, clamp255(bgR + 0x28), clamp255(bgG + 0x32), clamp255(bgB + 0x48), 0xFF);
+            } else {
+                SDL_SetRenderDrawColor(renderer, gridR, gridG, gridB, 0xFF);
+            }
+            SDL_Rect glRect = { sx * mult + ax, gy * mult + ay, sw * mult, 1 * mult };
+            SDL_RenderFillRect(renderer, &glRect);
+        }
 
-        // Read oscilloscope samples from MixerService
+        // ── 1c. Border frame around scope panel ──
+        int borR = clamp255(bgR + 0x30);
+        int borG = clamp255(bgG + 0x38);
+        int borB = clamp255(bgB + 0x55);
+        SDL_SetRenderDrawColor(renderer, borR, borG, borB, 0xFF);
+        // top
+        SDL_Rect bTop  = { sx * mult + ax, sy * mult + ay, sw * mult, 1 * mult };
+        // bottom
+        SDL_Rect bBot  = { sx * mult + ax, (sy + sh - 1) * mult + ay, sw * mult, 1 * mult };
+        // left
+        SDL_Rect bLeft = { sx * mult + ax, sy * mult + ay, 1 * mult, sh * mult };
+        // right
+        SDL_Rect bRight= { (sx + sw - 1) * mult + ax, sy * mult + ay, 1 * mult, sh * mult };
+        SDL_RenderFillRect(renderer, &bTop);
+        SDL_RenderFillRect(renderer, &bBot);
+        SDL_RenderFillRect(renderer, &bLeft);
+        SDL_RenderFillRect(renderer, &bRight);
+
+        // ── Read samples ──
         MixerService *ms2 = MixerService::GetInstance();
         int scopeN = ms2->GetOscilloscopeSampleCount();
         if (scopeN > 0) {
-            const int traceR1 = 0x66, traceG1 = 0xDD, traceB1 = 0xFF; // cyan
-            const int traceR2 = 0xCC, traceG2 = 0x66, traceB2 = 0xFF; // purple
+            // Electric cyan (#00E0FF) → hot magenta (#FF00DD)
+            const int traceR1 = 0x00, traceG1 = 0xE0, traceB1 = 0xFF;
+            const int traceR2 = 0xFF, traceG2 = 0x00, traceB2 = 0xDD;
 
-            // Pre-compute Y positions and colors for all columns to avoid
-            // interleaving computation with draw calls
-            int usableH = sh - 4;
-            int midY = sy + sh / 2;
+            int usableH = sh - 6; // 3px inset top+bottom so trace never clips border
+            int midY    = sy + sh / 2;
             float swInv = 1.0f / (float)(sw > 1 ? sw - 1 : 1);
 
-            // Batch glow and trace rects — each column produces at most one of each
-            // Max sw is ~550, so stack allocation is fine
-            SDL_Rect glowRects[550];
-            SDL_Rect traceRects[550];
-            int glowCount = 0;
-            int traceCount = 0;
+            // Pre-compute per-column Y and color to avoid interleaving with draw calls
+            // Max sw ~600; stack allocation is fine
+            const int MAX_SW = 700;
+            int    yVals[MAX_SW];
+            int    colR [MAX_SW], colG[MAX_SW], colB[MAX_SW];
+            int    actualSw = sw < MAX_SW ? sw : MAX_SW;
 
-            // Track current batch color to flush when gradient changes
-            int batchGlowR = -1, batchGlowG = -1, batchGlowB = -1;
-            int batchTraceR = -1, batchTraceG = -1, batchTraceB = -1;
-
-            int prevY = -1;
-            for (int x = 0; x < sw; x++) {
-                int sIdx = (x * scopeN) / sw;
+            for (int x = 0; x < actualSw; x++) {
+                int sIdx = (x * scopeN) / actualSw;
                 if (sIdx >= scopeN) sIdx = scopeN - 1;
                 float sample = ms2->GetOscilloscopeSample(sIdx);
-
-                if (sample > 1.0f) sample = 1.0f;
+                if (sample >  1.0f) sample =  1.0f;
                 if (sample < -1.0f) sample = -1.0f;
-
-                int curY = midY - (int)(sample * (usableH / 2));
+                yVals[x] = midY - (int)(sample * (usableH / 2));
 
                 float t = (float)x * swInv;
-                int r = traceR1 + (int)(t * (traceR2 - traceR1));
-                int g = traceG1 + (int)(t * (traceG2 - traceG1));
-                int b = traceB1 + (int)(t * (traceB2 - traceB1));
+                colR[x] = traceR1 + (int)(t * (traceR2 - traceR1));
+                colG[x] = traceG1 + (int)(t * (traceG2 - traceG1));
+                colB[x] = traceB1 + (int)(t * (traceB2 - traceB1));
+            }
 
-                if (prevY >= 0) {
-                    int y0 = (prevY < curY) ? prevY : curY;
-                    int y1 = (prevY < curY) ? curY : prevY;
+            // ── 2. Filled body: center → waveform, very dim ──
+            // Per-column fill; colours change every pixel so we don't batch here.
+            for (int x = 1; x < actualSw - 1; x++) {
+                int cy  = yVals[x];
+                int y0  = cy   < midY ? cy   : midY;
+                int y1  = cy   < midY ? midY : cy;
+                if (y1 <= y0) y1 = y0 + 1;
+                // clamp to panel interior
+                if (y0 < sy + 1) y0 = sy + 1;
+                if (y1 > sy + sh - 2) y1 = sy + sh - 2;
+                SDL_SetRenderDrawColor(renderer, colR[x] / 7, colG[x] / 7, colB[x] / 7, 0xFF);
+                SDL_Rect fillRect = { (sx + x) * mult + ax, y0 * mult + ay,
+                                      1 * mult, (y1 - y0 + 1) * mult };
+                SDL_RenderFillRect(renderer, &fillRect);
+            }
+
+            // ── 3 & 4. Glow layers then bright trace ──
+            // We draw three passes back-to-front using batched rects per color run:
+            //   pass 0: wide outer glow  (3px wider on each side, brightness /6)
+            //   pass 1: tight inner glow (1px wider on each side, brightness /3)
+            //   pass 2: bright 2px trace
+            struct Pass { int expand; int divR; int divG; int divB; };
+            Pass passes[3] = {
+                { 2, 6, 6, 6 },
+                { 1, 3, 3, 3 },
+                { 0, 1, 1, 1 },
+            };
+
+            for (int pass = 0; pass < 3; pass++) {
+                int expand = passes[pass].expand;
+                int dR = passes[pass].divR;
+                int dG = passes[pass].divG;
+                int dB = passes[pass].divB;
+
+                SDL_Rect rects[MAX_SW];
+                int rcount = 0;
+                int bR = -1, bG = -1, bB = -1;
+
+                int prevY = -1;
+                for (int x = 0; x < actualSw; x++) {
+                    if (prevY < 0) { prevY = yVals[x]; continue; }
+
+                    int cy = yVals[x];
+                    int y0 = prevY < cy ? prevY : cy;
+                    int y1 = prevY < cy ? cy    : prevY;
                     if (y1 - y0 < 1) y1 = y0 + 1;
 
-                    int glR = r / 4, glG = g / 4, glB = b / 4;
+                    // widen by expand px (clamped to panel interior)
+                    int ey0 = y0 - expand;
+                    int ey1 = y1 + expand + (pass == 2 ? 1 : 0); // 2px thick on trace pass
+                    if (ey0 < sy + 1) ey0 = sy + 1;
+                    if (ey1 > sy + sh - 2) ey1 = sy + sh - 2;
 
-                    // If the glow color changed, flush the batch
-                    if (glowCount > 0 && (glR != batchGlowR || glG != batchGlowG || glB != batchGlowB)) {
-                        SDL_SetRenderDrawColor(renderer, batchGlowR, batchGlowG, batchGlowB, 0xFF);
-                        SDL_RenderFillRects(renderer, glowRects, glowCount);
-                        glowCount = 0;
-                    }
-                    batchGlowR = glR; batchGlowG = glG; batchGlowB = glB;
-                    glowRects[glowCount++] = { (sx + x) * mult + ax, (y0) * mult + ay,
-                                               1 * mult, (y1 - y0 + 1) * mult };
+                    int cr = colR[x] / dR;
+                    int cg = colG[x] / dG;
+                    int cb = colB[x] / dB;
 
-                    // If the trace color changed, flush the batch
-                    if (traceCount > 0 && (r != batchTraceR || g != batchTraceG || b != batchTraceB)) {
-                        SDL_SetRenderDrawColor(renderer, batchTraceR, batchTraceG, batchTraceB, 0xFF);
-                        SDL_RenderFillRects(renderer, traceRects, traceCount);
-                        traceCount = 0;
+                    if (rcount > 0 && (cr != bR || cg != bG || cb != bB)) {
+                        SDL_SetRenderDrawColor(renderer, bR, bG, bB, 0xFF);
+                        SDL_RenderFillRects(renderer, rects, rcount);
+                        rcount = 0;
                     }
-                    batchTraceR = r; batchTraceG = g; batchTraceB = b;
-                    traceRects[traceCount++] = { (sx + x) * mult + ax, y0 * mult + ay,
-                                                 1 * mult, (y1 - y0 + 1) * mult };
+                    bR = cr; bG = cg; bB = cb;
+                    rects[rcount++] = { (sx + x) * mult + ax, ey0 * mult + ay,
+                                        1 * mult, (ey1 - ey0 + 1) * mult };
+                    prevY = cy;
                 }
-                prevY = curY;
-            }
-            // Flush remaining batched rects
-            if (glowCount > 0) {
-                SDL_SetRenderDrawColor(renderer, batchGlowR, batchGlowG, batchGlowB, 0xFF);
-                SDL_RenderFillRects(renderer, glowRects, glowCount);
-            }
-            if (traceCount > 0) {
-                SDL_SetRenderDrawColor(renderer, batchTraceR, batchTraceG, batchTraceB, 0xFF);
-                SDL_RenderFillRects(renderer, traceRects, traceCount);
+                if (rcount > 0) {
+                    SDL_SetRenderDrawColor(renderer, bR, bG, bB, 0xFF);
+                    SDL_RenderFillRects(renderer, rects, rcount);
+                }
             }
         }
     }
@@ -729,8 +786,6 @@ void MixerView::DrawView() {
 	// Support dynamic channel count (use SONG_CHANNEL_COUNT)
 	int channels = SONG_CHANNEL_COUNT;
 	pos = anchor;
-	// Left-align the mixer block to the far-left of the screen so labels don't get clipped
-	pos._x = 0;
 
 	// Choose spacing dynamically so we have room for 3-digit volume display when possible.
 	// Compute maximum per-channel width that still fits on screen, clamped to 3..4 (we need min 3 to show 100)
@@ -740,13 +795,18 @@ void MixerView::DrawView() {
 	short dx = (short)maxDX;
 	const int gap = 0; // no gap between channels (tighter layout)
 
-	const int meterHeight = 10; // number of character rows for fader (increased to 10 per user request)
+	const int meterHeight = 10; // number of character rows for fader
 
-	// Ensure the whole mixer block fits on screen; include an extra column for the master strip and shift left if needed
+	// Total width of all channel strips + master strip
 	int totalWidth = (channels + 1) * dx + channels * gap;
-	if (pos._x + totalWidth + 6 > LOGICAL_COLS) {
-		pos._x = LOGICAL_COLS - totalWidth - 6;
-		if (pos._x < 0) pos._x = 0;
+
+	// Center the mixer block horizontally based on actual visible pixel width
+	{
+		int visibleCols = w_.GetRect().Width() / 8;
+		if (visibleCols <= 0) visibleCols = LOGICAL_COLS;
+		int centeredX = (visibleCols - totalWidth) / 2;
+		if (centeredX < 0) centeredX = 0;
+		pos._x = centeredX;
 	}
 	// store left-most X for the mixer block so we can draw aligned overlays later
 	int mixerLeftX = pos._x;

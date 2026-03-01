@@ -632,3 +632,9 @@ void InstrumentBank::OnStart() {
 	}
 	init_filters() ;
 } ;
+
+void InstrumentBank::OnStop() {
+	for (int i=0;i<MAX_INSTRUMENT_COUNT;i++) {
+		instrument_[i]->OnStop() ;
+	}
+} ;

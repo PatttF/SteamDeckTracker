@@ -21,21 +21,22 @@
 
 AppWindow *instance = 0;
 
-GUIColor AppWindow::backgroundColor_(0x1D, 0x0A, 0x1F);
-GUIColor AppWindow::normalColor_(0xF5, 0xEB, 0xFF);
-GUIColor AppWindow::borderColor_(0xFF, 0x00, 0x8C);
-GUIColor AppWindow::clipColor_(0xFF, 0x00, 0x00);
-GUIColor AppWindow::songviewfeColor_(0xA5, 0x5B, 0x8F);
-GUIColor AppWindow::songview00Color_(0x85, 0x3B, 0x6F);
-GUIColor AppWindow::highlightColor_(0xB7, 0x50, 0xD1);
-GUIColor AppWindow::highlight2Color_(0xDB, 0x33, 0xDB);
-GUIColor AppWindow::consoleColor_(0x00, 0xFF, 0x00);
-GUIColor AppWindow::cursorColor_(0xFF, 0x00, 0x8C);
-GUIColor AppWindow::playColor_(0xFF, 0x00, 0x8C);
-GUIColor AppWindow::muteColor_(0xF5, 0xEB, 0xFF);
-GUIColor AppWindow::rownumberColor_(0xBA, 0x28, 0xF9);
-GUIColor AppWindow::rownumber2Color_(0xFF, 0x00, 0xFF);
-GUIColor AppWindow::majorbeatColor_(0xBA, 0x28, 0xF9);
+// Blade Runner retro-futuristic default palette
+GUIColor AppWindow::backgroundColor_(0x04, 0x08, 0x10);  // deep navy-black
+GUIColor AppWindow::normalColor_(0xCF, 0x8A, 0x1E);      // amber terminal text
+GUIColor AppWindow::borderColor_(0x00, 0xC8, 0xE8);      // electric cyan
+GUIColor AppWindow::clipColor_(0xFF, 0x33, 0x00);         // danger red-orange
+GUIColor AppWindow::songviewfeColor_(0x6A, 0x38, 0x00);  // dark amber
+GUIColor AppWindow::songview00Color_(0x3A, 0x1E, 0x00);  // deep amber
+GUIColor AppWindow::highlightColor_(0xFF, 0x6A, 0x00);   // orange
+GUIColor AppWindow::highlight2Color_(0xE8, 0xA8, 0x00);  // gold
+GUIColor AppWindow::consoleColor_(0x00, 0xC8, 0xE8);     // cyan
+GUIColor AppWindow::cursorColor_(0x00, 0xC8, 0xE8);      // cyan
+GUIColor AppWindow::playColor_(0x00, 0xC8, 0xE8);        // cyan
+GUIColor AppWindow::muteColor_(0xCF, 0x8A, 0x1E);        // amber
+GUIColor AppWindow::rownumberColor_(0x7A, 0x45, 0x00);   // dark amber
+GUIColor AppWindow::rownumber2Color_(0x5A, 0x2E, 0x00);  // deeper amber
+GUIColor AppWindow::majorbeatColor_(0xA8, 0x60, 0x00);   // medium amber
 
 int AppWindow::charWidth_ = 8;
 int AppWindow::charHeight_ = 8;
@@ -107,20 +108,21 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     // Init midi services
     MidiService::GetInstance()->Init();
 
-    defineColor("BACKGROUND", backgroundColor_);
-    defineColor("FOREGROUND", normalColor_);
-    defineColor("BORDER", borderColor_);
-    defineColor("CLIPCOLOR", clipColor_);
+    defineColor("BACKGROUND",  backgroundColor_);
+    defineColor("FOREGROUND",  normalColor_);
+    defineColor("BORDER",      borderColor_);
+    defineColor("CLIPCOLOR",   clipColor_);
     defineColor("SONGVIEW_FE", songviewfeColor_);
     defineColor("SONGVIEW_00", songview00Color_);
-    defineColor("HICOLOR1", highlightColor_);
-    defineColor("HICOLOR2", highlight2Color_);
+    defineColor("HICOLOR1",    highlightColor_);
+    defineColor("HICOLOR2",    highlight2Color_);
+    defineColor("CONSOLECOLOR",consoleColor_);
     defineColor("CURSORCOLOR", cursorColor_);
-    defineColor("PLAYCOLOR", playColor_);
-    defineColor("MUTECOLOR", muteColor_);
-    defineColor("ROWCOLOR1", rownumberColor_);
-    defineColor("ROWCOLOR2", rownumber2Color_);
-    defineColor("MAJORBEAT", majorbeatColor_);
+    defineColor("PLAYCOLOR",   playColor_);
+    defineColor("MUTECOLOR",   muteColor_);
+    defineColor("ROWCOLOR1",   rownumberColor_);
+    defineColor("ROWCOLOR2",   rownumber2Color_);
+    defineColor("MAJORBEAT",   majorbeatColor_);
 
     GUIWindow::Clear(backgroundColor_);
 

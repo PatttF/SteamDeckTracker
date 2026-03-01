@@ -32,9 +32,10 @@ public:
       virtual bool Start(int channel,unsigned char note,bool retrigger=true)=0 ;
       virtual void Stop(int channel)=0 ;
 
-	  // Engine playback  start callback
+	  // Engine playback start/stop callbacks
 
 	  virtual void OnStart()=0 ;
+	  virtual void OnStop() {}
 
       // size refers to the number of samples
       // should always fill interleaved stereo / 16bit

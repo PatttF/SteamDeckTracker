@@ -108,6 +108,20 @@ void MidiOutInstrument::OnStart() {
     }
 }
 
+void MidiOutInstrument::OnStop() {
+    // Send MIDI transport stop (0xFC) when the player stops, if transport was running
+    if (transportRunning_) {
+        Variable *vd = FindVariable(MOIP_DEVICE);
+        int dev = vd ? vd->GetInt() : 0;
+        MidiMessage stopMsg;
+        stopMsg.status_ = 0xFC;
+        stopMsg.data1_ = MidiMessage::UNUSED_BYTE;
+        stopMsg.data2_ = MidiMessage::UNUSED_BYTE;
+        sendMidiToDevice(stopMsg, dev);
+        transportRunning_ = false;
+    }
+}
+
 bool MidiOutInstrument::Start(int c, unsigned char note, bool retrigger) {
     if (c < 0 || c >= SONG_CHANNEL_COUNT) return false;
 
@@ -182,25 +196,17 @@ void MidiOutInstrument::Stop(int c) {
         if (playing_[i]) { anyPlaying = true; break; }
     }
 
-    // Only send CC123 All Notes Off and transport stop when nothing is playing
+    // Send CC123 All Notes Off when the last note finishes
     if (!anyPlaying) {
-        
         MidiMessage allOff;
         allOff.status_ = MIDI_CC + channel;
         allOff.data1_ = 123;
         allOff.data2_ = 0;
         sendMidiToDevice(allOff, dev);
-
-        // Send MIDI transport stop (0xFC) if transport was running
-        if (transportRunning_) {
-            MidiMessage stopMsg;
-            stopMsg.status_ = 0xFC;
-            stopMsg.data1_ = MidiMessage::UNUSED_BYTE;
-            stopMsg.data2_ = MidiMessage::UNUSED_BYTE;
-            sendMidiToDevice(stopMsg, dev);
-            transportRunning_ = false;
-        }
     }
+
+    // NOTE: transport stop (0xFC) is intentionally NOT sent here.
+    // It is sent in OnStop(), which is called when the player globally stops.
 }
 
 bool MidiOutInstrument::Render(int channel, fixed *buffer, int size, bool updateTick) {

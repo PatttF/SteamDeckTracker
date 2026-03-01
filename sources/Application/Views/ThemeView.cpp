@@ -35,6 +35,7 @@ static const ThemeColorEntry themeColors[THEME_COLOR_COUNT] = {
     {"Mute",        "MUTECOLOR",    11},
     {"Row",         "ROWCOLOR1",    12},
     {"Row2/Beat",   "ROWCOLOR2",    13},
+    {"Major Beat",  "MAJORBEAT",    14},
 };
 
 // Access the static GUIColor members via pointer array
@@ -57,26 +58,28 @@ static GUIColor *getColorPtr(int index) {
     case 11: return &AppWindow::muteColor_;
     case 12: return &AppWindow::rownumberColor_;
     case 13: return &AppWindow::rownumber2Color_;
+    case 14: return &AppWindow::majorbeatColor_;
     default: return nullptr;
     }
 }
 
-// Default colors matching the hardcoded values in AppWindow.cpp
+// Default colors — Blade Runner retro-futuristic palette
 static const unsigned char defaultColors[THEME_COLOR_COUNT][3] = {
-    {0x1D, 0x0A, 0x1F},  // Background
-    {0xF5, 0xEB, 0xFF},  // Foreground
-    {0xFF, 0x00, 0x8C},  // Border
-    {0xFF, 0x00, 0x00},  // Clip
-    {0xA5, 0x5B, 0x8F},  // SongView FE
-    {0x85, 0x3B, 0x6F},  // SongView 00
-    {0xB7, 0x50, 0xD1},  // Highlight1
-    {0xDB, 0x33, 0xDB},  // Highlight2
-    {0x00, 0xFF, 0x00},  // Console
-    {0xFF, 0x00, 0x8C},  // Cursor
-    {0xFF, 0x00, 0x8C},  // Play
-    {0xF5, 0xEB, 0xFF},  // Mute
-    {0xBA, 0x28, 0xF9},  // Row
-    {0xFF, 0x00, 0xFF},  // Row2/Beat
+    {0x04, 0x08, 0x10},  // Background  — deep navy-black
+    {0xCF, 0x8A, 0x1E},  // Foreground  — amber terminal text
+    {0x00, 0xC8, 0xE8},  // Border      — electric cyan
+    {0xFF, 0x33, 0x00},  // Clip        — danger red-orange
+    {0x6A, 0x38, 0x00},  // SongView FE — dark amber
+    {0x3A, 0x1E, 0x00},  // SongView 00 — deep amber
+    {0xFF, 0x6A, 0x00},  // Highlight1  — orange
+    {0xE8, 0xA8, 0x00},  // Highlight2  — gold
+    {0x00, 0xC8, 0xE8},  // Console     — cyan
+    {0x00, 0xC8, 0xE8},  // Cursor      — cyan
+    {0x00, 0xC8, 0xE8},  // Play        — cyan
+    {0xCF, 0x8A, 0x1E},  // Mute        — amber
+    {0x7A, 0x45, 0x00},  // Row         — dark amber
+    {0x5A, 0x2E, 0x00},  // Row2/Beat   — deeper amber
+    {0xA8, 0x60, 0x00},  // Major Beat  — medium amber
 };
 
 // Callbacks for modal dialogs
