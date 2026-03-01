@@ -10,8 +10,8 @@
 #include <algorithm>
 #include <cctype>
 
-#define LIST_SIZE 15
-#define LIST_WIDTH 28
+#define LIST_SIZE 22
+#define LIST_WIDTH 62
 
 bool ImportSoundFontDialog::initStatic_ = false;
 Path ImportSoundFontDialog::sampleLib_("");

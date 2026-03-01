@@ -2,8 +2,8 @@
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Instruments/SampleInstrument.h"
 
-#define LIST_SIZE 15
-#define LIST_WIDTH 28
+#define LIST_SIZE 22
+#define LIST_WIDTH 62
 
 bool ImportSampleDialog::initStatic_=false ;
 Path ImportSampleDialog::sampleLib_("") ;

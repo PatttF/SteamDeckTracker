@@ -53,10 +53,6 @@ enum SampleInstrumentLoopMode {
 #define SIP_TABLEAUTO		MAKE_FOURCC('T','B','L','A')
 #define SIP_FBTUNE			MAKE_FOURCC('F','B','T','U')
 #define SIP_FBMIX			MAKE_FOURCC('F','B','M','X')
-#define SIP_PRINTFX MAKE_FOURCC('P', 'R', 'F', 'X')
-#define SIP_IR_PAD MAKE_FOURCC('I', 'R', 'P', 'D')
-#define SIP_IR_WET MAKE_FOURCC('I', 'R', 'W', 'T')
-
 #define FB_BUFFER_LENGTH 3500 // (in samples)
 #define REVERB_BUFFER_LENGTH 4410 // (in samples) ~100ms at 44.1kHz
 
@@ -155,11 +151,6 @@ private:
 	   // Manual slice points storage
 	   int manualSliceCount_ ;
 	   int manualSlicePoints_[MAX_MANUAL_SLICES] ;
-       Variable *printFx_;
-       Variable *irPad_;
-       Variable *irWet_;
-
        static bool useDirtyDownsampling_;
-       char *fxPresets[4];
 } ;
 #endif

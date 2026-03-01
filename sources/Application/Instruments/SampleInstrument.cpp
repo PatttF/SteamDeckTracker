@@ -47,11 +47,6 @@ SampleInstrument::SampleInstrument() {
      for (int i=0;i<MAX_MANUAL_SLICES;i++) {
          manualSlicePoints_[i]=0 ;
      }
-     fxPresets[0] = "room";
-     fxPresets[1] = "hall";
-     fxPresets[2] = "spring";
-     fxPresets[3] = "church";
-
 // Initialize exported variables
 
 	 WatchedVariable *wv=new SampleVariable("sample",SIP_SAMPLE) ;
@@ -128,15 +123,6 @@ SampleInstrument::SampleInstrument() {
 	 fbMix_=new Variable("feedback mix",SIP_FBMIX,0x00) ;
 	 Insert(fbMix_) ;
 
-     printFx_ = new Variable("print fx", SIP_PRINTFX, fxPresets, 4, 3);
-     Insert(printFx_);
-
-     irPad_ = new Variable("pad with silence", SIP_IR_PAD, 0);
-     Insert(irPad_);
-
-     irWet_ = new Variable("effect amount", SIP_IR_WET, 45);
-     Insert(irWet_);
-
      // Initalize instrument's voices update list
 
      for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
@@ -173,7 +159,6 @@ SampleInstrument::SampleInstrument() {
          rp->retrigLoop_ = 0;
          rp->retrigCount_ = 0;
          rp->retrigOffset_ = 0;
-         rp->printFx_ = 0;
          rp->finished_ = true;
          rp->baseFCut_ = 0;
          rp->baseFRes_ = 0;

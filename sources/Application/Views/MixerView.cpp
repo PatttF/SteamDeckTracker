@@ -662,9 +662,13 @@ void MixerView::DrawGraphics() {
         MixerService *ms2 = MixerService::GetInstance();
         int scopeN = ms2->GetOscilloscopeSampleCount();
         if (scopeN > 0) {
-            // Electric cyan (#00E0FF) → hot magenta (#FF00DD)
-            const int traceR1 = 0x00, traceG1 = 0xE0, traceB1 = 0xFF;
-            const int traceR2 = 0xFF, traceG2 = 0x00, traceB2 = 0xDD;
+            // Scope gradient: user-defined start → end colors
+            const int traceR1 = AppWindow::scopeColor1_._r & 0xFF;
+            const int traceG1 = AppWindow::scopeColor1_._g & 0xFF;
+            const int traceB1 = AppWindow::scopeColor1_._b & 0xFF;
+            const int traceR2 = AppWindow::scopeColor2_._r & 0xFF;
+            const int traceG2 = AppWindow::scopeColor2_._g & 0xFF;
+            const int traceB2 = AppWindow::scopeColor2_._b & 0xFF;
 
             int usableH = sh - 6; // 3px inset top+bottom so trace never clips border
             int midY    = sy + sh / 2;

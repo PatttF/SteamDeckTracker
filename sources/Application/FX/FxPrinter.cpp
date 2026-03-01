@@ -9,11 +9,17 @@ FxPrinter::FxPrinter(ViewData* viewData)
     InstrumentBank* bank = viewData_->project_->GetInstrumentBank();
     instrument_ = static_cast<SampleInstrument *>(bank->GetInstrument(curInstr));
     notificationResult_ = "";
-    // Assume ffmpeg exists but swap for local ffmpig if it doesn't
+    // Prefer a bundled binary alongside the executable over the system one.
+    // Check in order: bin:ffmpig → bin:ffmpeg → system "ffmpeg"
     ffmpeg_ = "ffmpeg";
-    Path pigPath("bin:ffmpig");
-    Path ffmpigPath(pigPath.GetPath().c_str());
-    if(ffmpigPath.Exists()) ffmpeg_ = pigPath.GetPath();
+    const char *candidates[] = { "bin:ffmpig", "bin:ffmpeg", nullptr };
+    for (int i = 0; candidates[i]; i++) {
+        Path p(candidates[i]);
+        if (Path(p.GetPath().c_str()).Exists()) {
+            ffmpeg_ = p.GetPath();
+            break;
+        }
+    }
 }
 
 void FxPrinter::setParams() {

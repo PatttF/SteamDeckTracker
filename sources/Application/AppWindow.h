@@ -120,6 +120,8 @@ public:
     static GUIColor rownumberColor_;
     static GUIColor rownumber2Color_;
     static GUIColor majorbeatColor_;
+    static GUIColor scopeColor1_;  // oscilloscope trace start color
+    static GUIColor scopeColor2_;  // oscilloscope trace end color
 private:
 #define LAST_PROJECT_NAME "root:last_project"
 

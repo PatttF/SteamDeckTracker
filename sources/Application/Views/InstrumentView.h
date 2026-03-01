@@ -1,7 +1,6 @@
 #ifndef _INSTRUMENT_VIEW_H_
 #define _INSTRUMENT_VIEW_H_
 
-#include "Application/FX/FxPrinter.h"
 #include "BaseClasses/FieldView.h"
 #include "Foundation/Observable.h"
 #include "ViewData.h"

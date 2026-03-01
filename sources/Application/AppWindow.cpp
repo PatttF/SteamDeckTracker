@@ -24,7 +24,7 @@ AppWindow *instance = 0;
 // Blade Runner retro-futuristic default palette
 GUIColor AppWindow::backgroundColor_(0x04, 0x08, 0x10);  // deep navy-black
 GUIColor AppWindow::normalColor_(0xCF, 0x8A, 0x1E);      // amber terminal text
-GUIColor AppWindow::borderColor_(0x00, 0xC8, 0xE8);      // electric cyan
+GUIColor AppWindow::borderColor_(0xCF, 0x8A, 0x1E);      // amber
 GUIColor AppWindow::clipColor_(0xFF, 0x33, 0x00);         // danger red-orange
 GUIColor AppWindow::songviewfeColor_(0x6A, 0x38, 0x00);  // dark amber
 GUIColor AppWindow::songview00Color_(0x3A, 0x1E, 0x00);  // deep amber
@@ -37,6 +37,8 @@ GUIColor AppWindow::muteColor_(0xCF, 0x8A, 0x1E);        // amber
 GUIColor AppWindow::rownumberColor_(0x7A, 0x45, 0x00);   // dark amber
 GUIColor AppWindow::rownumber2Color_(0x5A, 0x2E, 0x00);  // deeper amber
 GUIColor AppWindow::majorbeatColor_(0xA8, 0x60, 0x00);   // medium amber
+GUIColor AppWindow::scopeColor1_(0x00, 0xC8, 0xE8);      // scope start — cyan
+GUIColor AppWindow::scopeColor2_(0xFF, 0x6A, 0x00);      // scope end   — amber
 
 int AppWindow::charWidth_ = 8;
 int AppWindow::charHeight_ = 8;
@@ -123,6 +125,8 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     defineColor("ROWCOLOR1",   rownumberColor_);
     defineColor("ROWCOLOR2",   rownumber2Color_);
     defineColor("MAJORBEAT",   majorbeatColor_);
+    defineColor("SCOPECOLOR1",  scopeColor1_);
+    defineColor("SCOPECOLOR2",  scopeColor2_);
 
     GUIWindow::Clear(backgroundColor_);
 

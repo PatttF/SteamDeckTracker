@@ -270,23 +270,6 @@ void InstrumentView::fillSampleParameters() {
         T_SimpleList<UIField>::Insert(sampleField);
         position._y += 1;
     }
-#ifdef FFMPEG_ENABLED
-    v = instrument->FindVariable(SIP_PRINTFX);
-    f1 = new UIIntVarField(position, *v, "%s", 0, 3, 1, 1);
-    T_SimpleList<UIField>::Insert(f1) ;
-
-    position._x += 7;
-    v = instrument->FindVariable(SIP_IR_WET);
-    f1 = new UIIntVarField(position, *v, "wet:%d%%", 0, 100, 1, 10);
-    T_SimpleList<UIField>::Insert(f1) ;
-
-    position._x += 9;
-
-    v = instrument->FindVariable(SIP_IR_PAD);
-    f1 = new UIIntVarField(position, *v, "pad:%dms", 0, 5000, 5, 100);
-    T_SimpleList<UIField>::Insert(f1);
-    position._x -= 16;
-#endif
     position._y += 1;
     {
         GUIPoint editPos = position;
@@ -1525,12 +1508,6 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 					}
 					break ;
                 }
-                case SIP_PRINTFX: {
-                    FxPrinter printer(viewData_);
-                    isDirty_ = printer.Run();
-                    View::SetNotification(printer.GetNotification());
-                    break;
-                }
                 default:
                     break ;
 				}
@@ -1619,7 +1596,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
                     }
 
                     if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
-                        (varID == SIP_SAMPLE) || (varID == SIP_PRINTFX)) {
+                        (varID == SIP_SAMPLE)) {
                         viewMode_ = VM_NEW;
                     }
                 }

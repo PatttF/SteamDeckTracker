@@ -104,7 +104,7 @@ void ImportLV2Dialog::OnPlayerUpdate(PlayerEventType, unsigned int) {
 }
 
 void ImportLV2Dialog::DrawView() {
-    SetWindow(20, 13);
+    SetWindow(62, 24);
 
     GUITextProperties props;
 
@@ -112,7 +112,7 @@ void ImportLV2Dialog::DrawView() {
     int x = 0;
     int y = 1;
     int count = 0;
-    int displayCount = 18; // Show 18 plugins at a time
+    int displayCount = 22;
 
     IteratorPtr<LV2PluginInfo> it(pluginList_.GetIterator());
     int index = 0;
@@ -153,8 +153,8 @@ void ImportLV2Dialog::warpToNext(int dir) {
     // Adjust top index for scrolling
     if (currentPlugin_ < topIndex_) {
         topIndex_ = currentPlugin_;
-    } else if (currentPlugin_ >= topIndex_ + 10) {
-        topIndex_ = currentPlugin_ - 9;
+    } else if (currentPlugin_ >= topIndex_ + 22) {
+        topIndex_ = currentPlugin_ - 21;
     }
     
     isDirty_ = true;

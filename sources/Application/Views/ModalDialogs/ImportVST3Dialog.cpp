@@ -28,14 +28,14 @@ void ImportVST3Dialog::OnPlayerUpdate(PlayerEventType, unsigned int) {
 }
 
 void ImportVST3Dialog::DrawView() {
-    SetWindow(20, 13);
+    SetWindow(62, 24);
 
     GUITextProperties props;
 
     int x = 0;
     int y = 1;
     int count = 0;
-    int displayCount = 18;
+    int displayCount = 22;
 
     int total = (int)pluginList_.size();
 
@@ -70,8 +70,8 @@ void ImportVST3Dialog::warpToNext(int dir) {
 
     if (currentPlugin_ < topIndex_) {
         topIndex_ = currentPlugin_;
-    } else if (currentPlugin_ >= topIndex_ + 10) {
-        topIndex_ = currentPlugin_ - 9;
+    } else if (currentPlugin_ >= topIndex_ + 22) {
+        topIndex_ = currentPlugin_ - 21;
     }
 
     isDirty_ = true;

@@ -36,6 +36,8 @@ static const ThemeColorEntry themeColors[THEME_COLOR_COUNT] = {
     {"Row",         "ROWCOLOR1",    12},
     {"Row2/Beat",   "ROWCOLOR2",    13},
     {"Major Beat",  "MAJORBEAT",    14},
+    {"Scope Start", "SCOPECOLOR1",  15},
+    {"Scope End",   "SCOPECOLOR2",  16},
 };
 
 // Access the static GUIColor members via pointer array
@@ -59,6 +61,8 @@ static GUIColor *getColorPtr(int index) {
     case 12: return &AppWindow::rownumberColor_;
     case 13: return &AppWindow::rownumber2Color_;
     case 14: return &AppWindow::majorbeatColor_;
+    case 15: return &AppWindow::scopeColor1_;
+    case 16: return &AppWindow::scopeColor2_;
     default: return nullptr;
     }
 }
@@ -67,7 +71,7 @@ static GUIColor *getColorPtr(int index) {
 static const unsigned char defaultColors[THEME_COLOR_COUNT][3] = {
     {0x04, 0x08, 0x10},  // Background  — deep navy-black
     {0xCF, 0x8A, 0x1E},  // Foreground  — amber terminal text
-    {0x00, 0xC8, 0xE8},  // Border      — electric cyan
+    {0xCF, 0x8A, 0x1E},  // Border      — amber
     {0xFF, 0x33, 0x00},  // Clip        — danger red-orange
     {0x6A, 0x38, 0x00},  // SongView FE — dark amber
     {0x3A, 0x1E, 0x00},  // SongView 00 — deep amber
@@ -80,6 +84,8 @@ static const unsigned char defaultColors[THEME_COLOR_COUNT][3] = {
     {0x7A, 0x45, 0x00},  // Row         — dark amber
     {0x5A, 0x2E, 0x00},  // Row2/Beat   — deeper amber
     {0xA8, 0x60, 0x00},  // Major Beat  — medium amber
+    {0x00, 0xC8, 0xE8},  // Scope Start — cyan
+    {0xFF, 0x6A, 0x00},  // Scope End   — amber
 };
 
 // Callbacks for modal dialogs

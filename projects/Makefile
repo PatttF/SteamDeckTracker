@@ -264,7 +264,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o ProtonBridge.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o MidiOutInstrument.o AudioInInstrument.o LV2Instrument.o LV2Effect.o VST3Effect.o SoundFontInstrument.o VST3Instrument.o VST3IIDs.o funknown.o coreiids.o conststringtable.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o EffectBank.o WavFileWriter.o WavFile.o AudioFile.o MidiInstrument.o MidiOutInstrument.o AudioInInstrument.o LV2Instrument.o LV2Effect.o VST3Effect.o SoundFontInstrument.o VST3Instrument.o VST3IIDs.o funknown.o coreiids.o conststringtable.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \
