@@ -21,8 +21,8 @@ static inline std::string* getHelpLegend(FourCC command) {
 			break;
 		case I_CMD_ARPG:
 			result[0].assign("ARPeGgio:abcd Cycle");
-			result[1].assign("through relative pitches");
-			result[2].assign("from original pitch");
+			result[1].assign("relative pitches (sample)");
+			result[2].assign("retrigger notes (plugin)");
 			break;
 		case I_CMD_VOLM:
 			result[0].assign("VOLuMe:aabb");
@@ -30,7 +30,8 @@ static inline std::string* getHelpLegend(FourCC command) {
 			break;
 		case I_CMD_PTCH:
 			result[0].assign("PiTCH:aabb");
-			result[1].assign("approach pitch");
+			result[1].assign("approach pitch (sample)");
+			result[2].assign("pitch bend bb (plugin)");
 			break;
 		case I_CMD_HOP:
 			result[0].assign("HOP:aabb");
@@ -87,9 +88,9 @@ static inline std::string* getHelpLegend(FourCC command) {
 			result[2].assign("move rel bb chunks");
 			break;
 		case I_CMD_FLTR:
-			result[0].assign("FiLTer&Resonance:aabb");
-			result[1].assign("cutoff aa");
-			result[2].assign("resonance bb");
+			result[0].assign("FiLTeR&Resonance:aabb");
+			result[1].assign("aa=cutoff bb=reso");
+			result[2].assign("CC74+CC71 (plugin)");
 			break;
 		case I_CMD_TABL:
 			result[0].assign("TABLe:--bb");
@@ -98,16 +99,18 @@ static inline std::string* getHelpLegend(FourCC command) {
 			break;
 		case I_CMD_CRSH:
 			result[0].assign("drive&CRuSH:aa-b");
-			result[1].assign("drive aa");
-			result[2].assign("crush -b");
+			result[1].assign("drive aa, crush -b");
+			result[2].assign("post-process output (plugin)");
 			break;
 		case I_CMD_FCUT:
 			result[0].assign("FilterCUToff:aabb");
-			result[1].assign("set cutoff to");
+			result[1].assign("set cutoff (sample)");
+			result[2].assign("CC74 bb>>1 (plugin)");
 			break;
 		case I_CMD_FRES:
 			result[0].assign("FilterRESonance:aabb");
-			result[1].assign("set resonance to");
+			result[1].assign("set resonance (sample)");
+			result[2].assign("CC71 bb>>1 (plugin)");
 			break;
 		case I_CMD_PAN_:
 			result[0].assign("PAN:aabb");
@@ -156,8 +159,8 @@ static inline std::string* getHelpLegend(FourCC command) {
 			break;
 		case I_CMD_LFOF:
 			result[0].assign("LFO Filter:aabb");
-			result[1].assign("oscillate filter cutoff");
-			result[2].assign("aa=speed bb=depth");
+			result[1].assign("aa=speed bb=depth");
+			result[2].assign("CC74 LFO (plugin)");
 			break;
 		case I_CMD_VIBR:
 			result[0].assign("VIBRato:aabb");

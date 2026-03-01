@@ -175,6 +175,24 @@ private:
     };
     VST3LFOState tremoloLFO_[SONG_CHANNEL_COUNT];
     VST3LFOState vibratoLFO_[SONG_CHANNEL_COUNT];
+    VST3LFOState filterLFO_[SONG_CHANNEL_COUNT];   // LFO driving CC74 filter cutoff
+
+    // Per-channel arpeggio state
+    struct VST3ArpState {
+        unsigned char offsets[5]; // semitone offsets; [0]=root (always 0)
+        int length;               // highest active step index (0 = inactive)
+        int position;             // current cyclic step
+        int baseNote;             // MIDI root note captured at note-start
+        bool active;
+        VST3ArpState() : length(0), position(0), baseNote(-1), active(false) {
+            memset(offsets, 0, sizeof(offsets));
+        }
+    };
+    VST3ArpState arpState_[SONG_CHANNEL_COUNT];
+
+    // Per-channel bit-crush state
+    int          crushBits_[SONG_CHANNEL_COUNT];  // 1-16; 16 = bypass
+    unsigned char crushDrive_[SONG_CHANNEL_COUNT]; // pre-drive 0-255; 0 = bypass
 
     // Per-channel reverb state
     int reverbBufferLength_;

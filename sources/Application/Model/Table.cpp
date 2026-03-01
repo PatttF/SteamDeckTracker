@@ -16,6 +16,10 @@ void Table::Reset() {
 	SYS_MEMSET(param2_,0,sizeof(param2_[0])*TABLE_STEPS) ;
 	SYS_MEMSET(cmd3_,'-',sizeof(cmd3_[0])*TABLE_STEPS) ;
 	SYS_MEMSET(param3_,0,sizeof(param3_[0])*TABLE_STEPS) ;
+	SYS_MEMSET(cmd4_,'-',sizeof(cmd4_[0])*TABLE_STEPS) ;
+	SYS_MEMSET(param4_,0,sizeof(param4_[0])*TABLE_STEPS) ;
+	SYS_MEMSET(cmd5_,'-',sizeof(cmd5_[0])*TABLE_STEPS) ;
+	SYS_MEMSET(param5_,0,sizeof(param5_[0])*TABLE_STEPS) ;
 } ;
 
 void Table::Copy(const Table &other) {
@@ -25,6 +29,10 @@ void Table::Copy(const Table &other) {
 	SYS_MEMCPY(param2_,other.param2_,sizeof(param2_[0])*TABLE_STEPS) ;
 	SYS_MEMCPY(cmd3_,other.cmd3_,sizeof(cmd3_[0])*TABLE_STEPS) ;
 	SYS_MEMCPY(param3_,other.param3_,sizeof(param3_[0])*TABLE_STEPS) ;
+	SYS_MEMCPY(cmd4_,other.cmd4_,sizeof(cmd4_[0])*TABLE_STEPS) ;
+	SYS_MEMCPY(param4_,other.param4_,sizeof(param4_[0])*TABLE_STEPS) ;
+	SYS_MEMCPY(cmd5_,other.cmd5_,sizeof(cmd5_[0])*TABLE_STEPS) ;
+	SYS_MEMCPY(param5_,other.param5_,sizeof(param5_[0])*TABLE_STEPS) ;
 } ;
 
 bool Table::IsEmpty() {
@@ -39,6 +47,12 @@ bool Table::IsEmpty() {
 		if (cmd3_[i]!=I_CMD_NONE) {
 			return false ;
 		} ;
+		if (cmd4_[i]!=I_CMD_NONE) {
+			return false ;
+		} ;
+		if (cmd5_[i]!=I_CMD_NONE) {
+			return false ;
+		} ;
 		if (param1_[i]!=0) {
 			return false ;
 		} ;
@@ -46,6 +60,12 @@ bool Table::IsEmpty() {
 			return false ;
 		} ;
 		if (param3_[i]!=0) {
+			return false ;
+		} ;
+		if (param4_[i]!=0) {
+			return false ;
+		} ;
+		if (param5_[i]!=0) {
 			return false ;
 		} ;
 	}
@@ -87,11 +107,15 @@ void TableHolder::SaveContent(TiXmlNode *node) {
 			unsigned short tmpParam1[TABLE_STEPS];
 			unsigned short tmpParam2[TABLE_STEPS];
 			unsigned short tmpParam3[TABLE_STEPS];
+			unsigned short tmpParam4[TABLE_STEPS];
+			unsigned short tmpParam5[TABLE_STEPS];
 			for (int i=0; i<16; i++)
 			{
 				tmpParam1[i] = Swap16(table.param1_[i]);
 				tmpParam2[i] = Swap16(table.param2_[i]);
 				tmpParam3[i] = Swap16(table.param3_[i]);
+				tmpParam4[i] = Swap16(table.param4_[i]);
+				tmpParam5[i] = Swap16(table.param5_[i]);
 			}
 			saveHexBuffer(dataNode,"CMD1",table.cmd1_,TABLE_STEPS) ;
 			saveHexBuffer(dataNode,"PARAM1",tmpParam1,TABLE_STEPS) ;
@@ -99,6 +123,10 @@ void TableHolder::SaveContent(TiXmlNode *node) {
 			saveHexBuffer(dataNode,"PARAM2",tmpParam2,TABLE_STEPS) ;
 			saveHexBuffer(dataNode,"CMD3",table.cmd3_,TABLE_STEPS) ;
 			saveHexBuffer(dataNode,"PARAM3",tmpParam3,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"CMD4",table.cmd4_,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"PARAM4",tmpParam4,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"CMD5",table.cmd5_,TABLE_STEPS) ;
+			saveHexBuffer(dataNode,"PARAM5",tmpParam5,TABLE_STEPS) ;
 		}
 	}
 } ;
@@ -152,6 +180,18 @@ void TableHolder::RestoreContent(TiXmlElement *element) {
 				if (!strcmp("PARAM3",value)) {
 					restoreHexBuffer(sub,(unsigned char *)table.param3_) ;
 				} ;
+				if (!strcmp("CMD4",value)) {
+					restoreHexBuffer(sub,(unsigned char *)table.cmd4_) ;
+				} ;
+				if (!strcmp("PARAM4",value)) {
+					restoreHexBuffer(sub,(unsigned char *)table.param4_) ;
+				} ;
+				if (!strcmp("CMD5",value)) {
+					restoreHexBuffer(sub,(unsigned char *)table.cmd5_) ;
+				} ;
+				if (!strcmp("PARAM5",value)) {
+					restoreHexBuffer(sub,(unsigned char *)table.param5_) ;
+				} ;
 				
 				sub=sub->NextSiblingElement() ;
 			}
@@ -161,6 +201,8 @@ void TableHolder::RestoreContent(TiXmlElement *element) {
 				table.param1_[i] = Swap16(table.param1_[i]);
 				table.param2_[i] = Swap16(table.param2_[i]);
 				table.param3_[i] = Swap16(table.param3_[i]);
+				table.param4_[i] = Swap16(table.param4_[i]);
+				table.param5_[i] = Swap16(table.param5_[i]);
 			}
 			allocation_[id]=!table.IsEmpty() ;
 		}

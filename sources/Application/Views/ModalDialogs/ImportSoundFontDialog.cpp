@@ -25,6 +25,7 @@ ImportSoundFontDialog::ImportSoundFontDialog(View &view) : ModalView(view) {
     tempBankID_ = -1;
     tempSF2Path_[0] = '\0';
     toInstr_ = view.viewData_->currentInstrument_;
+    selected_ = 0;
 
     if (!initStatic_) {
         const char *slpath = SamplePool::GetInstance()->GetSampleLib();
@@ -107,6 +108,7 @@ void ImportSoundFontDialog::scanForSF2Files(Path folder) {
 void ImportSoundFontDialog::OnFocus() {
     Path current(sampleLib_);
     scanForSF2Files(current);
+    selected_ = 0;
     isDirty_ = true;
 }
 
@@ -158,11 +160,19 @@ void ImportSoundFontDialog::DrawView() {
             count++;
         }
 
-        // Footer
+        // Footer: button row like sample browser
         SetColor(CD_NORMAL);
         props.invert_ = false;
         y = LIST_SIZE + 2;
-        DrawString(1, y, "A:select  B:exit", props);
+        static const char *fileButtons[2] = {"Select", "Exit"};
+        int offset = LIST_WIDTH / 3;
+        for (int i = 0; i < 2; i++) {
+            const char *text = fileButtons[i];
+            int x = offset * (i + 1) - (int)strlen(text) / 2;
+            props.invert_ = (selected_ == i + 1);
+            DrawString(x, y, text, props);
+        }
+        props.invert_ = false;
 
     } else {
         // MODE_PRESETS - Draw preset list
@@ -197,11 +207,19 @@ void ImportSoundFontDialog::DrawView() {
             count++;
         }
 
-        // Footer
+        // Footer: button row like sample browser
         SetColor(CD_NORMAL);
         props.invert_ = false;
         y = LIST_SIZE + 2;
-        DrawString(1, y, "A:load  B:back", props);
+        static const char *presetButtons[2] = {"Load", "Back"};
+        int offset = LIST_WIDTH / 3;
+        for (int i = 0; i < 2; i++) {
+            const char *text = presetButtons[i];
+            int x = offset * (i + 1) - (int)strlen(text) / 2;
+            props.invert_ = (selected_ == i + 1);
+            DrawString(x, y, text, props);
+        }
+        props.invert_ = false;
     }
 }
 
@@ -258,6 +276,7 @@ void ImportSoundFontDialog::selectFile() {
             if (selected.IsDirectory()) {
                 // Navigate into directory (pass by value/reference to avoid dangling pointer)
                 scanForSF2Files(selected);
+                selected_ = 0;
                 isDirty_ = true;
                 return;
             }
@@ -288,6 +307,7 @@ void ImportSoundFontDialog::selectFile() {
 
             // Switch to preset selection mode
             mode_ = MODE_PRESETS;
+            selected_ = 0;
             isDirty_ = true;
             return;
         }
@@ -331,22 +351,60 @@ void ImportSoundFontDialog::ProcessButtonMask(unsigned short mask, bool pressed)
                     tempBankID_ = -1;
                 }
                 mode_ = MODE_FILES;
+                selected_ = 0;
+                isDirty_ = true;
+            } else {
+                EndModal(0);
+            }
+        }
+    } else if (mask & EPBM_A) {
+        if (selected_ == 0) {
+            // Focus moves to first button
+            selected_ = 1;
+            isDirty_ = true;
+        } else if (selected_ == 1) {
+            // Activate first button: Select (files) or Load (presets)
+            if (mode_ == MODE_FILES) {
+                selectFile();
+                selected_ = 0;
+            } else {
+                selectPreset();
+            }
+        } else if (selected_ == 2) {
+            // Activate second button: Exit (files) or Back (presets)
+            if (mode_ == MODE_PRESETS) {
+                if (tempBankID_ >= 0) {
+                    SoundFontManager::GetInstance()->UnloadBank(tempBankID_);
+                    tempBankID_ = -1;
+                }
+                mode_ = MODE_FILES;
+                selected_ = 0;
                 isDirty_ = true;
             } else {
                 EndModal(0);
             }
         }
     } else {
-        // No B modifier
+        // No A or B modifier
         if (mask == EPBM_UP) {
-            warpToNext(-1);
+            if (selected_ == 0) {
+                warpToNext(-1);
+            }
         } else if (mask == EPBM_DOWN) {
-            warpToNext(1);
-        } else if (mask == EPBM_A) {
-            if (mode_ == MODE_FILES) {
-                selectFile();
-            } else {
-                selectPreset();
+            if (selected_ == 0) {
+                warpToNext(1);
+            }
+        } else if (mask == EPBM_LEFT) {
+            if (selected_ > 0) {
+                selected_--;
+                if (selected_ < 1) selected_ = 1;
+                isDirty_ = true;
+            }
+        } else if (mask == EPBM_RIGHT) {
+            if (selected_ > 0) {
+                selected_++;
+                if (selected_ > 2) selected_ = 2;
+                isDirty_ = true;
             }
         }
     }

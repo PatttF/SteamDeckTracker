@@ -490,6 +490,10 @@ VST3Instrument::VST3Instrument() {
         playing_[i] = false;
         tremoloLFO_[i] = VST3LFOState();
         vibratoLFO_[i] = VST3LFOState();
+        filterLFO_[i]  = VST3LFOState();
+        arpState_[i]   = VST3ArpState();
+        crushBits_[i]  = 16;
+        crushDrive_[i] = 0;
         reverbBuffer_[i] = nullptr;
         reverbDecay_[i] = 0;
         reverbSend_[i] = 0;
@@ -681,6 +685,14 @@ bool VST3Instrument::Start(int channel, unsigned char note, bool retrigger) {
     // Reset LFO phases on new note
     tremoloLFO_[channel].phase = 0;
     vibratoLFO_[channel].phase = 0;
+    filterLFO_[channel].phase  = 0;
+    // Reset arpeggio so next ARPG command starts a fresh cycle
+    arpState_[channel].active   = false;
+    arpState_[channel].position = 0;
+    arpState_[channel].baseNote = note;
+    // Reset bit-crush to bypass
+    crushBits_[channel]  = 16;
+    crushDrive_[channel] = 0;
 
     return true;
 }
@@ -1051,6 +1063,17 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         tremoloLFO_[channel].phase = phase;
     }
 
+    // Apply per-channel filter LFO (sends CC74 once per render block)
+    if (filterLFO_[channel].active) {
+        float sine = sinf(filterLFO_[channel].phase * 2.0f * 3.14159265f / 256.0f);
+        int cc74 = 64 + (int)(sine * filterLFO_[channel].depth * 63.0f);
+        if (cc74 < 0)   cc74 = 0;
+        if (cc74 > 127) cc74 = 127;
+        QueueMidiEvent(0xB0, 74, (unsigned char)cc74);
+        filterLFO_[channel].phase += filterLFO_[channel].speed * (float)size;
+        if (filterLFO_[channel].phase >= 256.0f) filterLFO_[channel].phase -= 256.0f;
+    }
+
     // Apply per-channel reverb
     if (reverbSend_[channel] > 0 && reverbBuffer_[channel]) {
         fixed *reverbBuf = reverbBuffer_[channel];
@@ -1117,6 +1140,26 @@ bool VST3Instrument::Render(int channel, fixed *buffer, int size, bool updateTic
         reverbPos_[channel] = reverbPos;
         reverbDampL_[channel] = dampStateL;
         reverbDampR_[channel] = dampStateR;
+    }
+
+    // Apply per-channel bit crush
+    if (crushBits_[channel] < 16) {
+        int shift = 16 - crushBits_[channel];
+        fixed mask = (fixed)0xFFFFFFFF;
+        if (shift != 0) mask <<= (FIXED_SHIFT + shift);
+        fixed fpDrive = (crushDrive_[channel] > 0)
+                        ? fl2fp(crushDrive_[channel] / 255.0f)
+                        : FP_ONE;
+        for (int i = 0; i < size; i++) {
+            fixed l = fp_mul(buffer[i * 2],     fpDrive) & mask;
+            fixed r = fp_mul(buffer[i * 2 + 1], fpDrive) & mask;
+            if (l > i2fp(32767))       l = i2fp(32767);
+            else if (l < i2fp(-32768)) l = i2fp(-32768);
+            if (r > i2fp(32767))       r = i2fp(32767);
+            else if (r < i2fp(-32768)) r = i2fp(-32768);
+            buffer[i * 2]     = l;
+            buffer[i * 2 + 1] = r;
+        }
     }
 
     // Check for silence on finished notes (release tail)
@@ -1199,6 +1242,69 @@ void VST3Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
         // Bank Select: high byte = MSB (CC0), low byte = LSB (CC32)
         QueueMidiEvent(0xB0, 0, (unsigned char)((value >> 8) & 0x7F));
         QueueMidiEvent(0xB0, 32, (unsigned char)(value & 0x7F));
+    } else if (cc == I_CMD_PTCH) {
+        // Pitch slide: low byte = signed semitones, assumes ±12 semitone bend range
+        int semitones = (int)(signed char)(value & 0xFF);
+        int bend = 0x2000 + semitones * (0x2000 / 12);
+        if (bend < 0) bend = 0;
+        if (bend > 0x3FFF) bend = 0x3FFF;
+        QueueMidiEvent(0xE0, (unsigned char)(bend & 0x7F),
+                              (unsigned char)((bend >> 7) & 0x7F));
+    } else if (cc == I_CMD_FCUT) {
+        // Filter cutoff: low byte = 0-FF mapped to CC74 (0-7F)
+        QueueMidiEvent(0xB0, 74, (unsigned char)((value & 0xFF) >> 1));
+    } else if (cc == I_CMD_FRES) {
+        // Filter resonance: low byte = 0-FF mapped to CC71 (0-7F)
+        QueueMidiEvent(0xB0, 71, (unsigned char)((value & 0xFF) >> 1));
+    } else if (cc == I_CMD_FLTR) {
+        // Filter cutoff+resonance: high byte = cutoff, low byte = resonance
+        QueueMidiEvent(0xB0, 74, (unsigned char)(((value >> 8) & 0xFF) >> 1));
+        QueueMidiEvent(0xB0, 71, (unsigned char)((value & 0xFF) >> 1));
+    } else if (cc == I_CMD_ARPG) {
+        // Arpeggiate: 4 nibbles encode semitone offsets [1..4]; [0] is always root.
+        // Each ProcessCommand call (= one table tick) advances the cycle and
+        // retriggers with note-off + note-on at the new pitch.
+        VST3ArpState &as = arpState_[channel];
+        // Re-parse nibbles from value (same as Arp::SetData)
+        as.offsets[0] = 0;
+        int newLen = 0;
+        unsigned int raw = value;
+        for (int i = 0; i < 4; i++) {
+            as.offsets[4 - i] = raw & 0xF;
+            if (as.offsets[4 - i] != 0 && newLen == 0) newLen = 5 - i;
+            raw >>= 4;
+        }
+        as.length = newLen;
+        if (!as.active) {
+            as.active   = (newLen > 0 && lastNote_[channel] >= 0);
+            as.position = 0;
+            as.baseNote = lastNote_[channel];
+        }
+        if (as.active) {
+            // Advance position (same as Arp::Trigger)
+            as.position++;
+            if (as.position > as.length) as.position = 0;
+            int semitone = (as.position < 5) ? (int)as.offsets[as.position] : 0;
+            int newNote  = as.baseNote + semitone;
+            if (newNote < 0)   newNote = 0;
+            if (newNote > 127) newNote = 127;
+            QueueMidiEvent(0x80, (unsigned char)(lastNote_[channel] & 0x7F), 0);
+            QueueMidiEvent(0x90, (unsigned char)newNote, 127);
+            lastNote_[channel] = newNote;
+        }
+    } else if (cc == I_CMD_LFOF) {
+        // LFO-modulate filter cutoff (CC74): high byte = speed, low byte = depth
+        unsigned char speed = (value >> 8) & 0xFF;
+        unsigned char depth = value & 0xFF;
+        filterLFO_[channel].speed  = (speed * 2.0f) / 100.0f;
+        filterLFO_[channel].depth  = depth / 255.0f;
+        filterLFO_[channel].active = true;
+    } else if (cc == I_CMD_CRSH) {
+        // Bit crush: high byte = drive (0-FF), low nibble = bits (1-F; 0 = no change)
+        unsigned char drive = (value >> 8) & 0xFF;
+        unsigned char crush = value & 0x0F;
+        if (drive > 0) crushDrive_[channel] = drive;
+        if (crush > 0) crushBits_[channel]  = crush;
     }
 }
 

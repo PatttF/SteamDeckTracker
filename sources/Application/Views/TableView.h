@@ -61,12 +61,16 @@ class TableView : public View {
         ushort param2_[16];
         uint cmd3_[16];
         ushort param3_[16];
+        uint cmd4_[16];
+        ushort param4_[16];
+        uint cmd5_[16];
+        ushort param5_[16];
     } clipboard_;
 
     uchar saveCol_;
     uchar saveRow_;
 
-    uchar lastPosition_[3];
+    uchar lastPosition_[5];
 };
 
 #endif

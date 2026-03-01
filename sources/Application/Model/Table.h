@@ -24,6 +24,10 @@ public:
 	ushort param2_[TABLE_STEPS] ;
 	FourCC cmd3_[TABLE_STEPS] ;
 	ushort param3_[TABLE_STEPS] ;
+	FourCC cmd4_[TABLE_STEPS] ;
+	ushort param4_[TABLE_STEPS] ;
+	FourCC cmd5_[TABLE_STEPS] ;
+	ushort param5_[TABLE_STEPS] ;
 } ; 
 
 class TableHolder: public T_Singleton<TableHolder>,Persistent  {

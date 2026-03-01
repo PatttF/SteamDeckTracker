@@ -30,7 +30,7 @@ TableView::~TableView() {}
 void TableView::OnFocus() {
     clipboard_.active_ = false;
     viewMode_ = VM_NORMAL;
-    lastPosition_[0] = lastPosition_[1] = lastPosition_[2] = 0;
+    lastPosition_[0] = lastPosition_[1] = lastPosition_[2] = lastPosition_[3] = lastPosition_[4] = 0;
     updateCursor(0, 0);
 };
 
@@ -84,6 +84,14 @@ void TableView::fillClipboardData() {
     uint *dst5 = clipboard_.cmd3_;
     ushort *src6 = table.param3_;
     ushort *dst6 = clipboard_.param3_;
+    uint *src7 = table.cmd4_;
+    uint *dst7 = clipboard_.cmd4_;
+    ushort *src8 = table.param4_;
+    ushort *dst8 = clipboard_.param4_;
+    uint *src9 = table.cmd5_;
+    uint *dst9 = clipboard_.cmd5_;
+    ushort *src10 = table.param5_;
+    ushort *dst10 = clipboard_.param5_;
 
     for (int i = 0; i < clipboard_.height_; i++) {
         dst1[i] = src1[clipboard_.row_ + i];
@@ -92,18 +100,22 @@ void TableView::fillClipboardData() {
         dst4[i] = src4[clipboard_.row_ + i];
         dst5[i] = src5[clipboard_.row_ + i];
         dst6[i] = src6[clipboard_.row_ + i];
+        dst7[i] = src7[clipboard_.row_ + i];
+        dst8[i] = src8[clipboard_.row_ + i];
+        dst9[i] = src9[clipboard_.row_ + i];
+        dst10[i] = src10[clipboard_.row_ + i];
     };
     updateCursor(0, 0);
 };
 
 void TableView::extendSelection() {
     GUIRect rect = getSelectionRect();
-    if (rect.Left() > 0 || rect.Right() < 6) {
+    if (rect.Left() > 0 || rect.Right() < 10) {
         if (col_ < clipboard_.col_) {
             col_ = 0;
-            clipboard_.col_ = 6;
+            clipboard_.col_ = 10;
         } else {
-            col_ = 6;
+            col_ = 10;
             clipboard_.col_ = 0;
         }
         isDirty_ = true;
@@ -130,9 +142,9 @@ void TableView::interpolateSelection() {
 
     GUIRect rect = getSelectionRect();
     
-    // Only interpolate if we're in param columns (1, 3, 5)
+    // Only interpolate if we're in param columns (1, 3, 5, 7, 9)
     int col = rect.Left();
-    if (col != rect.Right() || (col != 1 && col != 3 && col != 5)) {
+    if (col != rect.Right() || (col != 1 && col != 3 && col != 5 && col != 7 && col != 9)) {
         return;
     }
 
@@ -151,8 +163,12 @@ void TableView::interpolateSelection() {
         paramData = table.param1_;
     } else if (col == 3) {
         paramData = table.param2_;
-    } else {
+    } else if (col == 5) {
         paramData = table.param3_;
+    } else if (col == 7) {
+        paramData = table.param4_;
+    } else {
+        paramData = table.param5_;
     }
 
     ushort startParam = paramData[startRow];
@@ -202,6 +218,10 @@ void TableView::cutSelection() {
     ushort *dst4 = table.param2_;
     uint *dst5 = table.cmd3_;
     ushort *dst6 = table.param3_;
+    uint *dst7 = table.cmd4_;
+    ushort *dst8 = table.param4_;
+    uint *dst9 = table.cmd5_;
+    ushort *dst10 = table.param5_;
 
     for (int i = 0; i < clipboard_.width_; i++) {
         for (int j = 0; j < clipboard_.height_; j++) {
@@ -223,6 +243,18 @@ void TableView::cutSelection() {
                 break;
             case 5:
                 dst6[j + clipboard_.row_] = 0x0000;
+                break;
+            case 6:
+                dst7[j + clipboard_.row_] = I_CMD_NONE;
+                break;
+            case 7:
+                dst8[j + clipboard_.row_] = 0x0000;
+                break;
+            case 8:
+                dst9[j + clipboard_.row_] = I_CMD_NONE;
+                break;
+            case 9:
+                dst10[j + clipboard_.row_] = 0x0000;
                 break;
             }
         }
@@ -267,13 +299,21 @@ void TableView::pasteClipboard() {
     uint *src5 = clipboard_.cmd3_;
     ushort *dst6 = table.param3_;
     ushort *src6 = clipboard_.param3_;
+    uint *dst7 = table.cmd4_;
+    uint *src7 = clipboard_.cmd4_;
+    ushort *dst8 = table.param4_;
+    ushort *src8 = clipboard_.param4_;
+    uint *dst9 = table.cmd5_;
+    uint *src9 = clipboard_.cmd5_;
+    ushort *dst10 = table.param5_;
+    ushort *src10 = clipboard_.param5_;
 
     uint *noCmd = (uint *)-1;
     ushort *noPrm = (ushort *)-1;
-    uint *srcCmd[5] = {src1, noCmd, src3, noCmd, src5};
-    ushort *srcPrm[6] = {noPrm, src2, noPrm, src4, noPrm, src6};
-    uint *dstCmd[5] = {dst1, noCmd, dst3, noCmd, dst5};
-    ushort *dstPrm[6] = {noPrm, dst2, noPrm, dst4, noPrm, dst6};
+    uint *srcCmd[9] = {src1, noCmd, src3, noCmd, src5, noCmd, src7, noCmd, src9};
+    ushort *srcPrm[10] = {noPrm, src2, noPrm, src4, noPrm, src6, noPrm, src8, noPrm, src10};
+    uint *dstCmd[9] = {dst1, noCmd, dst3, noCmd, dst5, noCmd, dst7, noCmd, dst9};
+    ushort *dstPrm[10] = {noPrm, dst2, noPrm, dst4, noPrm, dst6, noPrm, dst8, noPrm, dst10};
 
     bool wasUpdated = false;
 
@@ -283,8 +323,10 @@ void TableView::pasteClipboard() {
             case 0:
             case 2:
             case 4:
+            case 6:
+            case 8:
                 if ((col_ + i) == 0 || (col_ + i) == 2 ||
-                    (col_ + i) == 4) { // Don't allow commands in params, etc
+                    (col_ + i) == 4 || (col_ + i) == 6 || (col_ + i) == 8) {
                     dstCmd[col_ + i][(row_ + j) % 16] =
                         srcCmd[clipboard_.col_ + i][j];
                     wasUpdated = true;
@@ -293,7 +335,10 @@ void TableView::pasteClipboard() {
             case 1:
             case 3:
             case 5:
-                if ((col_ + i) == 1 || (col_ + i) == 3 || (col_ + i) == 5) {
+            case 7:
+            case 9:
+                if ((col_ + i) == 1 || (col_ + i) == 3 || (col_ + i) == 5 ||
+                    (col_ + i) == 7 || (col_ + i) == 9) {
                     dstPrm[col_ + i][(row_ + j) % 16] =
                         srcPrm[clipboard_.col_ + i][j];
                     wasUpdated = true;
@@ -311,8 +356,8 @@ void TableView::pasteClipboard() {
 void TableView::updateCursor(int dx, int dy) {
     col_ += dx;
     row_ += dy;
-    if (col_ > 5)
-        col_ = 5;
+    if (col_ > 9)
+        col_ = 9;
     if (col_ < 0)
         col_ = 0;
     if (row_ > 15)
@@ -343,6 +388,18 @@ void TableView::updateCursor(int dx, int dy) {
         p._y += row_;
         cmdEditField_->SetPosition(p);
         cmdEdit_.SetInt(*(table.param3_ + row_));
+        break;
+    case 7:
+        p._x += 35;
+        p._y += row_;
+        cmdEditField_->SetPosition(p);
+        cmdEdit_.SetInt(*(table.param4_ + row_));
+        break;
+    case 9:
+        p._x += 45;
+        p._y += row_;
+        cmdEditField_->SetPosition(p);
+        cmdEdit_.SetInt(*(table.param5_ + row_));
         break;
     };
 
@@ -485,6 +542,78 @@ void TableView::updateCursorValue(int offset) {
         *(table.param3_ + row_) = cmdEdit_.GetInt();
         lastParam_ = cmdEdit_.GetInt();
         break;
+    case 6:
+        cc = table.cmd4_ + row_;
+        switch (offset) {
+        case 0x01:
+            *cc = CommandList::GetNext(*cc);
+            break;
+        case 0x10:
+            *cc = CommandList::GetNextAlpha(*cc);
+            break;
+        case -0x01:
+            *cc = CommandList::GetPrev(*cc);
+            break;
+        case -0x10:
+            *cc = CommandList::GetPrevAlpha(*cc);
+            break;
+        }
+        lastCmd_ = *cc;
+        break;
+    case 7:
+        switch (offset) {
+        case 0x01:
+            cmdEditField_->ProcessArrow(EPBM_RIGHT);
+            break;
+        case 0x10:
+            cmdEditField_->ProcessArrow(EPBM_UP);
+            break;
+        case -0x01:
+            cmdEditField_->ProcessArrow(EPBM_LEFT);
+            break;
+        case -0x10:
+            cmdEditField_->ProcessArrow(EPBM_DOWN);
+            break;
+        }
+        *(table.param4_ + row_) = cmdEdit_.GetInt();
+        lastParam_ = cmdEdit_.GetInt();
+        break;
+    case 8:
+        cc = table.cmd5_ + row_;
+        switch (offset) {
+        case 0x01:
+            *cc = CommandList::GetNext(*cc);
+            break;
+        case 0x10:
+            *cc = CommandList::GetNextAlpha(*cc);
+            break;
+        case -0x01:
+            *cc = CommandList::GetPrev(*cc);
+            break;
+        case -0x10:
+            *cc = CommandList::GetPrevAlpha(*cc);
+            break;
+        }
+        lastCmd_ = *cc;
+        break;
+    case 9:
+        switch (offset) {
+        case 0x01:
+            cmdEditField_->ProcessArrow(EPBM_RIGHT);
+            break;
+        case 0x10:
+            cmdEditField_->ProcessArrow(EPBM_UP);
+            break;
+        case -0x01:
+            cmdEditField_->ProcessArrow(EPBM_LEFT);
+            break;
+        case -0x10:
+            cmdEditField_->ProcessArrow(EPBM_DOWN);
+            break;
+        }
+        *(table.param5_ + row_) = cmdEdit_.GetInt();
+        lastParam_ = cmdEdit_.GetInt();
+        break;
     }
     if (c) {
         updateData(c, offset, limit, wrap);
@@ -547,6 +676,32 @@ void TableView::pasteLast() {
         break;
 
     case 5:
+        break;
+
+    case 6:
+        i = table.cmd4_ + row_;
+        if (*i == I_CMD_NONE) {
+            *i = lastCmd_;
+            isDirty_ = true;
+        } else {
+            lastCmd_ = *i;
+        }
+        break;
+
+    case 7:
+        break;
+
+    case 8:
+        i = table.cmd5_ + row_;
+        if (*i == I_CMD_NONE) {
+            *i = lastCmd_;
+            isDirty_ = true;
+        } else {
+            lastCmd_ = *i;
+        }
+        break;
+
+    case 9:
         break;
     }
 };
@@ -879,7 +1034,7 @@ void TableView::DrawView() {
         DrawString(pos._x, pos._y, buffer, props);
         setTextProps(props, 4, j, true);
         pos._y++;
-        if (j == row_ && col_ == 5) {
+        if (j == row_ && col_ == 4) {
             printHelpLegend(command, props);
         }
     }
@@ -901,8 +1056,84 @@ void TableView::DrawView() {
         pos._y++;
     }
 
+    // Draw command 4
+
+    pos = anchor;
+    pos._x += 30;
+
+    f = table.cmd4_;
+
+    buffer[4] = 0;
+
+    for (int j = 0; j < 16; j++) {
+        FourCC command = *f++;
+        fourCC2char(command, buffer);
+        setTextProps(props, 6, j, false);
+        DrawString(pos._x, pos._y, buffer, props);
+        setTextProps(props, 6, j, true);
+        pos._y++;
+        if (j == row_ && col_ == 6) {
+            printHelpLegend(command, props);
+        }
+    }
+
+    // Draw commands params 4
+
+    pos = anchor;
+    pos._x += 35;
+
+    param = table.param4_;
+    buffer[5] = 0;
+
+    for (int j = 0; j < 16; j++) {
+        ushort p = *param++;
+        setTextProps(props, 7, j, false);
+        hexshort2char(p, buffer);
+        DrawString(pos._x, pos._y, buffer, props);
+        setTextProps(props, 7, j, true);
+        pos._y++;
+    }
+
+    // Draw command 5
+
+    pos = anchor;
+    pos._x += 40;
+
+    f = table.cmd5_;
+
+    buffer[4] = 0;
+
+    for (int j = 0; j < 16; j++) {
+        FourCC command = *f++;
+        fourCC2char(command, buffer);
+        setTextProps(props, 8, j, false);
+        DrawString(pos._x, pos._y, buffer, props);
+        setTextProps(props, 8, j, true);
+        pos._y++;
+        if (j == row_ && col_ == 8) {
+            printHelpLegend(command, props);
+        }
+    }
+
+    // Draw commands params 5
+
+    pos = anchor;
+    pos._x += 45;
+
+    param = table.param5_;
+    buffer[5] = 0;
+
+    for (int j = 0; j < 16; j++) {
+        ushort p = *param++;
+        setTextProps(props, 9, j, false);
+        hexshort2char(p, buffer);
+        DrawString(pos._x, pos._y, buffer, props);
+        setTextProps(props, 9, j, true);
+        pos._y++;
+    }
+
     if ((viewMode_ != VM_SELECTION) &&
-        ((col_ == 1) || (col_ == 3) || (col_ == 5))) {
+        ((col_ == 1) || (col_ == 3) || (col_ == 5) || (col_ == 7) || (col_ == 9))) {
         cmdEditField_->SetFocus();
         cmdEditField_->Draw(w_);
     };
@@ -935,6 +1166,14 @@ void TableView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
     pos._y = anchor._y + lastPosition_[2];
     DrawString(pos._x, pos._y, " ", props);
 
+    pos._x += 10;
+    pos._y = anchor._y + lastPosition_[3];
+    DrawString(pos._x, pos._y, " ", props);
+
+    pos._x += 10;
+    pos._y = anchor._y + lastPosition_[4];
+    DrawString(pos._x, pos._y, " ", props);
+
     TableHolder *th = TableHolder::GetInstance();
     // Get current channel
     int channel = viewData_->songX_;
@@ -948,6 +1187,8 @@ void TableView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
         lastPosition_[0] = tpb.GetPlaybackPosition(0);
         lastPosition_[1] = tpb.GetPlaybackPosition(1);
         lastPosition_[2] = tpb.GetPlaybackPosition(2);
+        lastPosition_[3] = tpb.GetPlaybackPosition(3);
+        lastPosition_[4] = tpb.GetPlaybackPosition(4);
 
         pos._x = anchor._x - 1;
         pos._y = anchor._y + lastPosition_[0];
@@ -961,6 +1202,14 @@ void TableView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
         pos._x += 10;
         pos._y = anchor._y + lastPosition_[2];
         DrawString(pos._x, pos._y, ">", props);
+
+        pos._x += 10;
+        pos._y = anchor._y + lastPosition_[3];
+        DrawString(pos._x, pos._y, ">", props);
+
+        pos._x += 10;
+        pos._y = anchor._y + lastPosition_[4];
+        DrawString(pos._x, pos._y, ">", props);
     };
     drawNotes();
 }
@@ -968,8 +1217,8 @@ void TableView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 void TableView::printHelpLegend(FourCC command, GUITextProperties props) {
     std::string *cmdStr = getHelpLegend(command);
     GUIPoint anchor = GetAnchor();
-    int x = anchor._x + 30;
-    int y = anchor._y + View::songRowCount_ - 3;
+    int x = anchor._x;
+    int y = anchor._y + 17;
     DrawString(x, y, cmdStr[0].c_str(), props);
     DrawString(x, y + 1, cmdStr[1].c_str(), props);
     DrawString(x, y + 2, cmdStr[2].c_str(), props);

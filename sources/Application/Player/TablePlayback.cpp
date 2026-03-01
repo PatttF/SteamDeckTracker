@@ -9,10 +9,14 @@ void TableSaveState::Reset() {
 		position_[0]=0 ;
 		position_[1]=0 ;
 		position_[2]=0 ;
+		position_[3]=0 ;
+		position_[4]=0 ;
 		for (int i=0;i<TABLE_STEPS;i++) {
 			hopCount_[i][0]=0 ;
 			hopCount_[i][1]=0 ;
 			hopCount_[i][2]=0 ;
+			hopCount_[i][3]=0 ;
+			hopCount_[i][4]=0 ;
 		};
 } ;
 
@@ -33,15 +37,21 @@ void TablePlayback::Init(int channel) {
 	position_[0]=0 ;
 	position_[1]=0 ;
 	position_[2]=0 ;
+	position_[3]=0 ;
+	position_[4]=0 ;
 
 	hopped_[0]=false ;
 	hopped_[1]=false ;
 	hopped_[2]=false ;
+	hopped_[3]=false ;
+	hopped_[4]=false ;
 
 	for (int i=0;i<TABLE_STEPS;i++) {
 		hopCount_[i][0]=0 ;
 		hopCount_[i][1]=0 ;
 		hopCount_[i][2]=0 ;
+		hopCount_[i][3]=0 ;
+		hopCount_[i][4]=0 ;
 	};
 	instrument_=0 ;
 	groove_.groove_=-1 ;
@@ -57,15 +67,21 @@ void TablePlayback::Start(I_Instrument *i,Table &table,bool automated) {
 		position_[0]=0 ;
 		position_[1]=0 ;
 		position_[2]=0 ;
+		position_[3]=0 ;
+		position_[4]=0 ;
 
 		hopped_[0]=false ;
 		hopped_[1]=false ;
 		hopped_[2]=false ;
+		hopped_[3]=false ;
+		hopped_[4]=false ;
 
 		for (int i=0;i<TABLE_STEPS;i++) {
 			hopCount_[i][0]=0 ;
 			hopCount_[i][1]=0 ;
 			hopCount_[i][2]=0 ;
+			hopCount_[i][3]=0 ;
+			hopCount_[i][4]=0 ;
 		};
 		groove_.groove_=-1 ;
 		groove_.position_=0 ;
@@ -81,10 +97,14 @@ void TablePlayback::Stop() {
 	position_[0]=0 ;
 	position_[1]=0 ;
 	position_[2]=0 ;
+	position_[3]=0 ;
+	position_[4]=0 ;
 
 	hopped_[0]=false ;
 	hopped_[1]=false ;
 	hopped_[2]=false ;
+	hopped_[3]=false ;
+	hopped_[4]=false ;
 } ;
 
 int TablePlayback::GetPlaybackPosition(int i) {
@@ -170,8 +190,8 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 				if (automated_) {
 					TableSaveState state ;
 					instrument_->GetTableState(state) ;
-					memcpy(hopCount_,state.hopCount_,sizeof(uchar)*TABLE_STEPS*3) ;
-					memcpy(position_,state.position_,sizeof(int)*3) ;
+					memcpy(hopCount_,state.hopCount_,sizeof(uchar)*TABLE_STEPS*5) ;
+					memcpy(position_,state.position_,sizeof(int)*5) ;
 				}
 
 				// try local processing for if it changes current table or position
@@ -179,6 +199,8 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 				hopped_[0]=ProcessLocalCommand(0,table_->cmd1_,table_->param1_,tpc) ;
 				hopped_[1]=ProcessLocalCommand(1,table_->cmd2_,table_->param2_,tpc) ;
 				hopped_[2]=ProcessLocalCommand(2,table_->cmd3_,table_->param3_,tpc) ;
+				hopped_[3]=ProcessLocalCommand(3,table_->cmd4_,table_->param4_,tpc) ;
+				hopped_[4]=ProcessLocalCommand(4,table_->cmd5_,table_->param5_,tpc) ;
 
 				// Route global commands through Player first, then instrument
 				Player *player = Player::GetInstance();
@@ -200,9 +222,23 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 					instrument_->ProcessCommand(channel_, tc3, tp3);
 				}
 
+				FourCC tc4 = table_->cmd4_[position_[3]];
+				ushort tp4 = table_->param4_[position_[3]];
+				if (tc4 == I_CMD_NONE || !player->ProcessChannelCommand(channel_, tc4, tp4)) {
+					instrument_->ProcessCommand(channel_, tc4, tp4);
+				}
+
+				FourCC tc5 = table_->cmd5_[position_[4]];
+				ushort tp5 = table_->param5_[position_[4]];
+				if (tc5 == I_CMD_NONE || !player->ProcessChannelCommand(channel_, tc5, tp5)) {
+					instrument_->ProcessCommand(channel_, tc5, tp5);
+				}
+
 				previous_[0]=position_[0] ;
 				previous_[1]=position_[1] ;
 				previous_[2]=position_[2] ;
+				previous_[3]=position_[3] ;
+				previous_[4]=position_[4] ;
 
 			}
 
@@ -219,15 +255,23 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 				if ((table_->cmd3_[position_[2]]!=I_CMD_HOP)||(!hopped_[2])) {
 					position_[2]=(position_[2]+1)%16 ;
 				}
+				if ((table_->cmd4_[position_[3]]!=I_CMD_HOP)||(!hopped_[3])) {
+					position_[3]=(position_[3]+1)%16 ;
+				}
+				if ((table_->cmd5_[position_[4]]!=I_CMD_HOP)||(!hopped_[4])) {
+					position_[4]=(position_[4]+1)%16 ;
+				}
 
 				hopped_[0]=false ;
 				hopped_[1]=false ;
 				hopped_[2]=false ;
+				hopped_[3]=false ;
+				hopped_[4]=false ;
 
 				if (automated_) {
 					TableSaveState state ;
-					memcpy(state.hopCount_,hopCount_,sizeof(uchar)*TABLE_STEPS*3) ;
-					memcpy(state.position_,position_,sizeof(int)*3) ;
+					memcpy(state.hopCount_,hopCount_,sizeof(uchar)*TABLE_STEPS*5) ;
+					memcpy(state.position_,position_,sizeof(int)*5) ;
 					instrument_->SetTableState(state) ;
 				}
 			}

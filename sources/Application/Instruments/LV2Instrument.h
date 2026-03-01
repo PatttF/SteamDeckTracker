@@ -160,6 +160,24 @@ private:
     };
     LV2LFOState tremoloLFO_[SONG_CHANNEL_COUNT];
     LV2LFOState vibratoLFO_[SONG_CHANNEL_COUNT];
+    LV2LFOState filterLFO_[SONG_CHANNEL_COUNT];   // LFO driving CC74 filter cutoff
+
+    // Per-channel arpeggio state
+    struct LV2ArpState {
+        unsigned char offsets[5];
+        int length;
+        int position;
+        int baseNote;
+        bool active;
+        LV2ArpState() : length(0), position(0), baseNote(-1), active(false) {
+            memset(offsets, 0, sizeof(offsets));
+        }
+    };
+    LV2ArpState arpState_[SONG_CHANNEL_COUNT];
+
+    // Per-channel bit-crush state
+    int           crushBits_[SONG_CHANNEL_COUNT];  // 1-16; 16 = bypass
+    unsigned char crushDrive_[SONG_CHANNEL_COUNT]; // pre-drive 0-255; 0 = bypass
     
     // Per-channel reverb state (dynamically sized based on sample rate)
     int reverbBufferLength_;  // ~100ms worth of samples at actual sample rate

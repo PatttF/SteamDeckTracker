@@ -48,6 +48,9 @@ private:
     int tempBankID_;
     char tempSF2Path_[256];
 
+    // Button row selection: 0=list, 1=first button, 2=second button
+    int selected_;
+
     static Path sampleLib_;
     static bool initStatic_;
 };

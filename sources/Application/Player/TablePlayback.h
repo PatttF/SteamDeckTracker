@@ -28,13 +28,13 @@ public:
 	static TablePlayback &GetTablePlayback(int channel) ;
 private:
 	Table *table_ ;
-	int position_[3] ;
-	int previous_[3] ;
-	bool hopped_[3] ;
+	int position_[5] ;
+	int previous_[5] ;
+	bool hopped_[5] ;
 	I_Instrument *instrument_ ;
 	int channel_ ;
 	bool automated_ ;
-	uchar hopCount_[TABLE_STEPS][3] ;
+	uchar hopCount_[TABLE_STEPS][5] ;
 	ChannelGroove groove_ ;
 
 	static TablePlayback playback_[SONG_CHANNEL_COUNT] ;
@@ -43,8 +43,8 @@ private:
 class TableSaveState {
 public:
 	void Reset() ;
-	uchar hopCount_[TABLE_STEPS][3] ;
-	int position_[3] ;
+	uchar hopCount_[TABLE_STEPS][5] ;
+	int position_[5] ;
 } ;
 
 #endif
