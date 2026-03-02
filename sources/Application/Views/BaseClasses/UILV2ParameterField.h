@@ -21,8 +21,11 @@ public:
 		
 	virtual ~UILV2ParameterField() {};
 	virtual void Draw(GUIWindow &w, int offset = 0) override;
-	
+	int GetParamIndex() const { return paramIndex_; }
+	static void SetLearnMode(bool active) { s_learnMode_ = active; }
+
 protected:
+	static bool s_learnMode_;
 	LV2Instrument *instrument_;
 	int paramIndex_;
 	char nameBuffer_[80]; // Storage for parameter name formatting

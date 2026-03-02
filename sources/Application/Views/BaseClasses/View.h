@@ -133,6 +133,7 @@ class View : public Observable {
 
     void EnableNotification();
     void SetNotification(const char *notification, int offset = 2);
+    bool HasActiveNotification() const;
 
   protected:
     virtual void ProcessButtonMask(unsigned short mask, bool pressed) = 0;

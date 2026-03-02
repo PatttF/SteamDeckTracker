@@ -64,6 +64,13 @@ public:
     // Store pending variable value for restore
     void StorePendingVariable(const char *name, const char *value);
 
+    // --- MIDI learn CC→param bindings ---
+    void SetUserCC(int cc, int paramIdx);
+    void ClearUserCCForParam(int paramIdx);
+    int  GetUserCCForParam(int paramIdx) const;
+    void ApplyUserCC(int ccNum, int rawValue);
+    const std::map<int,int>& GetUserCcMap() const { return userCcToParamIdx_; }
+
 private:
     char name_[80];
     char pluginPath_[512];
@@ -100,6 +107,9 @@ private:
 
     // Pending variable values from project load
     std::map<std::string, std::string> pendingParamValues_;
+
+    // User MIDI learn CC bindings (CC number → parameter index)
+    std::map<int,int> userCcToParamIdx_;
 
     // Pre-allocated scratch for audio thread
     std::vector<PendingParamChange> renderLocalParams_;

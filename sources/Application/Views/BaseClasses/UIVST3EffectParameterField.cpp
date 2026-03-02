@@ -2,6 +2,8 @@
 #include "Application/Instruments/VST3Effect.h"
 #include "Application/AppWindow.h"
 
+bool UIVST3EffectParameterField::s_learnMode_ = false;
+
 UIVST3EffectParameterField::UIVST3EffectParameterField(
 	GUIPoint &position,
 	Variable &v,
@@ -61,6 +63,14 @@ void UIVST3EffectParameterField::Draw(GUIWindow &w, int offset) {
 		// Fallback: show plain value
 		double plain = param->minValue + normalized * (param->maxValue - param->minValue);
 		snprintf(buffer, 80, "%s: %.2f", nameBuffer_, plain);
+	}
+
+	if (s_learnMode_ && effect_) {
+		int ucc = effect_->GetUserCCForParam(paramIndex_);
+		if (ucc >= 0) {
+			char ccTag[8]; snprintf(ccTag, sizeof(ccTag), "~%d", ucc);
+			if (strlen(buffer) + strlen(ccTag) < 79) strcat(buffer, ccTag);
+		}
 	}
 
 	w.DrawString(buffer, position, props);

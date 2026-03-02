@@ -255,7 +255,7 @@ COMMONFILES := \
 	MixerView.o NullView.o \
 	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o ThemeView.o InstrumentView.o EffectView.o SampleEditorView.o UIController.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
-	UIIntVarOffField.o UIIntVarField.o UILV2ParameterField.o UILV2EffectParameterField.o UIVST3ParameterField.o UIVST3EffectParameterField.o ViewEvent.o I_Action.o\
+	UIIntVarOffField.o UIIntVarField.o UILearnableIntVarField.o UILV2ParameterField.o UILV2EffectParameterField.o UIVST3ParameterField.o UIVST3EffectParameterField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \
 	ButtonMappingDialog.o MessageBox.o \
 	GrooveView.o UINoteVarField.o UIBigHexVarField.o \

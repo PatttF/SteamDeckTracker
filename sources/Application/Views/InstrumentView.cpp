@@ -22,9 +22,11 @@
 #include "ModalDialogs/ImportSoundFontDialog.h"
 #include "ModalDialogs/ImportVST3Dialog.h"
 #include "BaseClasses/UIVST3ParameterField.h"
+#include "BaseClasses/UILearnableIntVarField.h"
 #include "ModalDialogs/MessageBox.h"
 #include "ModalDialogs/SavePresetDialog.h"
 #include "ModalDialogs/RecordSampleDialog.h"
+#include "Application/Persistency/PersistencyService.h"
 #include "System/System/System.h"
 #include "System/Console/Trace.h"
 #include "Application/Player/Player.h"
@@ -110,6 +112,7 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	vst3LoadField_ = nullptr;
 	vst3SaveField_ = nullptr;
 	vst3ScrollOffset_ = 0;
+	learnMode_ = false;
 	// Initialize lastType_ to mirror instrument types
 	for (int i = 0; i < MAX_INSTRUMENT_COUNT; ++i) {
 		I_Instrument* instr = data->project_->GetInstrumentBank()->GetInstrument(i);
@@ -299,12 +302,12 @@ void InstrumentView::fillSampleParameters() {
     position._x -= 5;
     position._y += 1;
     v=instrument->FindVariable(SIP_VOLUME) ;
-	f1=new UIIntVarField(position,*v,"volume: %2.2X",0,255,1,10) ;
+	f1=new UILearnableIntVarField(position,*v,"volume: %2.2X",0,255,1,10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
     position._y+=1 ;
 	v=instrument->FindVariable(SIP_PAN) ;
-	f1=new UIIntVarField(position,*v,"pan: %2.2X",0,0xFE,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"pan: %2.2X",0,0xFE,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._y+=1 ;
@@ -314,23 +317,23 @@ void InstrumentView::fillSampleParameters() {
 
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_FINETUNE) ;
-	f1=new UIIntVarField(position,*v,"detune: %2.2X",0,255,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"detune: %2.2X",0,255,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
     position._y += 2;
     v=instrument->FindVariable(SIP_CRUSH);
-	f1=new UIIntVarField(position,*v,"crush: %d",1,0x10,1,4) ;
+	f1=new UILearnableIntVarField(position,*v,"crush: %d",1,0x10,1,4) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
     position._x += 10;
     v = instrument->FindVariable(SIP_CRUSHVOL);
-    f1=new UIIntVarField(position,*v,"drive: %2.2X",0,0xFF,1,0x10) ;
+    f1=new UILearnableIntVarField(position,*v,"drive: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
     position._x -= 10;
 
     position._y += 1;
 	v=instrument->FindVariable(SIP_DOWNSMPL) ;
-	f1=new UIIntVarField(position,*v,"downsample: %d",0,8,1,4) ;
+	f1=new UILearnableIntVarField(position,*v,"downsample: %d",0,8,1,4) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 
@@ -340,18 +343,18 @@ void InstrumentView::fillSampleParameters() {
 
 	position._x+=13 ;
 	v=instrument->FindVariable(SIP_FILTCUTOFF) ;
-	f1=new UIIntVarField(position,*v,"%2.2X",0,0xFF,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"%2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._x+=3 ;
 	v=instrument->FindVariable(SIP_FILTRESO) ;
-	f1=new UIIntVarField(position,*v,"%2.2X",0,0xFF,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"%2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 	position._x-=16 ;
 
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_FILTMIX) ;
-	f1=new UIIntVarField(position,*v,"type: %2.2X",0,0xFF,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"type: %2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._y+=1 ;
@@ -361,7 +364,7 @@ void InstrumentView::fillSampleParameters() {
 
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_ATTENUATE) ;
-	f1=new UIIntVarField(position,*v,"attenuate: %2.2X",1,0xFF,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"attenuate: %2.2X",1,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._y+=1 ;
@@ -370,12 +373,12 @@ void InstrumentView::fillSampleParameters() {
 
 	v=instrument->FindVariable(SIP_FBTUNE) ;
 	position._x+=13 ;
-	f1=new UIIntVarField(position,*v,"%2.2X",0,0xFF,1,0x10) ;
+	f1=new UILearnableIntVarField(position,*v,"%2.2X",0,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._x+=3 ;
 	v=instrument->FindVariable(SIP_FBMIX) ;
-	f1=new UIIntVarField(position,*v,"%2.2X",0,0xFF,1,0X10) ;
+	f1=new UILearnableIntVarField(position,*v,"%2.2X",0,0xFF,1,0X10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._x-=16 ;
@@ -1029,6 +1032,7 @@ void InstrumentView::fillLV2Parameters() {
 	// MIDI input footer row
 	{
 		GUIPoint p(1, position._y + 1);
+
 		Variable *v = instrument->FindVariable(IMDI);
 		if (!v) {
 			v = new Variable("midi dev", IMDI, VAR_OFF);
@@ -1039,7 +1043,7 @@ void InstrumentView::fillLV2Parameters() {
 		UIIntVarOffField *f1 = new UIIntVarOffField(p, *v, "midi:%d", 0, maxDev, 1, 1);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 14;
+		p._x = 9;
 		v = instrument->FindVariable(IMIC);
 		if (!v) {
 			v = new Variable("midi ch", IMIC, 0);
@@ -1047,6 +1051,26 @@ void InstrumentView::fillLV2Parameters() {
 		}
 		UIIntVarField *f2 = new UIIntVarField(p, *v, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
 		T_SimpleList<UIField>::Insert(f2);
+
+		// MLPC: program change → preset routing toggle
+		p._x = 17;
+		static char *lv2PcOpts[] = { (char*)"OFF", (char*)"ON" };
+		Variable *pcvl = instrument->FindVariable(MAKE_FOURCC('M','L','P','C'));
+		if (!pcvl) {
+			WatchedVariable *wpc = new WatchedVariable("mlpc", MAKE_FOURCC('M','L','P','C'), lv2PcOpts, 2,
+				instrument->GetProgramChangeEnabled() ? 1 : 0);
+			wpc->AddObserver(*this);
+			instrument->Insert(wpc);
+			pcvl = wpc;
+		} else {
+			int expected = instrument->GetProgramChangeEnabled() ? 1 : 0;
+			if (pcvl->GetInt() != expected) pcvl->SetInt(expected, false);
+			if (WatchedVariable *wpc = dynamic_cast<WatchedVariable*>(pcvl)) {
+				wpc->RemoveObserver(*this); wpc->AddObserver(*this);
+			}
+		}
+		UIIntVarField *pcfl = new UIIntVarField(p, *pcvl, "pgm chg:%s", 0, 1, 1, 1);
+		T_SimpleList<UIField>::Insert(pcfl);
 	}
 
 } ;
@@ -1140,12 +1164,12 @@ void InstrumentView::fillSoundFontParameters() {
 	{
 		GUIPoint p(1, position._y);
 		v = instrument->FindVariable(SFIP_VOLUME);
-		f1 = new UIIntVarField(p, *v, "volume:%2.2X", 0, 0xFF, 1, 0x10);
+		f1 = new UILearnableIntVarField(p, *v, "volume:%2.2X", 0, 0xFF, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
 		p._x = 11;
 		v = instrument->FindVariable(SFIP_PAN);
-		f1 = new UIIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
+		f1 = new UILearnableIntVarField(p, *v, "pan:%2.2X", 0, 0xFE, 1, 0x10);
 		T_SimpleList<UIField>::Insert(f1);
 
 		p._x = 18;
@@ -1434,6 +1458,7 @@ void InstrumentView::fillVST3Parameters() {
 	// MIDI input footer row
 	{
 		GUIPoint p(1, position._y + 1);
+
 		Variable *v = instrument->FindVariable(IMDI);
 		if (!v) {
 			v = new Variable("midi dev", IMDI, VAR_OFF);
@@ -1444,7 +1469,7 @@ void InstrumentView::fillVST3Parameters() {
 		UIIntVarOffField *f1 = new UIIntVarOffField(p, *v, "midi:%d", 0, maxDev, 1, 1);
 		T_SimpleList<UIField>::Insert(f1);
 
-		p._x = 14;
+		p._x = 9;
 		v = instrument->FindVariable(IMIC);
 		if (!v) {
 			v = new Variable("midi ch", IMIC, 0);
@@ -1452,6 +1477,26 @@ void InstrumentView::fillVST3Parameters() {
 		}
 		UIIntVarField *f2 = new UIIntVarField(p, *v, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
 		T_SimpleList<UIField>::Insert(f2);
+
+		// MLPC: program change → preset routing toggle
+		p._x = 17;
+		static char *vst3PcOpts[] = { (char*)"OFF", (char*)"ON" };
+		Variable *pcvv = instrument->FindVariable(MAKE_FOURCC('M','L','P','C'));
+		if (!pcvv) {
+			WatchedVariable *wpc = new WatchedVariable("mlpc", MAKE_FOURCC('M','L','P','C'), vst3PcOpts, 2,
+				instrument->GetProgramChangeEnabled() ? 1 : 0);
+			wpc->AddObserver(*this);
+			instrument->Insert(wpc);
+			pcvv = wpc;
+		} else {
+			int expected = instrument->GetProgramChangeEnabled() ? 1 : 0;
+			if (pcvv->GetInt() != expected) pcvv->SetInt(expected, false);
+			if (WatchedVariable *wpc = dynamic_cast<WatchedVariable*>(pcvv)) {
+				wpc->RemoveObserver(*this); wpc->AddObserver(*this);
+			}
+		}
+		UIIntVarField *pcfv = new UIIntVarField(p, *pcvv, "pgm chg:%s", 0, 1, 1, 1);
+		T_SimpleList<UIField>::Insert(pcfv);
 	}
 }
 
@@ -1474,6 +1519,97 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 	if (!pressed) return ;
 
 	isDirty_=false ;
+
+	// MIDI learn mode: SELECT+A toggles learn on/off for VST3/LV2 instruments
+	if ((mask & EPBM_SELECT) && (mask & EPBM_A)) {
+		// Always allow exiting learn mode, even if instrument type changed
+		if (learnMode_) {
+			learnMode_ = false;
+			MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter();
+			if (router) router->CancelLearn();
+			PersistencyService::GetInstance()->Save();
+			SetNotification("Mappings saved", 0);
+			isDirty_ = true;
+			return;
+		}
+		// Only enter learn mode for VST3/LV2/Sample/SF2
+		InstrumentType it = getInstrumentType();
+		if (it == IT_VST3 || it == IT_LV2 || it == IT_SAMPLE || it == IT_SOUNDFONT) {
+			MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter();
+			learnMode_ = true;
+			if (router) router->CancelLearn();
+			SetNotification("LEARN: press A on a param | B=cancel | SEL+A=exit & save", 0);
+			isDirty_ = true;
+			return;
+		}
+	}
+	// In learn mode: A starts listening on focused param; B cancels current listen
+	if (learnMode_) {
+		InstrumentType it = getInstrumentType();
+		if (it == IT_VST3 || it == IT_LV2 || it == IT_SAMPLE || it == IT_SOUNDFONT) {
+			MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter();
+			if (mask == EPBM_A) {
+				UIField *focused = GetFocus();
+				int paramIdx = -1;
+				if (UIVST3ParameterField *pf = dynamic_cast<UIVST3ParameterField*>(focused))
+					paramIdx = pf->GetParamIndex();
+				if (UILV2ParameterField *pf = dynamic_cast<UILV2ParameterField*>(focused))
+					paramIdx = pf->GetParamIndex();
+				if (paramIdx >= 0 && router) {
+					router->StartLearn(viewData_->currentInstrument_, paramIdx);
+					SetNotification("Listening for CC...", 0);
+				}
+				// Variable-based learn for Sample/SF2
+				if (UILearnableIntVarField *lf = dynamic_cast<UILearnableIntVarField*>(focused)) {
+					if (router) {
+						router->StartLearnVar(viewData_->currentInstrument_,
+							lf->GetVariable().GetID(), lf->GetMin(), lf->GetMax());
+						SetNotification("Listening for CC...", 0);
+					}
+				}
+				isDirty_ = true;
+				return;
+			}
+			if (mask == EPBM_B) {
+				if (router) router->CancelLearn();
+				SetNotification("LEARN: press A on a param | B=cancel | SEL+A=exit & save", 0);
+				isDirty_ = true;
+				return;
+			}
+		}
+	}
+	// SELECT+B: clear CC binding for focused parameter
+	if ((mask & EPBM_SELECT) && (mask & EPBM_B)) {
+		InstrumentType it = getInstrumentType();
+		if (it == IT_VST3 || it == IT_LV2) {
+			UIField *focused = GetFocus();
+			int paramIdx = -1;
+			if (UIVST3ParameterField *pf = dynamic_cast<UIVST3ParameterField*>(focused))
+				paramIdx = pf->GetParamIndex();
+			if (UILV2ParameterField *pf = dynamic_cast<UILV2ParameterField*>(focused))
+				paramIdx = pf->GetParamIndex();
+			if (paramIdx >= 0) {
+				I_Instrument *instr = viewData_->project_->GetInstrumentBank()->GetInstrument(viewData_->currentInstrument_);
+				if (instr && instr->GetType() == IT_VST3)
+					((VST3Instrument*)instr)->ClearUserCCForParam(paramIdx);
+				else if (instr && instr->GetType() == IT_LV2)
+					((LV2Instrument*)instr)->ClearUserCCForParam(paramIdx);
+				SetNotification("CC unbound", 0);
+			}
+			isDirty_ = true;
+			return;
+		}
+		if (it == IT_SAMPLE || it == IT_SOUNDFONT) {
+			UIField *focused = GetFocus();
+			if (UILearnableIntVarField *lf = dynamic_cast<UILearnableIntVarField*>(focused)) {
+				I_Instrument *instr = viewData_->project_->GetInstrumentBank()->GetInstrument(viewData_->currentInstrument_);
+				if (instr) instr->ClearUserCCForVarId(lf->GetVariable().GetID());
+				SetNotification("CC unbound", 0);
+			}
+			isDirty_ = true;
+			return;
+		}
+	}
 
 	if (viewMode_==VM_NEW) {
 		if (mask==EPBM_A) {
@@ -1940,7 +2076,7 @@ void InstrumentView::drawMidiInputInfo() {
 
 	// Find the Y position of the IMDI field by scanning UIFields
 	GUIPoint pos;
-	pos._x = 22;  // after "midi:N  ch:XX"
+	pos._x = 30;  // after "midi:N  ch:XX  pgm chg:OFF"
 	bool found = false;
 	IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
 	for (fit->Begin(); !fit->IsDone(); fit->Next()) {
@@ -1956,6 +2092,18 @@ void InstrumentView::drawMidiInputInfo() {
 	GUITextProperties props;
 	SetColor(CD_HILITE2);
 	DrawString(pos._x, pos._y, buf, props);
+}
+
+void InstrumentView::updateLearnCCAnnotations() {
+	// Push current CC assignment for each UILearnableIntVarField from the current instrument.
+	// Called from DrawView when learnMode_ is active, so current_ is always valid here.
+	if (!current_) return;
+	IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator());
+	for (it->Begin(); !it->IsDone(); it->Next()) {
+		if (UILearnableIntVarField *lf = dynamic_cast<UILearnableIntVarField*>(&it->CurrentItem())) {
+			lf->SetLearnCC(current_->GetUserCCForVarId(lf->GetVariableID()));
+		}
+	}
 }
 
 void InstrumentView::DrawView() {
@@ -1983,25 +2131,40 @@ void InstrumentView::DrawView() {
 	}
 
 	Clear() ;
-    View::EnableNotification();
+	UIVST3ParameterField::SetLearnMode(learnMode_);
+	UILV2ParameterField::SetLearnMode(learnMode_);
+	UILearnableIntVarField::SetLearnMode(learnMode_);
+	// Note: do NOT call SetNotification here - that resets the timer and
+	// prevents transient messages (Listening..., CC bound, etc.) from showing.
 
     GUITextProperties props;
     GUIPoint pos = GetTitlePosition();
 
-    // Draw title
-
-    char title[20];
-    SetColor(CD_NORMAL);
-    sprintf(title, "Instrument %2.2X", viewData_->currentInstrument_);
-    DrawString(pos._x, pos._y, title, props);
+    // Draw title (skip in learn mode — row 0 is taken by the learn banner)
+    if (!learnMode_) {
+        char title[20];
+        SetColor(CD_NORMAL);
+        sprintf(title, "Instrument %2.2X", viewData_->currentInstrument_);
+        DrawString(pos._x, pos._y, title, props);
+    }
 
     // Draw fields
-
+    if (learnMode_) updateLearnCCAnnotations();
     FieldView::Redraw();
     drawMidiInputInfo();
     drawMidiOutHelp();
     drawAudioInHelp();
-    drawMap() ;
+    drawMap();
+
+    // Notifications and learn banner — drawn last so they override row 0 content
+    View::EnableNotification();
+    if (learnMode_ && !HasActiveNotification()) {
+        // Full-width padded banner overwrites title/help-text at row 0
+        char banner[82];
+        snprintf(banner, sizeof(banner), "%-79s", "LEARN: A=bind  B=cancel  SEL+A=exit+save");
+        SetColor(CD_NORMAL);
+        DrawString(0, 0, banner, props);
+    }
 }
 
 void InstrumentView::OnFocus() { onInstrumentChange(); }
@@ -2164,6 +2327,20 @@ void InstrumentView::Update(Observable &o,I_ObservableData *d) {    // Handle ac
                 return;
             }
         }
+
+		// Handle MLPC (program change → preset routing) toggle
+		{
+			WatchedVariable *wv = dynamic_cast<WatchedVariable*>(&o);
+			if (wv && wv->GetID() == MAKE_FOURCC('M','L','P','C')) {
+				bool en = (wv->GetInt() == 1);
+				if (instr->GetType() == IT_VST3)
+					((VST3Instrument*)instr)->SetProgramChangeEnabled(en);
+				else if (instr->GetType() == IT_LV2)
+					((LV2Instrument*)instr)->SetProgramChangeEnabled(en);
+				isDirty_ = true;
+				return;
+			}
+		}
 
 		// Handle changes to the instrument-level effect slot (IFXS).
 		Variable *var = dynamic_cast<Variable *>(&o);

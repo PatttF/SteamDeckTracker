@@ -20,6 +20,8 @@
 #include "Application/Player/MidiInputRouter.h"
 #include "System/Console/Trace.h"
 #include <ctype.h>
+#include <cstdlib>
+#include <cstring>
 
 char *InstrumentTypeData[IT_LAST]= {
 	"Sample",
@@ -139,6 +141,8 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 			int count=0 ;
 			for (it->Begin();!it->IsDone();it->Next()) {
 				Variable &v=it->CurrentItem() ;
+				// MLPC is saved separately below as mlearn_pc PARAM; skip here
+				if (v.GetID() == MAKE_FOURCC('M','L','P','C')) continue;
 				TiXmlElement param("PARAM") ;
 				param.SetAttribute("NAME",v.GetName()) ;
 				param.SetAttribute("VALUE",v.GetString()) ;
@@ -204,6 +208,23 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					data.InsertEndChild(paramp);
 					count++;
 				}
+				// Save user MIDI learn CC bindings
+				for (const auto &kv : vin->GetUserCcMap()) {
+					char mlName[32]; snprintf(mlName, sizeof(mlName), "mlearn_%d", kv.first);
+					char mlVal[16];  snprintf(mlVal,  sizeof(mlVal),  "%d",        kv.second);
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", mlName);
+					paramp.SetAttribute("VALUE", mlVal);
+					data.InsertEndChild(paramp);
+					count++;
+				}
+				if (vin->GetProgramChangeEnabled()) {
+					TiXmlElement paramp("PARAM");
+					paramp.SetAttribute("NAME", "mlearn_pc");
+					paramp.SetAttribute("VALUE", "1");
+					data.InsertEndChild(paramp);
+					count++;
+				}
 			}
 			// Ensure LV2 plugin URI and parameter values are recorded even if
 			// Variables weren't present for some reason (fallback persistence).
@@ -247,6 +268,34 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 					data.InsertEndChild(paramp);
 					count++;
 				}
+				// Save user MIDI learn CC bindings (LV2)
+				for (const auto &kv : lin->GetUserCcMap()) {
+					char mlName[32]; snprintf(mlName, sizeof(mlName), "mlearn_%d", kv.first);
+					char mlVal[16];  snprintf(mlVal,  sizeof(mlVal),  "%d",        kv.second);
+					TiXmlElement paramp2("PARAM");
+					paramp2.SetAttribute("NAME", mlName);
+					paramp2.SetAttribute("VALUE", mlVal);
+					data.InsertEndChild(paramp2);
+					count++;
+				}
+				if (lin->GetProgramChangeEnabled()) {
+					TiXmlElement paramp2("PARAM");
+					paramp2.SetAttribute("NAME", "mlearn_pc");
+					paramp2.SetAttribute("VALUE", "1");
+					data.InsertEndChild(paramp2);
+					count++;
+				}
+			}
+			// Save variable-based MIDI CC bindings (Sample/SF2 and any other instrument type)
+			for (const auto &kv : instr->GetUserCcVarMap()) {
+				char name[32]; snprintf(name, sizeof(name), "mlearnv_%d", kv.first);
+				char val[64];  snprintf(val, sizeof(val), "%u,%d,%d",
+				                        kv.second.varId, kv.second.min, kv.second.max);
+				TiXmlElement pvp("PARAM");
+				pvp.SetAttribute("NAME", name);
+				pvp.SetAttribute("VALUE", val);
+				data.InsertEndChild(pvp);
+				count++;
 			}
 			if (count) node->InsertEndChild(data) ;
 		}
@@ -386,6 +435,35 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
               value = "scream";
             }
           }
+
+					// Intercept MIDI learn params (not backed by Variables)
+					if (strncmp(name, "mlearn_", 7) == 0) {
+						if (!strcmp(name, "mlearn_pc")) {
+							if (instr->GetType() == IT_VST3)
+								((VST3Instrument*)instr)->SetProgramChangeEnabled(true);
+							else if (instr->GetType() == IT_LV2)
+								((LV2Instrument*)instr)->SetProgramChangeEnabled(true);
+						} else {
+							int cc   = atoi(name + 7);
+							int pidx = atoi(value);
+							if (instr->GetType() == IT_VST3)
+								((VST3Instrument*)instr)->SetUserCC(cc, pidx);
+							else if (instr->GetType() == IT_LV2)
+								((LV2Instrument*)instr)->SetUserCC(cc, pidx);
+						}
+						param = param->NextSiblingElement();
+						continue;
+					}
+					// Intercept variable-based MIDI CC bindings (Sample/SF2)
+					if (strncmp(name, "mlearnv_", 8) == 0) {
+						int cc = atoi(name + 8);
+						// Parse "varId,min,max"
+						unsigned int varId = 0; int vmin = 0, vmax = 127;
+						sscanf(value, "%u,%d,%d", &varId, &vmin, &vmax);
+						instr->SetUserCCVar(cc, (FourCC)varId, vmin, vmax);
+						param = param->NextSiblingElement();
+						continue;
+					}
 
 					IteratorPtr<Variable> it(instr->GetIterator()) ;
 					bool applied=false;

@@ -24,6 +24,8 @@ Key Enhancements:
     Live Audio Input: AudioIn instrument type captures live audio from any input device, mixes it directly into the output bus, and forwards MIDI to external hardware. Effects can be applied to the live stream without triggering notes.
     MIDI Input Routing: Connect any MIDI controller or keyboard to play instruments live with full velocity, CC, pitch bend, and aftertouch support. Assign input device and channel per instrument for flexible routing.
 
+    MIDI CC Learn: Bind any CC knob or fader on your controller to individual instrument or effect parameters in real time. Supported on Sample, SF2, LV2, and VST3 instruments and effects. Press SELECT+A on any Instrument or Effect page to enter learn mode, press A on a parameter, then move a knob.
+
     Automated Workspace: On first launch, the software generates a streamlined directory structure in the user's Documents/SDTracker folder for easy management. After that use the options in the Projects page to install the factory samples as well as my Mutated Instruments plugin.
 
 
@@ -297,6 +299,76 @@ MIDI input uses 4 dedicated live channels (separate from the 16 tracker channels
 MIDI devices are re-scanned each time you enter the Instrument page (while playback is stopped). Newly connected controllers will appear automatically.
 
 ---
+
+## MIDI CC Learn
+
+MIDI CC Learn lets you bind any knob, fader, or slider on a physical MIDI controller directly to individual instrument or effect parameters. Once bound, moving the controller hardware automatically updates the parameter in real time during playback.
+
+CC learn is supported on:
+
+| Instrument / Page | Learnable Parameters |
+|---|---|
+| **Sample** | volume, pan, detune, crush, drive, downsample, filter cut/res, filter type, attenuate, feedback tune/mix |
+| **SoundFont (SF2)** | volume, pan |
+| **LV2 Instrument** | all exposed plugin parameters |
+| **VST3 Instrument** | all exposed plugin parameters |
+| **LV2 Effect** | all exposed effect parameters |
+| **VST3 Effect** | all exposed effect parameters |
+
+### Entering Learn Mode
+
+On any supported Instrument or Effect page:
+
+| Action | Result |
+|--------|--------|
+| **SELECT + A** | Toggle learn mode on / off |
+
+When learn mode is active, the title bar is replaced by a banner:
+
+```
+LEARN: A=bind  B=cancel  SEL+A=exit+save
+```
+
+Parameters that already have a CC bound show a **`~CC`** tag appended to their value (e.g. `volume: 80~7` means CC 7 is bound to volume). Parameters with no binding display normally.
+
+### Binding a CC
+
+1. Press **SELECT + A** to enter learn mode.
+2. Navigate to the parameter you want to control (D-Pad up/down or left/right).
+3. Press **A** — the status line changes to `Listening for CC...`
+4. Move a knob or fader on your MIDI controller.
+5. The first CC message received is bound to that parameter. The `~CC` tag appears next to the value.
+6. Repeat for any other parameters.
+7. Press **SELECT + A** to exit learn mode. Bindings are saved automatically to the project file.
+
+### Removing a Binding
+
+While in learn mode, navigate to a bound parameter and press **SELECT + B** — the binding is cleared immediately.
+
+Pressing **B** while the system is actively listening (after step 3 above) cancels that listen without binding anything.
+
+### MIDI Device & Channel for CC
+
+Each instrument and effect has its own **midi dev** and **midi ch** fields (visible in the footer of the Instrument and Effect pages). CC learn — like note input — is filtered to that device/channel pair. To receive CC from any device, leave **midi dev** set to `--`.
+
+| Footer Field | Description |
+|---|---|
+| **midi dev** | MIDI input device (`--` = any, `0`–`N` = specific device) |
+| **midi ch** | MIDI channel to listen on (`0`–`15`) |
+
+The connected device name is displayed next to the fields so you can confirm the right controller is selected.
+
+### Summary of Learn Mode Controls
+
+| Action | Effect |
+|--------|--------|
+| **SELECT + A** | Enter / exit learn mode (saves on exit) |
+| **A** (on a parameter) | Start listening for a CC on that parameter |
+| **B** (while listening) | Cancel the current listen, no binding made |
+| **SELECT + B** (on a bound parameter) | Remove the CC binding from that parameter |
+
+---
+
 ## Sample Recorder
 
 The sample recorder lets you capture audio from any connected input device directly into a WAV file and auto-import it into the current instrument.

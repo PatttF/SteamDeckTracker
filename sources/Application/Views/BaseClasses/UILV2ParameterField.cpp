@@ -2,6 +2,9 @@
 #include "Application/Instruments/LV2Instrument.h"
 #include "System/Console/Trace.h"
 #include "Application/AppWindow.h"
+#include <cstring>
+
+bool UILV2ParameterField::s_learnMode_ = false;
 
 UILV2ParameterField::UILV2ParameterField(
 	GUIPoint &position,
@@ -44,11 +47,10 @@ void UILV2ParameterField::Draw(GUIWindow &w, int offset) {
 	
 	// Try to get scale point label for this value
 	if (instrument_) {
-		// Convert scaled 0-127 value back to actual parameter value for scale point lookup
 		const LV2PluginParameter *param = instrument_->GetParameter(paramIndex_);
 		if (param) {
-			float realValue = param->minValue + 
-				(scaledValue / 127.0f) * (param->maxValue - param->minValue);
+			// Use the instrument's current physical value (updated by CC or UI)
+			float realValue = param->currentValue;
 			
 			std::string label = instrument_->GetParameterScalePointLabel(paramIndex_, realValue);
 			if (!label.empty()) {
@@ -64,6 +66,15 @@ void UILV2ParameterField::Draw(GUIWindow &w, int offset) {
 	} else {
 		// No instrument reference, use numeric display
 		snprintf(buffer, 80, "%s: %d", nameBuffer_, scaledValue);
+	}
+
+	// Append user-learned CC binding indicator (e.g. "~74") only in learn mode
+	if (s_learnMode_ && instrument_) {
+		int ucc = instrument_->GetUserCCForParam(paramIndex_);
+		if (ucc >= 0) {
+			char ccTag[8]; snprintf(ccTag, sizeof(ccTag), "~%d", ucc);
+			if (strlen(buffer) + strlen(ccTag) < 79) strcat(buffer, ccTag);
+		}
 	}
 
 	w.DrawString(buffer, position, props);

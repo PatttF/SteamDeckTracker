@@ -15,6 +15,11 @@
 #include "ModalDialogs/ImportVST3EffectDialog.h"
 #include "ModalDialogs/MessageBox.h"
 #include "Application/Player/Player.h"
+#include "Application/Player/MidiInputRouter.h"
+#include "Application/AppWindow.h"
+#include "Services/Midi/MidiService.h"
+#include "Services/Midi/MidiInDevice.h"
+#include "Application/Persistency/PersistencyService.h"
 #include "System/Console/Trace.h"
 #include <cstring>
 #include <vector>
@@ -44,6 +49,7 @@ EffectView::EffectView(GUIWindow &w, ViewData *data) : FieldView(w, data) {
     pendingTypeEffectIdx_ = -1;
     pendingEffectType_ = ET_VST3;
     lastFocusIndex_ = -1;
+    learnMode_ = false;
     memset(pluginLabel_, 0, sizeof(pluginLabel_));
     memset(paramText_, 0, sizeof(paramText_));
 }
@@ -322,24 +328,34 @@ void EffectView::fillEffectParameters() {
             position._y += 2;
         }
 
-        // Footer controls — single horizontal row
-        FourCC volId = (current_->GetEffectType() == ET_LV2) ? LV2FX_VOLUME : VST3FX_VOLUME;
-        FourCC wetId = (current_->GetEffectType() == ET_LV2) ? LV2FX_WETDRY : VST3FX_WETDRY;
-
+        // Footer: MIDI input device/channel for CC learn routing
         {
             GUIPoint p(1, position._y);
-            Variable *v = current_->FindVariable(volId);
-            if (v) {
-                UIIntVarField *f1 = new UIIntVarField(p, *v, "vol:%2.2X", 0, 0xFF, 1, 0x10);
-                T_SimpleList<UIField>::Insert(f1);
+            Variable *mv = current_->FindVariable(EFMD);
+            if (!mv) {
+                mv = new Variable("fx midi dev", EFMD, VAR_OFF);
+                current_->Insert(mv);
             }
+            int devCount = 0;
+            {
+                MidiService *svc = MidiService::GetInstance();
+                if (svc) {
+                    IteratorPtr<MidiInDevice> it(svc->GetInIterator());
+                    for (it->Begin(); !it->IsDone(); it->Next()) devCount++;
+                }
+            }
+            int maxDev = (devCount > 0) ? devCount - 1 : 0;
+            UIIntVarOffField *mf1 = new UIIntVarOffField(p, *mv, "midi:%d", 0, maxDev, 1, 1);
+            T_SimpleList<UIField>::Insert(mf1);
 
-            p._x = 9;
-            v = current_->FindVariable(wetId);
-            if (v) {
-                UIIntVarField *f1 = new UIIntVarField(p, *v, "wet:%2.2X", 0, 0xFF, 1, 0x10);
-                T_SimpleList<UIField>::Insert(f1);
+            p._x = 14;
+            mv = current_->FindVariable(EFMC);
+            if (!mv) {
+                mv = new Variable("fx midi ch", EFMC, 0);
+                current_->Insert(mv);
             }
+            UIIntVarField *mf2 = new UIIntVarField(p, *mv, "ch:%2.2d", 0, 0x0F, 1, 0x04, 1);
+            T_SimpleList<UIField>::Insert(mf2);
         }
     } else {
         position._y += 2;
@@ -364,6 +380,71 @@ void EffectView::ProcessButtonMask(unsigned short mask, bool pressed) {
     if (!pressed) return;
 
     isDirty_ = false;
+
+    // SELECT+A: toggle MIDI learn mode (effects)
+    if ((mask & EPBM_SELECT) && (mask & EPBM_A)) {
+        if (learnMode_) {
+            learnMode_ = false;
+            MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter();
+            if (router) router->CancelLearn();
+            PersistencyService::GetInstance()->Save();
+            SetNotification("Mappings saved", 0);
+            isDirty_ = true;
+            return;
+        }
+        if (current_ && !current_->IsEmpty()) {
+            MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter();
+            learnMode_ = true;
+            if (router) router->CancelLearn();
+            SetNotification("LEARN: press A on a param | B=cancel | SEL+A=exit & save", 0);
+            isDirty_ = true;
+            return;
+        }
+    }
+
+    // In learn mode: A=bind focused param, B=cancel listen
+    if (learnMode_) {
+        MidiInputRouter *router = ((AppWindow&)w_).GetMidiInputRouter();
+        if (mask == EPBM_A) {
+            UIField *focused = GetFocus();
+            int paramIdx = -1;
+            if (UIVST3EffectParameterField *pf = dynamic_cast<UIVST3EffectParameterField*>(focused))
+                paramIdx = pf->GetParamIndex();
+            if (UILV2EffectParameterField *pf = dynamic_cast<UILV2EffectParameterField*>(focused))
+                paramIdx = pf->GetParamIndex();
+            if (paramIdx >= 0 && router) {
+                router->StartLearnEffect(currentEffect_, paramIdx);
+                SetNotification("Listening for CC...", 0);
+            }
+            isDirty_ = true;
+            return;
+        }
+        if (mask == EPBM_B) {
+            if (router) router->CancelLearn();
+            SetNotification("LEARN: press A on a param | B=cancel | SEL+A=exit & save", 0);
+            isDirty_ = true;
+            return;
+        }
+    }
+
+    // SELECT+B: clear CC binding for focused effect parameter
+    if ((mask & EPBM_SELECT) && (mask & EPBM_B)) {
+        UIField *focused = GetFocus();
+        int paramIdx = -1;
+        if (UIVST3EffectParameterField *pf = dynamic_cast<UIVST3EffectParameterField*>(focused))
+            paramIdx = pf->GetParamIndex();
+        if (UILV2EffectParameterField *pf = dynamic_cast<UILV2EffectParameterField*>(focused))
+            paramIdx = pf->GetParamIndex();
+        if (paramIdx >= 0 && current_) {
+            if (current_->GetEffectType() == ET_VST3)
+                ((VST3Effect*)current_)->ClearUserCCForParam(paramIdx);
+            else if (current_->GetEffectType() == ET_LV2)
+                ((LV2Effect*)current_)->ClearUserCCForParam(paramIdx);
+            SetNotification("CC unbound", 0);
+            isDirty_ = true;
+            return;
+        }
+    }
 
     // Handle A press on load field or type field
     if (viewMode_ == VM_NEW) {
@@ -492,18 +573,72 @@ void EffectView::DrawView() {
     }
 
     Clear();
+    UIVST3EffectParameterField::SetLearnMode(learnMode_);
+    UILV2EffectParameterField::SetLearnMode(learnMode_);
     View::EnableNotification();
 
     GUITextProperties props;
     GUIPoint pos = GetTitlePosition();
 
-    char title[20];
-    SetColor(CD_NORMAL);
-    sprintf(title, "Effect %2.2X", currentEffect_);
-    DrawString(pos._x, pos._y, title, props);
+    if (!learnMode_) {
+        char title[20];
+        SetColor(CD_NORMAL);
+        sprintf(title, "Effect %2.2X", currentEffect_);
+        DrawString(pos._x, pos._y, title, props);
+    }
 
     FieldView::Redraw();
     drawMap();
+    drawMidiDeviceInfo();
+
+    if (learnMode_ && !HasActiveNotification()) {
+        char banner[82];
+        snprintf(banner, sizeof(banner), "%-79s", "LEARN: A=bind  B=cancel  SEL+A=exit+save");
+        SetColor(CD_NORMAL);
+        DrawString(0, 0, banner, props);
+    }
+}
+
+void EffectView::drawMidiDeviceInfo() {
+    if (!current_ || current_->IsEmpty()) return;
+
+    // Find the EFMD field to get its row position
+    Variable *vDev = current_->FindVariable(EFMD);
+    if (!vDev || vDev->GetInt() < 0) return;  // VAR_OFF means no device assigned
+
+    // Look up the device name
+    int devIdx = vDev->GetInt();
+    const char *name = "";
+    {
+        MidiService *svc = MidiService::GetInstance();
+        if (svc) {
+            int i = 0;
+            IteratorPtr<MidiInDevice> it(svc->GetInIterator());
+            for (it->Begin(); !it->IsDone(); it->Next(), i++) {
+                if (i == devIdx) { name = it->CurrentItem().GetName(); break; }
+            }
+        }
+    }
+    if (!name || !name[0]) return;
+
+    // Find the Y row of the EFMD UIField
+    int fieldY = -1;
+    IteratorPtr<UIField> fit(T_SimpleList<UIField>::GetIterator());
+    for (fit->Begin(); !fit->IsDone(); fit->Next()) {
+        UIIntVarField *vf = dynamic_cast<UIIntVarField *>(&fit->CurrentItem());
+        if (vf && vf->GetVariableID() == EFMD) {
+            fieldY = vf->GetPosition()._y;
+            break;
+        }
+    }
+    if (fieldY < 0) return;
+
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%.46s", name);
+
+    GUITextProperties props;
+    SetColor(CD_HILITE2);
+    DrawString(21, fieldY, buf, props);
 }
 
 void EffectView::OnFocus() {

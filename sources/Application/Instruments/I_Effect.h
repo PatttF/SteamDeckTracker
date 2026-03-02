@@ -19,6 +19,10 @@ enum EffectType {
 // Maximum effect slot count
 #define MAX_EFFECT_COUNT 0x10
 
+// Effect MIDI input device/channel variable IDs (stored on the effect's VariableContainer)
+#define EFMD MAKE_FOURCC('E','F','M','D')  // Effect MIDI input Device index
+#define EFMC MAKE_FOURCC('E','F','M','C')  // Effect MIDI input Channel
+
 // Generic effect parameter info (read-only view for UI)
 struct EffectParameter {
     std::string name;

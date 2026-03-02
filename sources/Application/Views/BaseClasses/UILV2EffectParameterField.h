@@ -21,7 +21,11 @@ public:
 		
 	virtual ~UILV2EffectParameterField() {};
 	virtual void Draw(GUIWindow &w, int offset = 0) override;
-	
+
+	int GetParamIndex() const { return paramIndex_; }
+	static void SetLearnMode(bool active) { s_learnMode_ = active; }
+	static bool s_learnMode_;
+
 protected:
 	LV2Effect *effect_;
 	int paramIndex_;

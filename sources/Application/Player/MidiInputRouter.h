@@ -3,6 +3,7 @@
 
 #include "Foundation/Observable.h"
 #include "Foundation/T_Singleton.h"
+#include "Foundation/Types/Types.h"
 
 class Project;
 class PlayerMixer;
@@ -71,6 +72,28 @@ private:
     int findPluginSlot(int instrIdx);
     int allocPluginSlot(int instrIdx);
     void freePluginSlot(int instrIdx);
+
+public:
+    // MIDI learn: start listening for next CC, bind to paramIdx of instrIdx
+    void StartLearn(int instrIdx, int paramIdx);
+    // MIDI learn: start listening for next CC, bind to a Variable by FourCC
+    void StartLearnVar(int instrIdx, FourCC varId, int min, int max);
+    void CancelLearn();
+    void StartLearnEffect(int effectIdx, int paramIdx);
+    bool IsLearning()  const { return learnActive_; }
+    int  GetLearnInstrIdx() const { return learnInstrIdx_; }
+    int  GetLearnParamIdx() const { return learnParamIdx_; }
+
+private:
+    bool learnActive_;
+    int  learnInstrIdx_;
+    int  learnParamIdx_;
+    // Var-learn fields (used when isVarLearn_ is true)
+    FourCC learnVarId_;
+    int    learnVarMin_;
+    int    learnVarMax_;
+    bool   isVarLearn_;
+    bool   learnIsEffect_;
 };
 
 #endif

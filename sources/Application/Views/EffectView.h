@@ -24,6 +24,7 @@ protected:
     void onEffectChange(FourCC focusField = 0);
     void fillEffectParameters();
     void Update(Observable &o, I_ObservableData *d);
+    void drawMidiDeviceInfo();
 
 private:
     Project *project_;
@@ -39,5 +40,6 @@ private:
     char bankLabel_[80];
     char presetLabel_[80];
     int lastFocusIndex_;
+    bool learnMode_;
 };
 #endif

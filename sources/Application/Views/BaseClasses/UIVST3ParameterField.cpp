@@ -1,6 +1,9 @@
 #include "UIVST3ParameterField.h"
 #include "Application/Instruments/VST3Instrument.h"
 #include "Application/AppWindow.h"
+#include <cstring>
+
+bool UIVST3ParameterField::s_learnMode_ = false;
 
 UIVST3ParameterField::UIVST3ParameterField(
 	GUIPoint &position,
@@ -31,24 +34,22 @@ void UIVST3ParameterField::Draw(GUIWindow &w, int offset) {
 	}
 
 	char buffer[80];
-	int scaledValue = src_.GetInt();
-	
+
 	if (!instrument_ || instrument_->IsEmpty()) {
-		snprintf(buffer, 80, "%s: %d", nameBuffer_, scaledValue);
-		w.DrawString(buffer, position, props);
-		return;
-	}
-	
-	const VST3PluginParameter *param = instrument_->GetParameter(paramIndex_);
-	if (!param) {
-		snprintf(buffer, 80, "%s: %d", nameBuffer_, scaledValue);
+		snprintf(buffer, 80, "%s: ?", nameBuffer_);
 		w.DrawString(buffer, position, props);
 		return;
 	}
 
-	// Map scaled value back to normalized 0..1
-	int maxVal = (param->stepCount > 0 && param->stepCount <= 255) ? param->stepCount : 255;
-	double normalized = (double)scaledValue / (double)maxVal;
+	const VST3PluginParameter *param = instrument_->GetParameter(paramIndex_);
+	if (!param) {
+		snprintf(buffer, 80, "%s: ?", nameBuffer_);
+		w.DrawString(buffer, position, props);
+		return;
+	}
+
+	// Use the instrument's current normalized value (kept in sync by CC and UI edits)
+	double normalized = param->currentValue;
 	if (normalized < 0.0) normalized = 0.0;
 	if (normalized > 1.0) normalized = 1.0;
 
@@ -60,6 +61,15 @@ void UIVST3ParameterField::Draw(GUIWindow &w, int offset) {
 		// Fallback: show plain value
 		double plain = param->minValue + normalized * (param->maxValue - param->minValue);
 		snprintf(buffer, 80, "%s: %.2f", nameBuffer_, plain);
+	}
+
+	// Append user-learned CC binding indicator (e.g. "~74") only in learn mode
+	if (s_learnMode_) {
+		int ucc = instrument_->GetUserCCForParam(paramIndex_);
+		if (ucc >= 0) {
+			char ccTag[8]; snprintf(ccTag, sizeof(ccTag), "~%d", ucc);
+			if (strlen(buffer) + strlen(ccTag) < 79) strcat(buffer, ccTag);
+		}
 	}
 
 	w.DrawString(buffer, position, props);

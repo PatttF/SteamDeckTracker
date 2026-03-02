@@ -966,6 +966,39 @@ void LV2Effect::StorePendingVariable(const char *name, const char *value) {
     pendingParamValues_[name] = value;
 }
 
+void LV2Effect::SetUserCC(int cc, int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); )
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it); else ++it;
+    userCcToParamIdx_[cc] = paramIdx;
+}
+
+void LV2Effect::ClearUserCCForParam(int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); )
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it); else ++it;
+}
+
+int LV2Effect::GetUserCCForParam(int paramIdx) const {
+    for (const auto &kv : userCcToParamIdx_)
+        if (kv.second == paramIdx) return kv.first;
+    return -1;
+}
+
+void LV2Effect::ApplyUserCC(int ccNum, int rawValue) {
+    auto it = userCcToParamIdx_.find(ccNum);
+    if (it == userCcToParamIdx_.end()) return;
+    int paramIdx = it->second;
+    if (paramIdx < 0 || paramIdx >= (int)parameters_.size()) return;
+    float realValue = parameters_[paramIdx].minValue +
+        ((rawValue & 0x7F) / 127.0f) * (parameters_[paramIdx].maxValue - parameters_[paramIdx].minValue);
+    SetParameterValue(paramIdx, realValue);
+    // Sync UI variable (0–127 scaled, no-notify)
+    if (parameters_[paramIdx].variable) {
+        int sval = (int)((rawValue & 0x7F) / 127.0f * 127 + 0.5f);
+        if (sval < 0) sval = 0; if (sval > 127) sval = 127;
+        parameters_[paramIdx].variable->SetInt(sval, false);
+    }
+}
+
 void LV2Effect::SaveContent(TiXmlNode *node) {
     // Save plugin URI
     TiXmlElement effect("EFFECT");
@@ -999,6 +1032,25 @@ void LV2Effect::SaveContent(TiXmlNode *node) {
         effect.InsertEndChild(w);
     }
 
+    // Save MIDI device/channel routing
+    Variable *fxDev = FindVariable(EFMD);
+    Variable *fxCh  = FindVariable(EFMC);
+    if (fxDev || fxCh) {
+        TiXmlElement midi("MIDI");
+        if (fxDev) midi.SetAttribute("DEV", fxDev->GetInt());
+        if (fxCh)  midi.SetAttribute("CH",  fxCh->GetInt());
+        effect.InsertEndChild(midi);
+    }
+
+    // Save MIDI CC→param bindings
+    for (const auto &kv : userCcToParamIdx_) {
+        char mlName[32]; snprintf(mlName, sizeof(mlName), "mlearn_%d", kv.first);
+        TiXmlElement mlp("PARAM");
+        mlp.SetAttribute("NAME", mlName);
+        mlp.SetAttribute("VALUE", kv.second);
+        effect.InsertEndChild(mlp);
+    }
+
     node->InsertEndChild(effect);
 }
 
@@ -1011,7 +1063,13 @@ void LV2Effect::RestoreContent(TiXmlElement *element) {
             const char *name = paramEl->Attribute("NAME");
             const char *value = paramEl->Attribute("VALUE");
             if (name && value) {
-                StorePendingVariable(name, value);
+                if (strncmp(name, "mlearn_", 7) == 0) {
+                    int cc   = atoi(name + 7);
+                    int pidx = atoi(value);
+                    SetUserCC(cc, pidx);
+                } else {
+                    StorePendingVariable(name, value);
+                }
             }
             paramEl = paramEl->NextSiblingElement("PARAM");
         }
@@ -1031,6 +1089,23 @@ void LV2Effect::RestoreContent(TiXmlElement *element) {
             if (val) {
                 Variable *v = FindVariable(LV2FX_WETDRY);
                 if (v) v->SetInt(atoi(val));
+            }
+        }
+
+        // Restore MIDI device/channel routing
+        TiXmlElement *midiEl = element->FirstChildElement("MIDI");
+        if (midiEl) {
+            const char *devS = midiEl->Attribute("DEV");
+            const char *chS  = midiEl->Attribute("CH");
+            if (devS) {
+                Variable *mv = FindVariable(EFMD);
+                if (!mv) { mv = new Variable("fx midi dev", EFMD, VAR_OFF); Insert(mv); }
+                mv->SetInt(atoi(devS));
+            }
+            if (chS) {
+                Variable *mv = FindVariable(EFMC);
+                if (!mv) { mv = new Variable("fx midi ch", EFMC, 0); Insert(mv); }
+                mv->SetInt(atoi(chS));
             }
         }
 

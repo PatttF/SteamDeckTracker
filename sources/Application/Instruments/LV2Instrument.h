@@ -132,6 +132,15 @@ public:
     int GetCurrentPreset() const { return currentPreset_; }
     void SetPreset(int presetIdx);
 
+    // User MIDI learn CC bindings
+    void SetUserCC(int cc, int paramIdx);
+    void ClearUserCCForParam(int paramIdx);
+    int  GetUserCCForParam(int paramIdx) const;
+    void ApplyUserCC(int ccNum, int rawValue);  // called from router; routes CC to param bypassing IMDI
+    const std::map<int,int>& GetUserCcMap() const { return userCcToParamIdx_; }
+    void SetProgramChangeEnabled(bool e) { programChangeEnabled_ = e; }
+    bool GetProgramChangeEnabled() const  { return programChangeEnabled_; }
+
     // Save current plugin state as a native preset file
     bool savePresetToFile(const std::string &filePath);
     // Get the directory of the current bank (for saving presets)
@@ -233,6 +242,10 @@ private:
         int size;
     };
     std::vector<MidiEvent> pendingMidiEvents_;
+    // User MIDI learn: maps CC# → parameter array index
+    std::map<int,int> userCcToParamIdx_;
+    // Route incoming program change messages to SetPreset()
+    bool programChangeEnabled_;
     // Pending variable values loaded from project file before parameters exist
     std::map<std::string,std::string> pendingParamValues_;
     

@@ -4,6 +4,7 @@
 #include "Foundation/Variables/VariableContainer.h"
 #include "Foundation/Observable.h"
 #include "Application/Utils/fixed.h"
+#include <map>
 
 #include "Application/Player/TablePlayback.h"
 
@@ -68,7 +69,48 @@ public:
 	  // instruments that support it. Default does nothing.
 	  virtual void QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2) {}
 
+	  // --- Variable-based MIDI CC bindings (Sample/SF2 instruments) ---
+	  // Maps a raw CC number to a Variable identified by FourCC ID, with
+	  // explicit min/max so the CC 0-127 range maps to the variable's range.
+
+	  struct UserCCVarBinding { FourCC varId; int min; int max; };
+
+	  void SetUserCCVar(int cc, FourCC varId, int min, int max) {
+	      // Remove any existing binding for this varId first
+	      for (auto it = userCcToVarBinding_.begin(); it != userCcToVarBinding_.end(); )
+	          if (it->second.varId == varId) it = userCcToVarBinding_.erase(it); else ++it;
+	      userCcToVarBinding_[cc] = {varId, min, max};
+	  }
+
+	  void ClearUserCCForVarId(FourCC varId) {
+	      for (auto it = userCcToVarBinding_.begin(); it != userCcToVarBinding_.end(); )
+	          if (it->second.varId == varId) it = userCcToVarBinding_.erase(it); else ++it;
+	  }
+
+	  int GetUserCCForVarId(FourCC varId) const {
+	      for (const auto &kv : userCcToVarBinding_)
+	          if (kv.second.varId == varId) return kv.first;
+	      return -1;
+	  }
+
+	  void ApplyUserCCVar(int ccNum, int rawValue) {
+	      auto it = userCcToVarBinding_.find(ccNum);
+	      if (it != userCcToVarBinding_.end()) {
+	          const UserCCVarBinding &b = it->second;
+	          Variable *v = FindVariable(b.varId);
+	          if (v) {
+	              int scaled = b.min + (int)((rawValue & 0x7F) / 127.0 * (b.max - b.min) + 0.5);
+	              if (scaled < b.min) scaled = b.min;
+	              if (scaled > b.max) scaled = b.max;
+	              v->SetInt(scaled, false);
+	          }
+	      }
+	  }
+
+	  const std::map<int, UserCCVarBinding> &GetUserCcVarMap() const { return userCcToVarBinding_; }
+
 protected:
 	  unsigned char nextVelocity_;
+	  std::map<int, UserCCVarBinding> userCcToVarBinding_;
 };
 #endif

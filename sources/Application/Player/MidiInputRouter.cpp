@@ -6,6 +6,11 @@
 #include "UIFramework/BasicDatas/GUIEvent.h"
 #include "Application/Instruments/InstrumentBank.h"
 #include "Application/Instruments/I_Instrument.h"
+#include "Application/Instruments/VST3Instrument.h"
+#include "Application/Instruments/LV2Instrument.h"
+#include "Application/Instruments/VST3Effect.h"
+#include "Application/Instruments/LV2Effect.h"
+#include "Application/Instruments/EffectBank.h"
 #include "Services/Midi/MidiService.h"
 #include "Services/Midi/MidiInDevice.h"
 #include "Services/Midi/MidiMessage.h"
@@ -15,9 +20,13 @@
 // FourCC IDs matching InstrumentView.h
 #define IMDI MAKE_FOURCC('I','M','D','I')
 #define IMIC MAKE_FOURCC('I','M','I','C')
+// EFMD / EFMC are defined in I_Effect.h (included via EffectBank.h)
 
 MidiInputRouter::MidiInputRouter()
-    : project_(nullptr), mixer_(nullptr), initialized_(false) {
+    : project_(nullptr), mixer_(nullptr), initialized_(false),
+      learnActive_(false), learnInstrIdx_(-1), learnParamIdx_(-1),
+      learnVarId_(0), learnVarMin_(0), learnVarMax_(127), isVarLearn_(false),
+      learnIsEffect_(false) {
     for (int i = 0; i < LIVE_CH_COUNT; i++) {
         liveNotes_[i].instrument = -1;
         liveNotes_[i].note = 0;
@@ -258,6 +267,78 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
         return;
     }
 
+    // MIDI learn: capture the next CC event and bind it to the waiting parameter
+    if (learnActive_ && type == MidiMessage::MIDI_CONTROLLER) {
+        InstrumentBank *lbank = project_ ? project_->GetInstrumentBank() : nullptr;
+        if (lbank) {
+            if (learnIsEffect_) {
+                // Effect param-index binding
+                I_Effect *fx = project_->GetEffect(learnInstrIdx_);
+                if (fx) {
+                    if (fx->GetEffectType() == ET_VST3)
+                        ((VST3Effect*)fx)->SetUserCC((int)data1, learnParamIdx_);
+                    else if (fx->GetEffectType() == ET_LV2)
+                        ((LV2Effect*)fx)->SetUserCC((int)data1, learnParamIdx_);
+                }
+            } else {
+                I_Instrument *li = lbank->GetInstrument(learnInstrIdx_);
+                if (li) {
+                    if (isVarLearn_) {
+                        // Variable-based binding (Sample/SF2)
+                        li->SetUserCCVar((int)data1, learnVarId_, learnVarMin_, learnVarMax_);
+                    } else if (li->GetType() == IT_VST3) {
+                        ((VST3Instrument*)li)->SetUserCC((int)data1, learnParamIdx_);
+                    } else if (li->GetType() == IT_LV2) {
+                        ((LV2Instrument*)li)->SetUserCC((int)data1, learnParamIdx_);
+                    }
+                }
+            }
+        }
+        learnActive_ = false;
+        // Nudge the GUI to redraw (ET_PLAYERUPDATE is consumed by InstrumentView)
+        GUIWindow *lw = Application::GetInstance()->GetWindow();
+        if (lw) { GUIEvent lev(0, ET_PLAYERUPDATE, 0); lw->PushEvent(lev); }
+        // Do NOT return — also route this CC to the instrument normally
+    }
+
+    // User CC bindings: directly apply learned CC→param for any instrument
+    // regardless of IMDI device matching, so bindings work even without a
+    // MIDI device assigned to the instrument.
+    if (type == MidiMessage::MIDI_CONTROLLER) {
+        int ccNum = data1 & 0x7F;
+        for (int ci = 0; ci < MAX_INSTRUMENT_COUNT; ci++) {
+            I_Instrument *cinstr = bank->GetInstrument(ci);
+            if (!cinstr || cinstr->IsEmpty()) continue;
+            if (cinstr->GetType() == IT_VST3)
+                ((VST3Instrument*)cinstr)->ApplyUserCC(ccNum, data2 & 0x7F);
+            else if (cinstr->GetType() == IT_LV2)
+                ((LV2Instrument*)cinstr)->ApplyUserCC(ccNum, data2 & 0x7F);
+            // Sample and SF2 variable-based bindings
+            cinstr->ApplyUserCCVar(ccNum, data2 & 0x7F);
+        }
+        // Apply to effects.
+        // If EFMD is unset / VAR_OFF: accept CCs from all devices (default, like instruments).
+        // If EFMD is set to a specific device index: filter to that device + channel.
+        if (project_) {
+            for (int ei = 0; ei < MAX_EFFECT_COUNT; ei++) {
+                I_Effect *fx = project_->GetEffect(ei);
+                if (!fx || fx->IsEmpty()) continue;
+                Variable *fxDev = fx->FindVariable(EFMD);
+                if (fxDev && fxDev->GetInt() >= 0) {
+                    // Device filter is active — must match device and channel
+                    if (fxDev->GetInt() != deviceIdx) continue;
+                    Variable *fxCh = fx->FindVariable(EFMC);
+                    if (fxCh && fxCh->GetInt() != midiChannel) continue;
+                }
+                // No device filter (VAR_OFF or variable not yet created) → pass through
+                if (fx->GetEffectType() == ET_VST3)
+                    ((VST3Effect*)fx)->ApplyUserCC(ccNum, data2 & 0x7F);
+                else if (fx->GetEffectType() == ET_LV2)
+                    ((LV2Effect*)fx)->ApplyUserCC(ccNum, data2 & 0x7F);
+            }
+        }
+    }
+
     bool isNoteOn = (type == MidiMessage::MIDI_NOTE_ON && data2 > 0);
     bool isNoteOff = (type == MidiMessage::MIDI_NOTE_OFF ||
                       (type == MidiMessage::MIDI_NOTE_ON && data2 == 0));
@@ -438,4 +519,38 @@ void MidiInputRouter::Update(Observable &o, I_ObservableData *d) {
         }
         break; // Only route to first matching instrument
     }
+}
+
+void MidiInputRouter::StartLearn(int instrIdx, int paramIdx) {
+    learnInstrIdx_  = instrIdx;
+    learnParamIdx_  = paramIdx;
+    learnActive_    = true;
+    isVarLearn_     = false;
+    learnIsEffect_  = false;
+}
+
+void MidiInputRouter::CancelLearn() {
+    learnActive_   = false;
+    learnInstrIdx_ = -1;
+    learnParamIdx_ = -1;
+    isVarLearn_    = false;
+    learnIsEffect_ = false;
+}
+
+void MidiInputRouter::StartLearnVar(int instrIdx, FourCC varId, int min, int max) {
+    learnInstrIdx_  = instrIdx;
+    learnVarId_     = varId;
+    learnVarMin_    = min;
+    learnVarMax_    = max;
+    learnActive_    = true;
+    isVarLearn_     = true;
+    learnIsEffect_  = false;
+}
+
+void MidiInputRouter::StartLearnEffect(int effectIdx, int paramIdx) {
+    learnInstrIdx_  = effectIdx;
+    learnParamIdx_  = paramIdx;
+    learnActive_    = true;
+    isVarLearn_     = false;
+    learnIsEffect_  = true;
 }

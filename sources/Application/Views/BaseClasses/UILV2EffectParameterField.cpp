@@ -3,6 +3,8 @@
 #include "System/Console/Trace.h"
 #include "Application/AppWindow.h"
 
+bool UILV2EffectParameterField::s_learnMode_ = false;
+
 UILV2EffectParameterField::UILV2EffectParameterField(
 	GUIPoint &position,
 	Variable &v,
@@ -53,6 +55,14 @@ void UILV2EffectParameterField::Draw(GUIWindow &w, int offset) {
 		}
 	} else {
 		snprintf(buffer, 80, "%s: %d", nameBuffer_, scaledValue);
+	}
+
+	if (s_learnMode_ && effect_) {
+		int ucc = effect_->GetUserCCForParam(paramIndex_);
+		if (ucc >= 0) {
+			char ccTag[8]; snprintf(ccTag, sizeof(ccTag), "~%d", ucc);
+			if (strlen(buffer) + strlen(ccTag) < 79) strcat(buffer, ccTag);
+		}
 	}
 
 	w.DrawString(buffer, position, props);

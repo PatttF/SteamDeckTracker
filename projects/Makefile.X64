@@ -46,7 +46,7 @@ INCLUDES := $(ALSA_CFLAGS) $(JACK_CFLAGS) $(SDL_CFLAGS) $(LV2_CFLAGS) $(X11_CFLA
 CFLAGS := $(OPT_FLAGS) $(DEFINES) $(INCLUDES) -Wall
 CXXFLAGS := $(CFLAGS) -std=gnu++11
 LIBS := $(ALSA_LIBS) $(JACK_LIBS) $(SDL_LIBS) $(LV2_LIBS) $(FFMPEG_LIBS) $(X11_LIBS) $(DRM_LIBS) $(VAAPI_LIBS) $(VAAPI_EXTRA_LIBS) $(VDPAU_LIBS) $(BZIP_LIBS) -ldl
-LDFLAGS := -static-libgcc -static-libstdc++ 
+LDFLAGS := -static-libgcc -static-libstdc++
 OUTPUT := ../../SDTracker
 EXTENSION := bin
 

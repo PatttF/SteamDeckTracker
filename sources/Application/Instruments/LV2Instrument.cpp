@@ -185,6 +185,8 @@ LV2Instrument::LV2Instrument() {
     currentPreset_ = 0;
     usingFilePresets_ = false;
     usingMidiPresets_ = false;
+    userCcToParamIdx_.clear();
+    programChangeEnabled_ = false;
 
     // Initialize options array entries so plugins can read block-size options
     init_options_array();
@@ -1067,12 +1069,31 @@ void LV2Instrument::ProcessCommand(int channel, FourCC cc, ushort value) {
 }
 
 void LV2Instrument::QueueMidiEvent(unsigned char status, unsigned char data1, unsigned char data2) {
+    unsigned char type = status & 0xF0;
+
+    // User MIDI learn override: intercept CC or PC before passing to plugin
+    if (type == 0xB0) {
+        int ccNum = data1 & 0x7F;
+        auto uit = userCcToParamIdx_.find(ccNum);
+        if (uit != userCcToParamIdx_.end()) {
+            const LV2PluginParameter *p = GetParameter(uit->second);
+            if (p && p->maxValue > p->minValue) {
+                float physVal = p->minValue + ((data2 & 0x7F) / 127.0f) * (p->maxValue - p->minValue);
+                SetParameterValue(uit->second, physVal);
+            }
+            return;
+        }
+    }
+    if (type == 0xC0 && programChangeEnabled_) {
+        SetPreset(data1 & 0x7F);
+        return;
+    }
+
     MidiEvent evt;
     evt.data[0] = status;
     evt.data[1] = data1;
     evt.data[2] = data2;
     // Channel aftertouch and program change are 2-byte messages
-    unsigned char type = status & 0xF0;
     evt.size = (type == 0xC0 || type == 0xD0) ? 2 : 3;
 
     SysMutexLocker lock(pendingEventsMutex_);
@@ -1106,6 +1127,8 @@ void LV2Instrument::Purge() {
     strcpy(name_, "LV2");
     parameters_.clear();
     controlValues_.clear();
+    // Note: userCcToParamIdx_ and programChangeEnabled_ are NOT cleared on Purge
+    // so user MIDI learn settings survive plugin reload.
 }
 
 void LV2Instrument::Update(Observable &o, I_ObservableData *d) {
@@ -3194,5 +3217,50 @@ void LV2Instrument::discoverPatchManagerPresets() {
     }
     if (programLists_.size() > 5) {
         
+    }
+}
+
+// ====================================================================
+// User MIDI learn: CC → parameter index bindings
+// ====================================================================
+
+void LV2Instrument::SetUserCC(int cc, int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); ) {
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it);
+        else ++it;
+    }
+    userCcToParamIdx_[cc] = paramIdx;
+}
+
+void LV2Instrument::ClearUserCCForParam(int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); ) {
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it);
+        else ++it;
+    }
+}
+
+int LV2Instrument::GetUserCCForParam(int paramIdx) const {
+    for (const auto &kv : userCcToParamIdx_) {
+        if (kv.second == paramIdx) return kv.first;
+    }
+    return -1;
+}
+
+void LV2Instrument::ApplyUserCC(int ccNum, int rawValue) {
+    auto it = userCcToParamIdx_.find(ccNum);
+    if (it != userCcToParamIdx_.end()) {
+        int paramIdx = it->second;
+        const LV2PluginParameter *p = GetParameter(paramIdx);
+        if (p && p->maxValue > p->minValue) {
+            float physVal = p->minValue + ((rawValue & 0x7F) / 127.0f) * (p->maxValue - p->minValue);
+            SetParameterValue(paramIdx, physVal);
+            // Also update the Variable so the audio thread's variable scan doesn't revert our change
+            if (paramIdx < (int)parameters_.size() && parameters_[paramIdx].variable) {
+                int scaledVal = (int)(((physVal - p->minValue) / (p->maxValue - p->minValue)) * 127.0f + 0.5f);
+                if (scaledVal < 0) scaledVal = 0;
+                if (scaledVal > 127) scaledVal = 127;
+                parameters_[paramIdx].variable->SetInt(scaledVal, false);
+            }
+        }
     }
 }

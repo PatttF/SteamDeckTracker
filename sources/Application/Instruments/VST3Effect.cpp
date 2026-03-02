@@ -2091,6 +2091,50 @@ void VST3Effect::StorePendingVariable(const char *name, const char *value) {
     pendingParamValues_[name] = value;
 }
 
+void VST3Effect::SetUserCC(int cc, int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); )
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it); else ++it;
+    userCcToParamIdx_[cc] = paramIdx;
+}
+
+void VST3Effect::ClearUserCCForParam(int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); )
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it); else ++it;
+}
+
+int VST3Effect::GetUserCCForParam(int paramIdx) const {
+    for (const auto &kv : userCcToParamIdx_)
+        if (kv.second == paramIdx) return kv.first;
+    return -1;
+}
+
+void VST3Effect::ApplyUserCC(int ccNum, int rawValue) {
+    auto it = userCcToParamIdx_.find(ccNum);
+    if (it == userCcToParamIdx_.end()) return;
+    int paramIdx = it->second;
+    if (paramIdx < 0 || paramIdx >= (int)parameters_.size()) return;
+    double norm = (rawValue & 0x7F) / 127.0;
+    // Update currentValue NOW so the audio thread's variable scan sees no diff
+    // and does NOT add a second conflicting point for this paramId (same fix as
+    // VST3Instrument::SetParameterValue)
+    parameters_[paramIdx].currentValue = norm;
+    // Queue parameter change for audio thread
+    PendingParamChange pc;
+    pc.paramId = parameters_[paramIdx].paramId;
+    pc.value   = norm;
+    pendingEventsMutex_.Lock();
+    pendingParamChanges_.push_back(pc);
+    pendingEventsMutex_.Unlock();
+    // Sync UI variable so the variable scan doesn't revert our change
+    if (parameters_[paramIdx].variable) {
+        int maxVal = (parameters_[paramIdx].stepCount > 0 && parameters_[paramIdx].stepCount <= 255)
+                     ? parameters_[paramIdx].stepCount : 127;
+        int sval = (int)(norm * maxVal + 0.5);
+        if (sval < 0) sval = 0; if (sval > maxVal) sval = maxVal;
+        parameters_[paramIdx].variable->SetInt(sval, false);
+    }
+}
+
 void VST3Effect::SaveContent(TiXmlNode *node) {
     TiXmlElement effect("EFFECT");
     effect.SetAttribute("TYPE", "VST3");
@@ -2123,12 +2167,31 @@ void VST3Effect::SaveContent(TiXmlNode *node) {
         effect.InsertEndChild(w);
     }
 
+    // Save MIDI device/channel routing
+    Variable *fxDev = FindVariable(EFMD);
+    Variable *fxCh  = FindVariable(EFMC);
+    if (fxDev || fxCh) {
+        TiXmlElement midi("MIDI");
+        if (fxDev) midi.SetAttribute("DEV", fxDev->GetInt());
+        if (fxCh)  midi.SetAttribute("CH",  fxCh->GetInt());
+        effect.InsertEndChild(midi);
+    }
+
     // Save bank/preset if available
     if (!programLists_.empty()) {
         TiXmlElement bp("BANKPRESET");
         bp.SetAttribute("BANK", currentBank_);
         bp.SetAttribute("PRESET", currentPreset_);
         effect.InsertEndChild(bp);
+    }
+
+    // Save MIDI CC→param bindings
+    for (const auto &kv : userCcToParamIdx_) {
+        char mlName[32]; snprintf(mlName, sizeof(mlName), "mlearn_%d", kv.first);
+        TiXmlElement mlp("PARAM");
+        mlp.SetAttribute("NAME", mlName);
+        mlp.SetAttribute("VALUE", kv.second);
+        effect.InsertEndChild(mlp);
     }
 
     node->InsertEndChild(effect);
@@ -2144,7 +2207,16 @@ void VST3Effect::RestoreContent(TiXmlElement *element) {
     while (paramEl) {
         const char *name = paramEl->Attribute("NAME");
         const char *value = paramEl->Attribute("VALUE");
-        if (name && value) StorePendingVariable(name, value);
+        if (name && value) {
+            if (strncmp(name, "mlearn_", 7) == 0) {
+                // MIDI CC learn binding — handle immediately, don't defer
+                int cc   = atoi(name + 7);
+                int pidx = atoi(value);
+                SetUserCC(cc, pidx);
+            } else {
+                StorePendingVariable(name, value);
+            }
+        }
         paramEl = paramEl->NextSiblingElement("PARAM");
     }
 
@@ -2163,6 +2235,23 @@ void VST3Effect::RestoreContent(TiXmlElement *element) {
         if (val) {
             Variable *v = FindVariable(VST3FX_WETDRY);
             if (v) v->SetInt(atoi(val));
+        }
+    }
+
+    // Restore MIDI device/channel routing
+    TiXmlElement *midiEl = element->FirstChildElement("MIDI");
+    if (midiEl) {
+        const char *devS = midiEl->Attribute("DEV");
+        const char *chS  = midiEl->Attribute("CH");
+        if (devS) {
+            Variable *mv = FindVariable(EFMD);
+            if (!mv) { mv = new Variable("fx midi dev", EFMD, VAR_OFF); Insert(mv); }
+            mv->SetInt(atoi(devS));
+        }
+        if (chS) {
+            Variable *mv = FindVariable(EFMC);
+            if (!mv) { mv = new Variable("fx midi ch", EFMC, 0); Insert(mv); }
+            mv->SetInt(atoi(chS));
         }
     }
 

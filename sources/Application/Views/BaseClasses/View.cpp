@@ -326,6 +326,11 @@ void View::EnableNotification() {
 	}
 }
 
+bool View::HasActiveNotification() const {
+	return !displayNotification_.empty() &&
+	       (SDL_GetTicks() - notificationTime_) <= NOTIFICATION_TIMEOUT;
+}
+
 /*
     Set displayed notification
     Saves the current time

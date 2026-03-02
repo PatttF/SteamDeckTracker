@@ -36,6 +36,7 @@ protected:
 	void drawMidiOutHelp() ;
 	void drawAudioInHelp() ;
 	void drawMidiInputInfo() ;
+	void updateLearnCCAnnotations() ; // Push CC tags to UILearnableIntVarField items from current_
 	int getMidiInDeviceCount() ;
 	const char *getMidiInDeviceName(int index) ;
 	InstrumentType getInstrumentType() ;
@@ -80,5 +81,6 @@ private:
 	// the instrument while it's still being notified)
 	int pendingTypeInstrumentIdx_;
 	InstrumentType pendingType_;
+	bool learnMode_; // true while user is in MIDI CC learn mode
 } ;
 #endif

@@ -531,6 +531,8 @@ VST3Instrument::VST3Instrument() {
     programChangeParamIdx_ = -1;
     usingFilePresets_ = false;
     usingMidiPresets_ = false;
+    userCcToParamIdx_.clear();
+    programChangeEnabled_ = false;
 
     // Compute reverb buffer length based on sample rate (~100ms)
     int sampleRate = Audio::GetInstance()->GetSampleRate();
@@ -1332,6 +1334,21 @@ void VST3Instrument::QueueMidiEvent(unsigned char status, unsigned char data1, u
         pendingEventsMutex_.Lock();
         pendingNoteEvents_.push_back(evt);
         pendingEventsMutex_.Unlock();
+        return;
+    }
+
+    // User MIDI learn override: intercept CC or PC before lower-level routing
+    if (type == 0xB0) {
+        int ccNum = data1 & 0x7F;
+        auto uit = userCcToParamIdx_.find(ccNum);
+        if (uit != userCcToParamIdx_.end()) {
+            double norm = (data2 & 0x7F) / 127.0;
+            SetParameterValue(uit->second, norm);
+            return;
+        }
+    }
+    if (type == 0xC0 && programChangeEnabled_) {
+        SetPreset(data1 & 0x7F);
         return;
     }
 
@@ -4294,6 +4311,8 @@ void VST3Instrument::cleanupPlugin() {
     currentPreset_ = 0;
     programChangeParamIdx_ = -1;
     midiCcToParamId_.clear();
+    // Note: userCcToParamIdx_ and programChangeEnabled_ are NOT cleared on Purge
+    // so user MIDI learn settings survive plugin reload.
 }
 
 // ====================================================================
@@ -4511,4 +4530,51 @@ std::vector<VST3PluginInfo> VST3Instrument::ScanPlugins() {
         });
 
     return result;
+}
+
+// ====================================================================
+// User MIDI learn: CC → parameter index bindings
+// ====================================================================
+
+void VST3Instrument::SetUserCC(int cc, int paramIdx) {
+    // Remove any existing binding for paramIdx (one param → one CC)
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); ) {
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it);
+        else ++it;
+    }
+    userCcToParamIdx_[cc] = paramIdx;
+}
+
+void VST3Instrument::ClearUserCCForParam(int paramIdx) {
+    for (auto it = userCcToParamIdx_.begin(); it != userCcToParamIdx_.end(); ) {
+        if (it->second == paramIdx) it = userCcToParamIdx_.erase(it);
+        else ++it;
+    }
+}
+
+int VST3Instrument::GetUserCCForParam(int paramIdx) const {
+    for (const auto &kv : userCcToParamIdx_) {
+        if (kv.second == paramIdx) return kv.first;
+    }
+    return -1;
+}
+
+void VST3Instrument::ApplyUserCC(int ccNum, int rawValue) {
+    auto it = userCcToParamIdx_.find(ccNum);
+    if (it != userCcToParamIdx_.end()) {
+        int paramIdx = it->second;
+        double norm = (rawValue & 0x7F) / 127.0;
+        SetParameterValue(paramIdx, norm);
+        // Also update the Variable so the audio thread's variable scan doesn't revert our change
+        if (paramIdx >= 0 && paramIdx < (int)parameters_.size()) {
+            VST3PluginParameter& p = parameters_[paramIdx];
+            if (p.variable) {
+                int maxVal = (p.stepCount > 0 && p.stepCount <= 255) ? p.stepCount : 255;
+                int scaledVal = (int)(norm * maxVal + 0.5);
+                if (scaledVal < 0) scaledVal = 0;
+                if (scaledVal > maxVal) scaledVal = maxVal;
+                p.variable->SetInt(scaledVal, false);
+            }
+        }
+    }
 }

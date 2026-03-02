@@ -148,6 +148,15 @@ public:
     // Store a variable value read from project file when variable doesn't yet exist
     void StorePendingVariable(const char *name, const char *value);
 
+    // User MIDI learn CC bindings
+    void SetUserCC(int cc, int paramIdx);
+    void ClearUserCCForParam(int paramIdx);
+    int  GetUserCCForParam(int paramIdx) const;
+    void ApplyUserCC(int ccNum, int rawValue);  // called from router; routes CC to param bypassing IMDI
+    const std::map<int,int>& GetUserCcMap() const { return userCcToParamIdx_; }
+    void SetProgramChangeEnabled(bool e) { programChangeEnabled_ = e; }
+    bool GetProgramChangeEnabled() const  { return programChangeEnabled_; }
+
     // Full plugin state save/restore (binary blob via IComponent/IEditController)
     std::string GetComponentStateBase64();
     std::string GetControllerStateBase64();
@@ -217,6 +226,11 @@ private:
     // Populated at load time; used by QueueMidiEvent to send parameter changes
     // instead of kLegacyMIDICCOutEvent when the plugin supports it.
     std::map<int, uint32_t> midiCcToParamId_;
+
+    // User MIDI learn: maps CC# → parameter array index (takes priority over midiCcToParamId_)
+    std::map<int,int> userCcToParamIdx_;
+    // Route incoming program change messages to SetPreset()
+    bool programChangeEnabled_;
 
     // Audio buffers
     float *audioBufferL_;
